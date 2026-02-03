@@ -70,7 +70,7 @@ cfg := config.MustLoad[AppConfig]()
 **Behavior**:
 - Fields without an `env` tag are ignored.
 - Missing required values panic at startup (fail-fast by design).
-- Supported types: `string`, `int`, `int64`, `bool`, `time.Duration`, `[]string` (comma-separated).
+- Supported types: `string`, `int`, `int64`, `float64`, `bool`, `time.Duration`, `[]string` (comma-separated).
 
 **Integration notes**:
 - Call `MustLoad` early in `main()`, before any goroutines. The panic-on-missing design means configuration errors surface immediately at startup, not minutes later under load.
