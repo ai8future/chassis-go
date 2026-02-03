@@ -10,16 +10,16 @@ None
 
 ## Phases
 
-- [ ] **Phase 1: Project Setup** - Go module init, CI, repo scaffolding
-- [ ] **Phase 2: Config** - Env var loading into typed structs with MustLoad
-- [ ] **Phase 3: Logging** - Structured JSON logging wrapping slog with TraceID extraction
-- [ ] **Phase 4: Lifecycle** - Graceful shutdown orchestration via errgroup
-- [ ] **Phase 5: Test Kit** - Testing utilities for logger, config, and ports
-- [ ] **Phase 6: HTTP Kit** - HTTP server middleware (RequestID, logging, recovery, JSON errors)
-- [ ] **Phase 7: Health** - Health check protocol with parallel aggregation
-- [ ] **Phase 8: gRPC Kit** - gRPC server interceptors and health service wiring
-- [ ] **Phase 9: Call** - Intelligent HTTP client with retries, circuit breaking, deadline propagation
-- [ ] **Phase 10: Examples** - Living documentation (CLI, service, client examples)
+- [x] **Phase 1: Project Setup** - Go module init, CI, repo scaffolding
+- [x] **Phase 2: Config** - Env var loading into typed structs with MustLoad
+- [x] **Phase 3: Logging** - Structured JSON logging wrapping slog with TraceID extraction
+- [x] **Phase 4: Lifecycle** - Graceful shutdown orchestration via errgroup
+- [x] **Phase 5: Test Kit** - Testing utilities for logger, config, and ports
+- [x] **Phase 6: HTTP Kit** - HTTP server middleware (RequestID, logging, recovery, JSON errors)
+- [x] **Phase 7: Health** - Health check protocol with parallel aggregation
+- [x] **Phase 8: gRPC Kit** - gRPC server interceptors and health service wiring
+- [x] **Phase 9: Call** - Intelligent HTTP client with retries, circuit breaking, deadline propagation
+- [x] **Phase 10: Examples** - Living documentation (CLI, service, client examples)
 
 ## Phase Details
 
@@ -157,13 +157,13 @@ Note: Phases 2, 3, 4 can execute in parallel (all depend only on Phase 1). Phase
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Project Setup | 0/2 | Not started | - |
-| 2. Config | 0/3 | Not started | - |
-| 3. Logging | 0/3 | Not started | - |
-| 4. Lifecycle | 0/3 | Not started | - |
-| 5. Test Kit | 0/2 | Not started | - |
-| 6. HTTP Kit | 0/3 | Not started | - |
-| 7. Health | 0/4 | Not started | - |
-| 8. gRPC Kit | 0/4 | Not started | - |
-| 9. Call | 0/5 | Not started | - |
-| 10. Examples | 0/3 | Not started | - |
+| 1. Project Setup | 2/2 | Complete | 2026-02-03 |
+| 2. Config | 3/3 | Complete | 2026-02-03 |
+| 3. Logging | 3/3 | Complete | 2026-02-03 |
+| 4. Lifecycle | 3/3 | Complete | 2026-02-03 |
+| 5. Test Kit | 2/2 | Complete | 2026-02-03 |
+| 6. HTTP Kit | 3/3 | Complete | 2026-02-03 |
+| 7. Health | 4/4 | Complete | 2026-02-03 |
+| 8. gRPC Kit | 4/4 | Complete | 2026-02-03 |
+| 9. Call | 5/5 | Complete | 2026-02-03 |
+| 10. Examples | 3/3 | Complete | 2026-02-03 |
