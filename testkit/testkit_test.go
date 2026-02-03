@@ -6,10 +6,11 @@ import (
 	"os"
 	"testing"
 
+	"github.com/ai8future/chassis-go/config"
 	"github.com/ai8future/chassis-go/testkit"
 )
 
-// testCfg is a small config struct used by LoadConfig tests.
+// testCfg is a small config struct used by SetEnv tests.
 type testCfg struct {
 	Host string `env:"TESTKIT_HOST"`
 	Port int    `env:"TESTKIT_PORT"`
@@ -22,11 +23,12 @@ func TestNewLogger(t *testing.T) {
 	logger.Debug("debug message")
 }
 
-func TestLoadConfig(t *testing.T) {
-	cfg := testkit.LoadConfig[testCfg](t, map[string]string{
+func TestSetEnv(t *testing.T) {
+	testkit.SetEnv(t, map[string]string{
 		"TESTKIT_HOST": "localhost",
 		"TESTKIT_PORT": "9090",
 	})
+	cfg := config.MustLoad[testCfg]()
 	if cfg.Host != "localhost" {
 		t.Fatalf("expected Host=localhost, got %q", cfg.Host)
 	}
@@ -35,15 +37,12 @@ func TestLoadConfig(t *testing.T) {
 	}
 }
 
-func TestLoadConfigCleanup(t *testing.T) {
+func TestSetEnvCleanup(t *testing.T) {
 	// Use a sub-test so that its cleanup runs before we check the env vars.
 	const envKey = "TESTKIT_CLEANUP_CHECK"
-	var afterCleanup bool
 
 	t.Run("inner", func(t *testing.T) {
-		testkit.LoadConfig[struct {
-			Val string `env:"TESTKIT_CLEANUP_CHECK"`
-		}](t, map[string]string{
+		testkit.SetEnv(t, map[string]string{
 			envKey: "present",
 		})
 		// Env var should be set inside the test.
@@ -53,8 +52,7 @@ func TestLoadConfigCleanup(t *testing.T) {
 	})
 
 	// After the inner sub-test returns, its cleanup has already run.
-	afterCleanup = os.Getenv(envKey) == ""
-	if !afterCleanup {
+	if os.Getenv(envKey) != "" {
 		t.Fatalf("expected env var %q to be unset after cleanup, got %q", envKey, os.Getenv(envKey))
 	}
 }

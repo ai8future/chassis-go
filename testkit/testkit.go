@@ -1,4 +1,5 @@
 // Package testkit provides lightweight test helpers for chassis-go services.
+// It has zero dependencies on other chassis packages.
 package testkit
 
 import (
@@ -7,8 +8,6 @@ import (
 	"net"
 	"os"
 	"testing"
-
-	"github.com/ai8future/chassis-go/config"
 )
 
 // testWriter is an io.Writer that forwards all writes to testing.TB.Log.
@@ -34,10 +33,15 @@ func NewLogger(t testing.TB) *slog.Logger {
 	return slog.New(handler)
 }
 
-// LoadConfig sets the supplied environment variables, registers a t.Cleanup to
-// unset them after the test, and then calls config.MustLoad[T]() to parse them
-// into a struct of type T.
-func LoadConfig[T any](t testing.TB, envs map[string]string) T {
+// SetEnv sets the supplied environment variables and registers a t.Cleanup to
+// unset them after the test. This is the building block for test config — pair
+// it with config.MustLoad[T]() in your test to load typed configuration.
+//
+// Example:
+//
+//	testkit.SetEnv(t, map[string]string{"PORT": "8080"})
+//	cfg := config.MustLoad[AppConfig]()
+func SetEnv(t testing.TB, envs map[string]string) {
 	t.Helper()
 	for k, v := range envs {
 		os.Setenv(k, v)
@@ -47,7 +51,6 @@ func LoadConfig[T any](t testing.TB, envs map[string]string) T {
 			os.Unsetenv(k)
 		}
 	})
-	return config.MustLoad[T]()
 }
 
 // GetFreePort asks the OS for an available TCP port by listening on :0, then
