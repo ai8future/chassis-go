@@ -32,6 +32,10 @@ func (r *Retrier) Do(ctx context.Context, fn func() (*http.Response, error)) (*h
 
 		resp, err = fn()
 		if err != nil {
+			// Clean up any partial response body to avoid connection leaks.
+			if resp != nil && resp.Body != nil {
+				resp.Body.Close()
+			}
 			// Network-level error — worth retrying.
 			if attempt < r.MaxAttempts-1 {
 				if waitErr := r.backoff(ctx, attempt); waitErr != nil {

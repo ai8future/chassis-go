@@ -26,7 +26,9 @@ func RequestIDFrom(ctx context.Context) string {
 // generateID produces a UUID-v4-like random identifier using crypto/rand.
 func generateID() string {
 	b := make([]byte, 16)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("httpkit: crypto/rand.Read failed: " + err.Error())
+	}
 	// Set version (4) and variant (RFC 4122) bits.
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80
