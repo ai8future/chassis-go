@@ -5,26 +5,28 @@ import (
 
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-
-	"github.com/ai8future/chassis-go/health"
 )
 
+// HealthChecker is a function that performs health checks and returns an error
+// when any check fails. This decouples grpckit from the health package —
+// callers typically pass the result of health.All(checks).
+type HealthChecker func(ctx context.Context) error
+
 // RegisterHealth registers a grpc.health.v1.Health service on the given gRPC
-// server. The Check RPC runs all provided health checks via health.All and
-// maps the aggregate result to a gRPC health status: SERVING when all checks
-// pass, NOT_SERVING when any check fails.
-func RegisterHealth(server *grpc.Server, checks map[string]health.Check) {
-	run := health.All(checks)
-	healthpb.RegisterHealthServer(server, &healthServer{run: run})
+// server. The Check RPC calls the provided checker and maps the result to a
+// gRPC health status: SERVING when the checker returns nil, NOT_SERVING when
+// it returns an error.
+func RegisterHealth(server *grpc.Server, checker HealthChecker) {
+	healthpb.RegisterHealthServer(server, &healthServer{checker: checker})
 }
 
 type healthServer struct {
 	healthpb.UnimplementedHealthServer
-	run func(ctx context.Context) ([]health.Result, error)
+	checker HealthChecker
 }
 
 func (h *healthServer) Check(ctx context.Context, req *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
-	_, err := h.run(ctx)
+	err := h.checker(ctx)
 
 	st := healthpb.HealthCheckResponse_SERVING
 	if err != nil {

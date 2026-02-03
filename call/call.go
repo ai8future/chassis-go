@@ -13,7 +13,7 @@ type Client struct {
 	httpClient *http.Client
 	timeout    time.Duration
 	retrier    *Retrier
-	breaker    *CircuitBreaker
+	breaker    Breaker
 }
 
 // Option configures a Client.
@@ -56,6 +56,13 @@ func WithRetry(maxAttempts int, baseDelay time.Duration) Option {
 func WithCircuitBreaker(name string, threshold int, resetTimeout time.Duration) Option {
 	return func(c *Client) {
 		c.breaker = GetBreaker(name, threshold, resetTimeout)
+	}
+}
+
+// WithBreaker sets a custom circuit breaker implementation.
+func WithBreaker(b Breaker) Option {
+	return func(c *Client) {
+		c.breaker = b
 	}
 }
 

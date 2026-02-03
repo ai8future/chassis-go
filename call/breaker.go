@@ -24,6 +24,16 @@ const (
 	StateHalfOpen
 )
 
+// Breaker defines the circuit breaker behavior. Consumers can provide their
+// own implementation (e.g., wrapping sony/gobreaker) via WithBreaker.
+type Breaker interface {
+	// Allow checks whether a request may proceed. Returns ErrCircuitOpen
+	// (or similar) when the circuit is open.
+	Allow() error
+	// Record reports the outcome of a request so the breaker can update state.
+	Record(success bool)
+}
+
 // breakers is a package-level registry ensuring singleton breakers by name.
 var breakers sync.Map
 

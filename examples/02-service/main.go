@@ -1,37 +1,36 @@
-// Example 02-service demonstrates a reference HTTP service using
-// config + logz + lifecycle + health + httpkit.
+// Example 02-service demonstrates a reference gRPC service using
+// config + logz + lifecycle + grpckit + health.
 //
 // Run with defaults:
 //
 //	go run ./examples/02-service
 //
-// Then test:
+// Then test with grpcurl:
 //
-//	curl http://localhost:8080/
-//	curl http://localhost:8080/healthz
+//	grpcurl -plaintext localhost:50051 grpc.health.v1.Health/Check
 //
 // Override port:
 //
-//	PORT=9090 go run ./examples/02-service
+//	PORT=50052 go run ./examples/02-service
 package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
-	"net/http"
-	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 
 	"github.com/ai8future/chassis-go/config"
+	"github.com/ai8future/chassis-go/grpckit"
 	"github.com/ai8future/chassis-go/health"
-	"github.com/ai8future/chassis-go/httpkit"
 	"github.com/ai8future/chassis-go/lifecycle"
 	"github.com/ai8future/chassis-go/logz"
 )
 
 type ServiceConfig struct {
-	Port     int    `env:"PORT" default:"8080"`
+	Port     int    `env:"PORT" default:"50051"`
 	LogLevel string `env:"LOG_LEVEL" default:"info"`
 }
 
@@ -46,35 +45,40 @@ func main() {
 		},
 	}
 
-	// Build the router.
-	mux := http.NewServeMux()
-	mux.Handle("GET /healthz", health.Handler(checks))
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"message":    "Welcome to chassis-go!",
-			"request_id": httpkit.RequestIDFrom(r.Context()),
-		})
-	})
-
-	// Apply middleware: Recovery -> Logging -> RequestID -> handler.
-	var handler http.Handler = mux
-	handler = httpkit.RequestID(handler)
-	handler = httpkit.Logging(logger)(handler)
-	handler = httpkit.Recovery(logger)(handler)
-
-	addr := fmt.Sprintf(":%d", cfg.Port)
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: handler,
+	// Build a health checker function from health.All.
+	// health.All returns ([]Result, error); wrap it to satisfy HealthChecker.
+	runChecks := health.All(checks)
+	checker := func(ctx context.Context) error {
+		_, err := runChecks(ctx)
+		return err
 	}
 
-	logger.Info("starting server", "addr", addr)
+	// Create the gRPC server with standard interceptors.
+	srv := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(
+			grpckit.UnaryRecovery(logger),
+			grpckit.UnaryLogging(logger),
+			grpckit.UnaryMetrics(logger),
+		),
+		grpc.ChainStreamInterceptor(
+			grpckit.StreamRecovery(logger),
+			grpckit.StreamLogging(logger),
+			grpckit.StreamMetrics(logger),
+		),
+	)
 
-	// Run the HTTP server as a lifecycle component.
+	// Register the gRPC Health V1 service.
+	grpckit.RegisterHealth(srv, checker)
+
+	// Enable server reflection for tools like grpcurl.
+	reflection.Register(srv)
+
+	addr := fmt.Sprintf(":%d", cfg.Port)
+	logger.Info("starting gRPC server", "addr", addr)
+
+	// Run the gRPC server as a lifecycle component.
 	err := lifecycle.Run(context.Background(), func(ctx context.Context) error {
-		// Start listening.
-		ln, err := net.Listen("tcp", srv.Addr)
+		ln, err := net.Listen("tcp", addr)
 		if err != nil {
 			return err
 		}
@@ -88,10 +92,9 @@ func main() {
 
 		select {
 		case <-ctx.Done():
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
 			logger.Info("shutting down gracefully")
-			return srv.Shutdown(shutdownCtx)
+			srv.GracefulStop()
+			return nil
 		case err := <-errCh:
 			return err
 		}

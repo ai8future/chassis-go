@@ -174,3 +174,62 @@ func TestStreamRecovery(t *testing.T) {
 		t.Errorf("expected log to contain panic value, got: %s", log)
 	}
 }
+
+// ---------- Metrics interceptor tests ----------
+
+func TestUnaryMetrics(t *testing.T) {
+	var buf bytes.Buffer
+	logger := newTestLogger(&buf)
+
+	interceptor := UnaryMetrics(logger)
+
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/MetricsMethod"}
+	handler := func(ctx context.Context, req any) (any, error) {
+		return "ok", nil
+	}
+
+	resp, err := interceptor(context.Background(), "req", info, handler)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp != "ok" {
+		t.Fatalf("expected resp 'ok', got %v", resp)
+	}
+
+	log := buf.String()
+	if !strings.Contains(log, "unary RPC metrics") {
+		t.Errorf("expected log to contain 'unary RPC metrics', got: %s", log)
+	}
+	if !strings.Contains(log, "/test.Service/MetricsMethod") {
+		t.Errorf("expected log to contain method name, got: %s", log)
+	}
+	if !strings.Contains(log, "duration") {
+		t.Errorf("expected log to contain duration, got: %s", log)
+	}
+}
+
+func TestStreamMetrics(t *testing.T) {
+	var buf bytes.Buffer
+	logger := newTestLogger(&buf)
+
+	interceptor := StreamMetrics(logger)
+
+	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamMetrics"}
+	ss := &mockServerStream{ctx: context.Background()}
+	handler := func(srv any, stream grpc.ServerStream) error {
+		return nil
+	}
+
+	err := interceptor(nil, ss, info, handler)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	log := buf.String()
+	if !strings.Contains(log, "stream RPC metrics") {
+		t.Errorf("expected log to contain 'stream RPC metrics', got: %s", log)
+	}
+	if !strings.Contains(log, "/test.Service/StreamMetrics") {
+		t.Errorf("expected log to contain method name, got: %s", log)
+	}
+}
