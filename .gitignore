@@ -1,32 +1,54 @@
-# Binaries
+# Secrets
+.env
+.env.local
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+.venv/
+venv/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+
+# PHP
+/vendor
+
+# Go
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-
-# Test binary
 *.test
-
-# Output of go coverage
 *.out
 *.prof
-
-# Go workspace
+.gocache/
 go.work
 go.work.sum
 
-# IDE
+# Node
+node_modules/
+dist/
+
+# IDE/Editor
 .idea/
+/.idea
 .vscode/
 *.swp
 *.swo
 *~
 
-# OS
-.DS_Store
-Thumbs.db
-
 # Build output
 /bin/
-/dist/
+
+# Claude
+.claude/settings.local.json
