@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.2] - 2026-02-03
+
+- Document chassis.Version in INTEGRATING.md (Claude:Opus 4.5)
+
 ## [1.0.1] - 2026-02-03
 
 - Add exported `chassis.Version` constant for integrator diagnostics (Claude:Opus 4.5)
