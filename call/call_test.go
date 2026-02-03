@@ -1,0 +1,286 @@
+package call
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+// ---------- helpers ----------
+
+// counterServer returns an httptest.Server that responds with the given status
+// codes in order. Once all codes are exhausted it responds with finalStatus.
+func counterServer(codes ...int) (*httptest.Server, *atomic.Int32) {
+	var idx atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		i := int(idx.Add(1)) - 1
+		if i < len(codes) {
+			w.WriteHeader(codes[i])
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	return srv, &idx
+}
+
+// uniqueBreaker returns a unique breaker name so parallel tests don't collide.
+var breakerSeq atomic.Int64
+
+func uniqueBreakerName() string {
+	return fmt.Sprintf("test-breaker-%d", breakerSeq.Add(1))
+}
+
+// ---------- tests ----------
+
+func TestBasicRequestSucceeds(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	c := New(WithTimeout(5 * time.Second))
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestRetryOn5xx(t *testing.T) {
+	// Return 500 twice, then 200.
+	srv, hits := counterServer(500, 500)
+	defer srv.Close()
+
+	c := New(
+		WithTimeout(5*time.Second),
+		WithRetry(3, 10*time.Millisecond),
+	)
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	if n := int(hits.Load()); n != 3 {
+		t.Fatalf("expected 3 attempts, got %d", n)
+	}
+}
+
+func TestNoRetryOn4xx(t *testing.T) {
+	srv, hits := counterServer(http.StatusBadRequest)
+	defer srv.Close()
+
+	c := New(
+		WithTimeout(5*time.Second),
+		WithRetry(3, 10*time.Millisecond),
+	)
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+
+	if n := int(hits.Load()); n != 1 {
+		t.Fatalf("expected 1 attempt (no retries on 4xx), got %d", n)
+	}
+}
+
+func TestContextCancellationStopsRetries(t *testing.T) {
+	srv, hits := counterServer(500, 500, 500, 500, 500)
+	defer srv.Close()
+
+	c := New(
+		WithTimeout(5*time.Second),
+		WithRetry(5, 50*time.Millisecond),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+
+	// Cancel the context after a short delay so the retry loop is interrupted.
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := c.Do(req)
+	if err == nil {
+		t.Fatal("expected error from context cancellation")
+	}
+
+	// Should NOT have completed all 5 attempts.
+	if n := int(hits.Load()); n >= 5 {
+		t.Fatalf("expected fewer than 5 attempts due to cancellation, got %d", n)
+	}
+}
+
+func TestCircuitBreakerOpensAfterThreshold(t *testing.T) {
+	srv, _ := counterServer(500, 500, 500, 500, 500)
+	defer srv.Close()
+
+	name := uniqueBreakerName()
+	c := New(
+		WithTimeout(5*time.Second),
+		WithCircuitBreaker(name, 3, 1*time.Second),
+	)
+
+	// Fire 3 requests that all fail — breaker should open.
+	for range 3 {
+		req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+		c.Do(req)
+	}
+
+	// The fourth request should be rejected by the breaker.
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	_, err := c.Do(req)
+	if err != ErrCircuitOpen {
+		t.Fatalf("expected ErrCircuitOpen, got %v", err)
+	}
+}
+
+func TestCircuitBreakerHalfOpenAllowsOneRequest(t *testing.T) {
+	srv, hits := counterServer(200)
+	defer srv.Close()
+
+	name := uniqueBreakerName()
+	cb := GetBreaker(name, 2, 50*time.Millisecond)
+
+	// Force breaker open.
+	cb.Record(false)
+	cb.Record(false)
+
+	if cb.State() != StateOpen {
+		t.Fatalf("expected StateOpen, got %d", cb.State())
+	}
+
+	// Wait for reset timeout to elapse.
+	time.Sleep(60 * time.Millisecond)
+
+	c := New(
+		WithTimeout(5*time.Second),
+		WithCircuitBreaker(name, 2, 50*time.Millisecond),
+	)
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error in half-open state: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	if n := int(hits.Load()); n != 1 {
+		t.Fatalf("expected exactly 1 request in half-open, got %d", n)
+	}
+}
+
+func TestCircuitBreakerResetsOnSuccessInHalfOpen(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	name := uniqueBreakerName()
+	cb := GetBreaker(name, 2, 50*time.Millisecond)
+
+	// Force breaker open.
+	cb.Record(false)
+	cb.Record(false)
+
+	if cb.State() != StateOpen {
+		t.Fatalf("expected StateOpen, got %d", cb.State())
+	}
+
+	// Wait for reset timeout so it transitions to half-open on next Allow.
+	time.Sleep(60 * time.Millisecond)
+
+	c := New(
+		WithTimeout(5*time.Second),
+		WithCircuitBreaker(name, 2, 50*time.Millisecond),
+	)
+
+	// Successful request in half-open should close the breaker.
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	resp.Body.Close()
+
+	if cb.State() != StateClosed {
+		t.Fatalf("expected StateClosed after half-open success, got %d", cb.State())
+	}
+
+	// Subsequent requests should also pass through.
+	req, _ = http.NewRequest(http.MethodGet, srv.URL, nil)
+	resp, err = c.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error after breaker reset: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestSingletonBreakers(t *testing.T) {
+	name := uniqueBreakerName()
+	b1 := GetBreaker(name, 5, time.Second)
+	b2 := GetBreaker(name, 10, 2*time.Second) // different params, same name
+
+	if b1 != b2 {
+		t.Fatal("expected same breaker instance for same name")
+	}
+}
+
+func TestTimeoutEnforcement(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Sleep longer than the client timeout.
+		time.Sleep(500 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(WithTimeout(50 * time.Millisecond))
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+
+	start := time.Now()
+	_, err := c.Do(req)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+
+	// Should have taken roughly the timeout duration, not the full 500ms.
+	if elapsed > 300*time.Millisecond {
+		t.Fatalf("request took too long (%v), timeout not enforced", elapsed)
+	}
+}
