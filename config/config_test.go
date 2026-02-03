@@ -11,6 +11,7 @@ type fullConfig struct {
 	Host     string        `env:"TEST_HOST"`
 	Port     int           `env:"TEST_PORT"`
 	Workers  int64         `env:"TEST_WORKERS"`
+	Temp     float64       `env:"TEST_TEMP"`
 	Debug    bool          `env:"TEST_DEBUG"`
 	Timeout  time.Duration `env:"TEST_TIMEOUT"`
 	Features []string      `env:"TEST_FEATURES"`
@@ -43,6 +44,7 @@ func TestMustLoad_AllFieldTypes(t *testing.T) {
 	t.Setenv("TEST_HOST", "example.com")
 	t.Setenv("TEST_PORT", "9090")
 	t.Setenv("TEST_WORKERS", "42")
+	t.Setenv("TEST_TEMP", "0.7")
 	t.Setenv("TEST_DEBUG", "true")
 	t.Setenv("TEST_TIMEOUT", "5s")
 	t.Setenv("TEST_FEATURES", "alpha, beta, gamma")
@@ -57,6 +59,9 @@ func TestMustLoad_AllFieldTypes(t *testing.T) {
 	}
 	if cfg.Workers != 42 {
 		t.Errorf("Workers = %d, want %d", cfg.Workers, 42)
+	}
+	if cfg.Temp != 0.7 {
+		t.Errorf("Temp = %f, want %f", cfg.Temp, 0.7)
 	}
 	if cfg.Debug != true {
 		t.Errorf("Debug = %v, want true", cfg.Debug)
@@ -213,6 +218,22 @@ func TestMustLoad_SliceStringSingleElement(t *testing.T) {
 	if len(c.Tags) != 1 || c.Tags[0] != "solo" {
 		t.Errorf("Tags = %v, want [solo]", c.Tags)
 	}
+}
+
+func TestMustLoad_InvalidFloat(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic for invalid float64, got none")
+		}
+	}()
+
+	t.Setenv("TEST_TEMP", "not-a-float")
+
+	type cfg struct {
+		Temp float64 `env:"TEST_TEMP"`
+	}
+	_ = MustLoad[cfg]()
 }
 
 // ---------- helpers ----------

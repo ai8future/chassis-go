@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.3] - 2026-02-03
+
+- Add float64 support to config.MustLoad (Claude:Opus 4.5)
+
 ## [1.0.2] - 2026-02-03
 
 - Document chassis.Version in INTEGRATING.md (Claude:Opus 4.5)

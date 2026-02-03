@@ -21,7 +21,7 @@ import (
 //	required:"true"      — panic if missing and no default (this is the default behavior)
 //	required:"false"     — leave the zero value if missing and no default
 //
-// Supported field types: string, int, int64, bool, time.Duration, []string.
+// Supported field types: string, int, int64, float64, bool, time.Duration, []string.
 func MustLoad[T any]() T {
 	var cfg T
 	v := reflect.ValueOf(&cfg).Elem()
@@ -33,6 +33,11 @@ func MustLoad[T any]() T {
 
 		envKey := field.Tag.Get("env")
 		if envKey == "" {
+			continue
+		}
+
+		// Skip unexported fields — they can't be set via reflection.
+		if !field.IsExported() {
 			continue
 		}
 
@@ -56,7 +61,7 @@ func MustLoad[T any]() T {
 		}
 
 		if err := setField(fieldVal, raw); err != nil {
-			panic(fmt.Sprintf("config: cannot set field %s from env %q=%q: %v", field.Name, envKey, raw, err))
+			panic(fmt.Sprintf("config: cannot set field %s from env %q: %v", field.Name, envKey, err))
 		}
 	}
 
@@ -96,6 +101,13 @@ func setField(fieldVal reflect.Value, raw string) error {
 			return fmt.Errorf("invalid int: %w", err)
 		}
 		fieldVal.SetInt(n)
+
+	case reflect.Float64:
+		f, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return fmt.Errorf("invalid float64: %w", err)
+		}
+		fieldVal.SetFloat(f)
 
 	case reflect.Bool:
 		b, err := strconv.ParseBool(raw)
