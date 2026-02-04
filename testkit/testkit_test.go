@@ -6,9 +6,15 @@ import (
 	"os"
 	"testing"
 
+	chassis "github.com/ai8future/chassis-go"
 	"github.com/ai8future/chassis-go/config"
 	"github.com/ai8future/chassis-go/testkit"
 )
+
+func TestMain(m *testing.M) {
+	chassis.RequireMajor(3)
+	os.Exit(m.Run())
+}
 
 // testCfg is a small config struct used by SetEnv tests.
 type testCfg struct {

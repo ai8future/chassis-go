@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"time"
 
+	chassis "github.com/ai8future/chassis-go"
 	"github.com/ai8future/chassis-go/call"
 	"github.com/ai8future/chassis-go/config"
 	"github.com/ai8future/chassis-go/logz"
@@ -27,6 +28,7 @@ type ClientConfig struct {
 }
 
 func main() {
+	chassis.RequireMajor(3)
 	cfg := config.MustLoad[ClientConfig]()
 	logger := logz.New(cfg.LogLevel)
 
@@ -58,8 +60,15 @@ func main() {
 			continue
 		}
 
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
+		if err != nil {
+			logger.Error("failed to read response body",
+				"attempt", i+1,
+				"error", err,
+			)
+			continue
+		}
 
 		logger.Info(fmt.Sprintf("request %d complete", i+1),
 			"status", resp.StatusCode,

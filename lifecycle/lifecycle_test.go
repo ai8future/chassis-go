@@ -3,11 +3,19 @@ package lifecycle
 import (
 	"context"
 	"errors"
+	"os"
 	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
+
+	chassis "github.com/ai8future/chassis-go"
 )
+
+func TestMain(m *testing.M) {
+	chassis.RequireMajor(3)
+	os.Exit(m.Run())
+}
 
 func TestRunSingleComponentCleanShutdown(t *testing.T) {
 	comp := func(ctx context.Context) error {

@@ -1,9 +1,17 @@
 package config
 
 import (
+	"os"
 	"testing"
 	"time"
+
+	chassis "github.com/ai8future/chassis-go"
 )
+
+func TestMain(m *testing.M) {
+	chassis.RequireMajor(3)
+	os.Exit(m.Run())
+}
 
 // ---------- helper types ----------
 

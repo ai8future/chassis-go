@@ -19,10 +19,23 @@ go get github.com/ai8future/chassis-go
 The top-level package exports the library version for diagnostics:
 
 ```go
-import "github.com/ai8future/chassis-go"
+import chassis "github.com/ai8future/chassis-go"
 
 logger.Info("starting", "chassis_version", chassis.Version)
 ```
+
+### Version gate
+
+Every service must declare which major version of chassis it supports. This prevents silent behavior changes when chassis is upgraded without review.
+
+```go
+func main() {
+    chassis.RequireMajor(3) // crashes if chassis major version != 3
+    // ... rest of startup
+}
+```
+
+If the version doesn't match, the process exits with a clear message telling you exactly what to do. If `RequireMajor` is not called before using any chassis module, those modules will also crash at startup.
 
 A typical service imports all packages:
 
@@ -30,11 +43,14 @@ A typical service imports all packages:
 import (
     "github.com/ai8future/chassis-go/call"
     "github.com/ai8future/chassis-go/config"
+    "github.com/ai8future/chassis-go/errors"
     "github.com/ai8future/chassis-go/grpckit"
     "github.com/ai8future/chassis-go/health"
     "github.com/ai8future/chassis-go/httpkit"
     "github.com/ai8future/chassis-go/lifecycle"
     "github.com/ai8future/chassis-go/logz"
+    "github.com/ai8future/chassis-go/metrics"
+    "github.com/ai8future/chassis-go/secval"
 )
 ```
 
@@ -76,6 +92,111 @@ cfg := config.MustLoad[AppConfig]()
 - Call `MustLoad` early in `main()`, before any goroutines. The panic-on-missing design means configuration errors surface immediately at startup, not minutes later under load.
 - If you already have a config library (viper, envconfig, etc.), you don't need to migrate all at once. Chassis config is a standalone function — use it alongside your existing setup.
 - For testing, use `testkit.SetEnv(t, map[string]string{...})` to set env vars with automatic cleanup, then call `config.MustLoad[T]()` as usual.
+
+---
+
+### errors — Unified service errors
+
+**When to use**: You need error types that carry both HTTP and gRPC status codes for consistent error handling across transport layers.
+
+```go
+import "github.com/ai8future/chassis-go/errors"
+
+// Factory constructors for common error categories
+err := errors.ValidationError("name is required")         // 400 / INVALID_ARGUMENT
+err := errors.NotFoundError("user not found")              // 404 / NOT_FOUND
+err := errors.UnauthorizedError("invalid token")           // 401 / UNAUTHENTICATED
+err := errors.TimeoutError("request timed out")            // 504 / DEADLINE_EXCEEDED
+err := errors.RateLimitError("too many requests")          // 429 / RESOURCE_EXHAUSTED
+err := errors.DependencyError("database unavailable")      // 503 / UNAVAILABLE
+err := errors.InternalError("unexpected failure")          // 500 / INTERNAL
+
+// Formatted errors
+err := errors.Errorf(errors.ValidationError, "%s must be between %d and %d", "age", 0, 150)
+
+// Wrap unknown errors as internal
+svcErr := errors.FromError(err) // returns *ServiceError
+
+// Fluent detail attachment
+err := errors.ValidationError("invalid input").
+    WithDetail("field", "email").
+    WithDetail("reason", "invalid format")
+
+// Convert to gRPC status
+grpcErr := svcErr.GRPCStatus().Err()
+
+// Error cause chaining (works with errors.Is/errors.As)
+svcErr := errors.InternalError("db failed").WithCause(originalErr)
+```
+
+**Integration notes**:
+- `ServiceError` implements `error`, `Unwrap() error`, and `GRPCStatus() *status.Status`.
+- In HTTP handlers, use `svcErr.HTTPCode` for the response status. In gRPC handlers, use `svcErr.GRPCStatus().Err()`.
+- `FromError` is the boundary converter — use it when catching errors from business logic to ensure they become `ServiceError` for the transport layer.
+- `WithCause` preserves the original error for `errors.Is`/`errors.As` chains while still providing a clean message to clients.
+
+---
+
+### secval — JSON security validation
+
+**When to use**: You want to reject JSON payloads containing dangerous keys (prototype pollution, injection patterns) before processing them.
+
+```go
+import "github.com/ai8future/chassis-go/secval"
+
+// Validate JSON before unmarshalling
+if err := secval.ValidateJSON(body); err != nil {
+    // err is a secval error (ErrDangerousKey, ErrNestingDepth, ErrInvalidJSON)
+    // Wrap it into a ServiceError at the handler boundary:
+    return errors.ValidationError(err.Error())
+}
+json.Unmarshal(body, &req) // safe to unmarshal now
+```
+
+**What it checks**:
+- **Dangerous keys**: `__proto__`, `constructor`, `prototype`, `execute`, `eval`, `include`, `import`, `require`, `system`, `shell`, `command`, `script`, `exec`, `spawn`, `fork`. Keys are normalized (lowercased, hyphens replaced with underscores) before checking.
+- **Nesting depth**: Maximum 20 levels. Prevents stack overflow attacks from deeply nested JSON.
+
+**Integration notes**:
+- `secval` defines its own error types (`ErrDangerousKey`, `ErrNestingDepth`, `ErrInvalidJSON`), NOT `ServiceError`. This keeps the module dependency-free. Wrap secval errors into `ServiceError` at your handler boundary.
+- The validation parses JSON once, then your handler parses again into a struct. This double-parse is acceptable for typical payloads (<1MB). Do not use secval on file uploads or streaming endpoints.
+- Always enforce body size limits (`http.MaxBytesReader` at 1-2MB) BEFORE passing to secval.
+
+---
+
+### metrics — Prometheus metrics
+
+**When to use**: You want to expose Prometheus metrics with built-in request recording and cardinality protection.
+
+```go
+import "github.com/ai8future/chassis-go/metrics"
+
+// Create a recorder with a metric prefix
+recorder := metrics.New("mysvc", logger)
+
+// Record request metrics
+recorder.RecordRequest("POST", "200", 42.5, 1024)
+
+// Compose onto admin port alongside health checks
+adminMux := http.NewServeMux()
+adminMux.Handle("/metrics", recorder.Handler())
+adminMux.Handle("/health", health.Handler(checks))
+
+// Or use the convenience wrapper that serves both
+srv, err := recorder.StartServer(9090, logger, healthChecks)
+defer srv.Shutdown(context.Background())
+```
+
+**What it records per `RecordRequest` call**:
+- `{prefix}_requests_total{method, status}` — Counter
+- `{prefix}_request_duration_seconds{method}` — Histogram
+- `{prefix}_content_size_bytes{method}` — Histogram
+
+**Integration notes**:
+- Cardinality protection: max 1000 label combinations per metric. On overflow, new combinations are silently dropped and a warning is logged once.
+- The metric prefix is caller-supplied — use your service name.
+- `Handler()` returns an `http.Handler` you can mount anywhere. `StartServer()` is a convenience wrapper that also mounts a `/health` endpoint.
+- Uses `prometheus/client_golang` (new dependency in v2.0).
 
 ---
 
@@ -387,4 +508,8 @@ But the goal is to get to full adoption. Each package is designed with the assum
 
 **Log the chassis version at startup.** Import the top-level `chassis` package and log `chassis.Version` during initialization. This makes it easy to correlate production issues with a specific library version and track which services have upgraded after a release.
 
-**The toolkit has two external dependencies.** `golang.org/x/sync` (for errgroup) and `google.golang.org/grpc` (for grpckit). If you only use Tier 1 packages (config, logz, lifecycle, testkit), only `x/sync` is pulled in. gRPC dependencies only appear if you import `grpckit`.
+**RequireMajor must be called first.** Every chassis module checks that `chassis.RequireMajor(N)` was called before it runs. If you skip it, you get a clear crash at startup. Place it as the first line in `main()`.
+
+**secval errors are NOT ServiceError.** `secval.ValidateJSON` returns module-local errors (`ErrDangerousKey`, etc.), not `*errors.ServiceError`. Convert them at the handler boundary with `errors.ValidationError(err.Error())`.
+
+**The toolkit has three external dependencies.** `golang.org/x/sync` (for errgroup), `google.golang.org/grpc` (for grpckit and errors), and `prometheus/client_golang` (for metrics). If you only use Tier 1 packages (config, logz, lifecycle, testkit), only `x/sync` is pulled in.

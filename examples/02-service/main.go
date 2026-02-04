@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
+	chassis "github.com/ai8future/chassis-go"
 	"github.com/ai8future/chassis-go/config"
 	"github.com/ai8future/chassis-go/grpckit"
 	"github.com/ai8future/chassis-go/health"
@@ -35,6 +36,7 @@ type ServiceConfig struct {
 }
 
 func main() {
+	chassis.RequireMajor(3)
 	cfg := config.MustLoad[ServiceConfig]()
 	logger := logz.New(cfg.LogLevel)
 
