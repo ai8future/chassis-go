@@ -6,6 +6,9 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+
+	chassis "github.com/ai8future/chassis-go"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // traceIDKey is the unexported context key used to store trace IDs.
@@ -30,6 +33,7 @@ func TraceIDFrom(ctx context.Context) string {
 // Accepted levels are "debug", "info", "warn", "error" (case-insensitive).
 // Unrecognized levels default to "info".
 func New(level string) *slog.Logger {
+	chassis.AssertVersionChecked()
 	lvl := parseLevel(level)
 	jsonHandler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
 		Level: lvl,
@@ -71,43 +75,57 @@ func (h *traceHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return h.inner.Enabled(ctx, level)
 }
 
-// Handle extracts a trace ID from the context and, if present, adds it
-// as a "trace_id" attribute to the record before delegating to the inner handler.
+// Handle extracts trace information from the context and, if present, adds
+// "trace_id" and "span_id" attributes to the record before delegating.
 //
-// When groups are active, the record is reconstructed so that trace_id appears
-// at the top level while other attributes remain nested within their groups.
+// It reads from the OTel span context first. If no valid OTel span is found,
+// it falls back to the legacy manual trace ID (WithTraceID/TraceIDFrom).
+//
+// When groups are active, the record is reconstructed so that trace_id and
+// span_id appear at the top level while other attributes remain nested.
 func (h *traceHandler) Handle(ctx context.Context, r slog.Record) error {
-	traceID := TraceIDFrom(ctx)
+	var traceID, spanID string
+
+	// Primary: read from OTel span context.
+	sc := trace.SpanContextFromContext(ctx)
+	if sc.IsValid() {
+		traceID = sc.TraceID().String()
+		spanID = sc.SpanID().String()
+	} else {
+		// Fallback: legacy manual trace ID (deprecated, for migration).
+		traceID = TraceIDFrom(ctx)
+	}
+
 	if traceID == "" {
 		return h.inner.Handle(ctx, r)
 	}
 
 	if len(h.groups) == 0 {
 		r.AddAttrs(slog.String("trace_id", traceID))
+		if spanID != "" {
+			r.AddAttrs(slog.String("span_id", spanID))
+		}
 		return h.inner.Handle(ctx, r)
 	}
 
-	// Groups are active. Attrs added via AddAttrs on the record would be placed
-	// inside the innermost group by the JSONHandler. To emit trace_id at the top
-	// level, we reconstruct the record: collect the record's attrs, nest them
-	// inside the group hierarchy as a slog.Group attribute, then emit trace_id
-	// and the grouped attrs through the base (ungrouped) handler.
+	// Groups are active — reconstruct record with trace_id/span_id at top level.
 	recordAttrs := make([]slog.Attr, 0, r.NumAttrs())
 	r.Attrs(func(a slog.Attr) bool {
 		recordAttrs = append(recordAttrs, a)
 		return true
 	})
 
-	// Build nested group structure from inside out.
 	var grouped slog.Attr
 	grouped = slog.Group(h.groups[len(h.groups)-1], attrsToAny(recordAttrs)...)
 	for i := len(h.groups) - 2; i >= 0; i-- {
 		grouped = slog.Group(h.groups[i], grouped)
 	}
 
-	// Create a new record with trace_id at top level and grouped attrs.
 	newRecord := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
 	newRecord.AddAttrs(slog.String("trace_id", traceID))
+	if spanID != "" {
+		newRecord.AddAttrs(slog.String("span_id", spanID))
+	}
 	newRecord.AddAttrs(grouped)
 
 	return h.base.Handle(ctx, newRecord)

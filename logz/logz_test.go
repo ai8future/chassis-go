@@ -5,9 +5,18 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
+
+	chassis "github.com/ai8future/chassis-go"
+	"go.opentelemetry.io/otel/trace"
 )
+
+func TestMain(m *testing.M) {
+	chassis.RequireMajor(2)
+	os.Exit(m.Run())
+}
 
 // newTestLogger creates a logger that writes JSON to the provided buffer
 // at the specified level, with trace ID injection via traceHandler.
@@ -195,5 +204,50 @@ func TestWithGroupPreservesTraceHandler(t *testing.T) {
 	}
 	if v, _ := grp["k"].(string); v != "v" {
 		t.Errorf("expected grp.k=%q, got %v", "v", grp["k"])
+	}
+}
+
+func TestTraceHandlerReadsOTelSpanContext(t *testing.T) {
+	var buf bytes.Buffer
+	inner := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+	logger := slog.New(&traceHandler{inner: inner, base: inner})
+
+	traceIDHex, _ := trace.TraceIDFromHex("4bf92f3577b34da6a3ce929d0e0e4736")
+	spanIDHex, _ := trace.SpanIDFromHex("00f067aa0ba902b7")
+	sc := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    traceIDHex,
+		SpanID:     spanIDHex,
+		TraceFlags: trace.FlagsSampled,
+	})
+	ctx := trace.ContextWithSpanContext(context.Background(), sc)
+
+	logger.InfoContext(ctx, "otel traced message")
+
+	var entry map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nraw: %s", err, buf.String())
+	}
+
+	if v, _ := entry["trace_id"].(string); v != "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Errorf("expected trace_id=%q, got %v", "4bf92f3577b34da6a3ce929d0e0e4736", entry["trace_id"])
+	}
+	if v, _ := entry["span_id"].(string); v != "00f067aa0ba902b7" {
+		t.Errorf("expected span_id=%q, got %v", "00f067aa0ba902b7", entry["span_id"])
+	}
+}
+
+func TestTraceHandlerOmitsFieldsWithNoSpan(t *testing.T) {
+	var buf bytes.Buffer
+	inner := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+	logger := slog.New(&traceHandler{inner: inner, base: inner})
+
+	logger.InfoContext(context.Background(), "no span context")
+
+	raw := buf.String()
+	if strings.Contains(raw, "trace_id") {
+		t.Errorf("expected no trace_id in output, got: %s", raw)
+	}
+	if strings.Contains(raw, "span_id") {
+		t.Errorf("expected no span_id in output, got: %s", raw)
 	}
 }
