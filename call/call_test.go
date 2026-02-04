@@ -3,12 +3,27 @@ package call
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	chassis "github.com/ai8future/chassis-go"
+	otelapi "go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
+
+func TestMain(m *testing.M) {
+	chassis.RequireMajor(2)
+	os.Exit(m.Run())
+}
 
 // ---------- helpers ----------
 
@@ -260,6 +275,51 @@ func TestSingletonBreakers(t *testing.T) {
 	}
 }
 
+func TestResponseBodyReadableAfterDo(t *testing.T) {
+	// Regression: Do() used defer cancel() on its internal context, which
+	// cancelled the response body's context before the caller could read it.
+	// The server streams the body slowly so it cannot be fully buffered before
+	// Do() returns.
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "no flusher", 500)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		// Write chunks with delays so the body is still streaming after Do() returns.
+		for i := range 5 {
+			fmt.Fprintf(w, "chunk-%d\n", i)
+			flusher.Flush()
+			time.Sleep(20 * time.Millisecond)
+		}
+	}))
+	defer srv.Close()
+
+	c := New(WithTimeout(5 * time.Second))
+	// Do NOT set a deadline on the request — this triggers the buggy code path
+	// where Do() creates its own context.WithTimeout and defers cancel().
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// This read fails with context.Canceled if defer cancel() fires too early.
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read response body after Do() returned: %v", err)
+	}
+
+	expected := "chunk-0\nchunk-1\nchunk-2\nchunk-3\nchunk-4\n"
+	if string(body) != expected {
+		t.Fatalf("expected body %q, got %q", expected, string(body))
+	}
+}
+
 func TestTimeoutEnforcement(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Sleep longer than the client timeout.
@@ -282,5 +342,72 @@ func TestTimeoutEnforcement(t *testing.T) {
 	// Should have taken roughly the timeout duration, not the full 500ms.
 	if elapsed > 300*time.Millisecond {
 		t.Fatalf("request took too long (%v), timeout not enforced", elapsed)
+	}
+}
+
+func TestDoPropagatestraceparentHeader(t *testing.T) {
+	// Set up in-memory span exporter with TracerProvider.
+	exporter := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSyncer(exporter),
+	)
+	defer tp.Shutdown(context.Background())
+
+	// Set global provider and propagator.
+	prevTP := otelapi.GetTracerProvider()
+	prevProp := otelapi.GetTextMapPropagator()
+	otelapi.SetTracerProvider(tp)
+	otelapi.SetTextMapPropagator(propagation.TraceContext{})
+	defer func() {
+		otelapi.SetTracerProvider(prevTP)
+		otelapi.SetTextMapPropagator(prevProp)
+	}()
+
+	// Create a test HTTP server that captures the traceparent header.
+	var captured string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured = r.Header.Get("traceparent")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Create a parent span context to propagate.
+	tracer := tp.Tracer("test")
+	ctx, parentSpan := tracer.Start(context.Background(), "parent-op")
+	defer parentSpan.End()
+
+	c := New(WithTimeout(5 * time.Second))
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/test-path", nil)
+
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	resp.Body.Close()
+
+	// Verify traceparent header was set on the outbound request.
+	if captured == "" {
+		t.Fatal("expected traceparent header to be set on outbound request")
+	}
+	// traceparent format: version-traceID-spanID-flags
+	parts := strings.Split(captured, "-")
+	if len(parts) != 4 {
+		t.Fatalf("expected 4 parts in traceparent, got %d: %s", len(parts), captured)
+	}
+
+	// Force flush to ensure spans are exported.
+	tp.ForceFlush(context.Background())
+
+	// Verify a client span was created (SpanKindClient).
+	spans := exporter.GetSpans()
+	var found bool
+	for _, s := range spans {
+		if s.SpanKind == trace.SpanKindClient {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected a SpanKindClient span to be created")
 	}
 }

@@ -2,9 +2,33 @@ package call
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"time"
+
+	chassis "github.com/ai8future/chassis-go"
+	otelapi "go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
+
+const tracerName = "github.com/ai8future/chassis-go/call"
+
+// cancelBody wraps a response body so that a context cancel function is called
+// when the body is closed, rather than when Do() returns. This prevents
+// premature context cancellation from interrupting callers reading the body.
+type cancelBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (b *cancelBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.cancel()
+	return err
+}
 
 // Client is a resilient HTTP client that wraps the standard http.Client with
 // optional retry, circuit breaker, and timeout middleware. Construct one using
@@ -22,6 +46,7 @@ type Option func(*Client)
 // New creates a Client with the given options applied. Without options it
 // behaves like a default http.Client with a 30-second timeout.
 func New(opts ...Option) *Client {
+	chassis.AssertVersionChecked()
 	c := &Client{
 		httpClient: &http.Client{},
 		timeout:    30 * time.Second,
@@ -74,16 +99,32 @@ func WithBreaker(b Breaker) Option {
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	// Ensure the request always has a context with a deadline.
 	ctx := req.Context()
+	var cancel context.CancelFunc
 	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, c.timeout)
-		defer cancel()
 		req = req.WithContext(ctx)
 	}
+
+	// OTel: create client span and inject trace headers.
+	tracer := otelapi.GetTracerProvider().Tracer(tracerName)
+	ctx, span := tracer.Start(ctx, req.Method+" "+req.URL.Path,
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("http.method", req.Method),
+			attribute.String("http.url", req.URL.String()),
+			attribute.String("server.address", req.URL.Host),
+		),
+	)
+	req = req.WithContext(ctx)
+	otelapi.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 	// Circuit breaker gate — reject early if open.
 	if c.breaker != nil {
 		if err := c.breaker.Allow(); err != nil {
+			span.End()
+			if cancel != nil {
+				cancel()
+			}
 			return nil, err
 		}
 	}
@@ -106,6 +147,28 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	if c.breaker != nil {
 		success := err == nil && resp != nil && resp.StatusCode < 500
 		c.breaker.Record(success)
+	}
+
+	// OTel: record result on the client span.
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	} else if resp != nil {
+		span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
+		if resp.StatusCode >= 400 {
+			span.SetStatus(codes.Error, http.StatusText(resp.StatusCode))
+		}
+	}
+	span.End()
+
+	// If we created a cancel func, attach it to the response body so the
+	// context lives until the caller closes the body. On error, cancel now.
+	if cancel != nil {
+		if err != nil || resp == nil {
+			cancel()
+		} else {
+			resp.Body = &cancelBody{ReadCloser: resp.Body, cancel: cancel}
+		}
 	}
 
 	return resp, err
