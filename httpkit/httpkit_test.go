@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ai8future/chassis-go/errors"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -265,5 +266,34 @@ func TestTracingMiddlewarePropagatesIncomingTrace(t *testing.T) {
 	traceID := spans[0].SpanContext.TraceID().String()
 	if traceID != "4bf92f3577b34da6a3ce929d0e0e4736" {
 		t.Fatalf("expected trace ID %q, got %q", "4bf92f3577b34da6a3ce929d0e0e4736", traceID)
+	}
+}
+
+func TestJSONProblemWritesRFC9457(t *testing.T) {
+	req := httptest.NewRequest("POST", "/api/users", nil)
+	rec := httptest.NewRecorder()
+
+	svcErr := errors.ValidationError("email is invalid").
+		WithDetail("field", "email")
+	JSONProblem(rec, req, svcErr)
+
+	if rec.Code != 400 {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	ct := rec.Header().Get("Content-Type")
+	if ct != "application/problem+json" {
+		t.Fatalf("Content-Type = %q, want application/problem+json", ct)
+	}
+
+	var pd map[string]any
+	json.NewDecoder(rec.Body).Decode(&pd)
+	if pd["type"] != "https://chassis.ai8future.com/errors/validation" {
+		t.Errorf("type = %v", pd["type"])
+	}
+	if pd["detail"] != "email is invalid" {
+		t.Errorf("detail = %v", pd["detail"])
+	}
+	if pd["instance"] != "/api/users" {
+		t.Errorf("instance = %v", pd["instance"])
 	}
 }
