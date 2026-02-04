@@ -9,6 +9,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	otelapi "go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestRequestID_SetsHeader(t *testing.T) {
@@ -206,5 +211,59 @@ func TestMiddlewareChain(t *testing.T) {
 	output := buf.String()
 	if !strings.Contains(output, "/chain") {
 		t.Errorf("expected /chain in log output:\n%s", output)
+	}
+}
+
+func TestTracingMiddlewareCreatesSpan(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSyncer(exporter),
+	)
+	defer func() { _ = tp.Shutdown(context.Background()) }()
+	otelapi.SetTracerProvider(tp)
+
+	handler := Tracing()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/hello", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	spans := exporter.GetSpans()
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(spans))
+	}
+	if spans[0].Name != "GET /hello" {
+		t.Fatalf("expected span name %q, got %q", "GET /hello", spans[0].Name)
+	}
+}
+
+func TestTracingMiddlewarePropagatesIncomingTrace(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSyncer(exporter),
+	)
+	defer func() { _ = tp.Shutdown(context.Background()) }()
+	otelapi.SetTracerProvider(tp)
+	otelapi.SetTextMapPropagator(propagation.TraceContext{})
+
+	handler := Tracing()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/trace", nil)
+	// W3C traceparent: version-traceID-spanID-flags
+	req.Header.Set("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	spans := exporter.GetSpans()
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(spans))
+	}
+	traceID := spans[0].SpanContext.TraceID().String()
+	if traceID != "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Fatalf("expected trace ID %q, got %q", "4bf92f3577b34da6a3ce929d0e0e4736", traceID)
 	}
 }
