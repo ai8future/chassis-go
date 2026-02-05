@@ -2,9 +2,13 @@ package call
 
 import (
 	"context"
+	"io"
 	"math/rand/v2"
 	"net/http"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Retrier provides retry logic with exponential backoff and jitter for
@@ -38,6 +42,10 @@ func (r *Retrier) Do(ctx context.Context, fn func() (*http.Response, error)) (*h
 			}
 			// Network-level error — worth retrying.
 			if attempt < r.MaxAttempts-1 {
+				trace.SpanFromContext(ctx).AddEvent("retry", trace.WithAttributes(
+					attribute.Int("attempt", attempt+1),
+					attribute.String("reason", "network_error"),
+				))
 				if waitErr := r.backoff(ctx, attempt); waitErr != nil {
 					return nil, waitErr
 				}
@@ -53,7 +61,12 @@ func (r *Retrier) Do(ctx context.Context, fn func() (*http.Response, error)) (*h
 
 		// 5xx — retry if we have attempts remaining.
 		if attempt < r.MaxAttempts-1 {
-			// Drain and close the body so the connection can be reused.
+			trace.SpanFromContext(ctx).AddEvent("retry", trace.WithAttributes(
+				attribute.Int("attempt", attempt+1),
+				attribute.Int("http.status_code", resp.StatusCode),
+			))
+			// Drain and close the body so the underlying connection can be reused.
+			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 			if waitErr := r.backoff(ctx, attempt); waitErr != nil {
 				return nil, waitErr

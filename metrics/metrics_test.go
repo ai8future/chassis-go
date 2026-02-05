@@ -5,181 +5,138 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
-	"net/http/httptest"
-	"strings"
+	"os"
 	"testing"
+
+	chassis "github.com/ai8future/chassis-go"
+	"go.opentelemetry.io/otel"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
-func TestRecordAndScrape(t *testing.T) {
-	logger := slog.Default()
-	rec := New("testsvc", logger)
+func TestMain(m *testing.M) {
+	chassis.RequireMajor(4)
+	os.Exit(m.Run())
+}
 
-	rec.RecordRequest("GET", "200", 50, 1024)
-	rec.RecordRequest("POST", "201", 120, 2048)
-	rec.RecordRequest("GET", "500", 5000, 0)
+// setupTestMeter installs a ManualReader-backed MeterProvider and returns
+// a collect function that snapshots all recorded metrics.
+func setupTestMeter(t *testing.T) func() metricdata.ResourceMetrics {
+	t.Helper()
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	otel.SetMeterProvider(mp)
+	t.Cleanup(func() { mp.Shutdown(context.Background()) })
 
-	handler := rec.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	body := w.Body.String()
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-
-	// Verify counter appears
-	if !strings.Contains(body, "testsvc_requests_total") {
-		t.Error("expected testsvc_requests_total in output")
-	}
-
-	// Verify histogram appears
-	if !strings.Contains(body, "testsvc_request_duration_seconds") {
-		t.Error("expected testsvc_request_duration_seconds in output")
-	}
-
-	if !strings.Contains(body, "testsvc_content_size_bytes") {
-		t.Error("expected testsvc_content_size_bytes in output")
+	return func() metricdata.ResourceMetrics {
+		var rm metricdata.ResourceMetrics
+		if err := reader.Collect(context.Background(), &rm); err != nil {
+			t.Fatalf("Collect failed: %v", err)
+		}
+		return rm
 	}
 }
 
-func TestHandlerComposable(t *testing.T) {
-	rec := New("demosvc", nil)
-
-	// Mount alongside other handlers
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", rec.Handler())
-	mux.HandleFunc("/custom", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "custom")
-	})
-
-	// Test /metrics
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("/metrics returned %d", w.Code)
+// findMetric searches ResourceMetrics for a metric by name.
+func findMetric(rm metricdata.ResourceMetrics, name string) *metricdata.Metrics {
+	for _, sm := range rm.ScopeMetrics {
+		for i := range sm.Metrics {
+			if sm.Metrics[i].Name == name {
+				return &sm.Metrics[i]
+			}
+		}
 	}
+	return nil
+}
 
-	// Test /custom
-	req2 := httptest.NewRequest(http.MethodGet, "/custom", nil)
-	w2 := httptest.NewRecorder()
-	mux.ServeHTTP(w2, req2)
-	if w2.Body.String() != "custom" {
-		t.Fatalf("expected 'custom', got %q", w2.Body.String())
+func TestRecordAndCollect(t *testing.T) {
+	collect := setupTestMeter(t)
+	rec := New("testsvc", slog.Default())
+
+	ctx := context.Background()
+	rec.RecordRequest(ctx, "GET", "200", 50, 1024)
+	rec.RecordRequest(ctx, "POST", "201", 120, 2048)
+	rec.RecordRequest(ctx, "GET", "500", 5000, 0)
+
+	rm := collect()
+
+	if m := findMetric(rm, "testsvc_requests_total"); m == nil {
+		t.Error("expected testsvc_requests_total in collected metrics")
+	}
+	if m := findMetric(rm, "testsvc_request_duration_seconds"); m == nil {
+		t.Error("expected testsvc_request_duration_seconds in collected metrics")
+	}
+	if m := findMetric(rm, "testsvc_content_size_bytes"); m == nil {
+		t.Error("expected testsvc_content_size_bytes in collected metrics")
 	}
 }
 
 func TestCardinalityLimit(t *testing.T) {
+	collect := setupTestMeter(t)
 	rec := New("cardsvc", nil)
 
+	ctx := context.Background()
 	// Fill up to the limit
 	for i := range MaxLabelCombinations {
-		rec.RecordRequest("GET", fmt.Sprintf("status_%d", i), 10, 100)
+		rec.RecordRequest(ctx, "GET", fmt.Sprintf("status_%d", i), 10, 100)
 	}
 
 	// The next new combination should be dropped (no panic, no error)
-	rec.RecordRequest("GET", "overflow_status", 10, 100)
+	rec.RecordRequest(ctx, "GET", "overflow_status", 10, 100)
 
-	// Verify metrics still serve
-	handler := rec.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-}
-
-func TestStartServerHealthEndpoint(t *testing.T) {
-	logger := slog.Default()
-	rec := New("healthtest", logger)
-
-	checks := map[string]HealthCheck{
-		"self": func(_ context.Context) error { return nil },
-	}
-
-	srv, err := rec.StartServer(0, logger, checks)
-	if err != nil {
-		t.Fatalf("StartServer error: %v", err)
-	}
-	defer srv.Close()
-
-	// Get the actual port
-	// Since port 0 isn't directly accessible from http.Server, let's test via httptest instead
-	mux := http.NewServeMux()
-	mux.Handle("GET /metrics", rec.Handler())
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"status":"healthy"}`)
-	})
-
-	ts := httptest.NewServer(mux)
-	defer ts.Close()
-
-	resp, err := http.Get(ts.URL + "/health")
-	if err != nil {
-		t.Fatalf("health request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "healthy") {
-		t.Errorf("expected healthy response, got %q", string(body))
+	// Verify metrics still collect without error
+	rm := collect()
+	if m := findMetric(rm, "cardsvc_requests_total"); m == nil {
+		t.Error("expected cardsvc_requests_total after cardinality overflow")
 	}
 }
 
 func TestRecorderCounter(t *testing.T) {
+	_ = setupTestMeter(t)
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	r := New("test", logger)
-	counter := r.Counter("searches_total", "type")
+	counter := r.Counter("searches_total")
 	if counter == nil {
 		t.Fatal("Counter returned nil")
 	}
-	counter.Add(1, "type", "organic")
-	counter.Add(3, "type", "paid")
+	ctx := context.Background()
+	counter.Add(ctx, 1, "type", "organic")
+	counter.Add(ctx, 3, "type", "paid")
 }
 
 func TestRecorderHistogram(t *testing.T) {
+	_ = setupTestMeter(t)
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	r := New("test", logger)
-	hist := r.Histogram("pdf_size_bytes", ContentBuckets, "format")
+	hist := r.Histogram("pdf_size_bytes", ContentBuckets)
 	if hist == nil {
 		t.Fatal("Histogram returned nil")
 	}
-	hist.Observe(524288, "format", "pdf")
-	hist.Observe(1024, "format", "png")
+	ctx := context.Background()
+	hist.Observe(ctx, 524288, "format", "pdf")
+	hist.Observe(ctx, 1024, "format", "png")
 }
 
-func TestCustomMetricsAppearInHandler(t *testing.T) {
+func TestCustomMetricsAppearInCollect(t *testing.T) {
+	collect := setupTestMeter(t)
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	r := New("app", logger)
-	counter := r.Counter("events_total", "kind")
-	counter.Add(5, "kind", "click")
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/metrics", nil)
-	r.Handler().ServeHTTP(rec, req)
-	body := rec.Body.String()
-	if !strings.Contains(body, "app_events_total") {
-		t.Fatal("custom counter not in /metrics output")
+	counter := r.Counter("events_total")
+	counter.Add(context.Background(), 5, "kind", "click")
+
+	rm := collect()
+	if m := findMetric(rm, "app_events_total"); m == nil {
+		t.Fatal("custom counter not in collected metrics")
 	}
 }
 
 func TestMetricPrefix(t *testing.T) {
+	collect := setupTestMeter(t)
 	rec := New("custom_prefix", nil)
-	rec.RecordRequest("GET", "200", 10, 100)
+	rec.RecordRequest(context.Background(), "GET", "200", 10, 100)
 
-	handler := rec.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	body := w.Body.String()
-	if !strings.Contains(body, "custom_prefix_requests_total") {
-		t.Error("expected custom_prefix_requests_total in output")
+	rm := collect()
+	if m := findMetric(rm, "custom_prefix_requests_total"); m == nil {
+		t.Error("expected custom_prefix_requests_total in collected metrics")
 	}
 }

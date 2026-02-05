@@ -11,24 +11,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// traceIDKey is the unexported context key used to store trace IDs.
-type traceIDKey struct{}
-
-// WithTraceID stores a trace ID in the given context.
-func WithTraceID(ctx context.Context, traceID string) context.Context {
-	return context.WithValue(ctx, traceIDKey{}, traceID)
-}
-
-// TraceIDFrom retrieves the trace ID from the context.
-// Returns an empty string if no trace ID is present.
-func TraceIDFrom(ctx context.Context) string {
-	v, ok := ctx.Value(traceIDKey{}).(string)
-	if !ok {
-		return ""
-	}
-	return v
-}
-
 // New creates a structured JSON logger at the given level.
 // Accepted levels are "debug", "info", "warn", "error" (case-insensitive).
 // Unrecognized levels default to "info".
@@ -75,25 +57,18 @@ func (h *traceHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return h.inner.Enabled(ctx, level)
 }
 
-// Handle extracts trace information from the context and, if present, adds
-// "trace_id" and "span_id" attributes to the record before delegating.
-//
-// It reads from the OTel span context first. If no valid OTel span is found,
-// it falls back to the legacy manual trace ID (WithTraceID/TraceIDFrom).
+// Handle extracts trace information from the OTel span context and, if present,
+// adds "trace_id" and "span_id" attributes to the record before delegating.
 //
 // When groups are active, the record is reconstructed so that trace_id and
 // span_id appear at the top level while other attributes remain nested.
 func (h *traceHandler) Handle(ctx context.Context, r slog.Record) error {
 	var traceID, spanID string
 
-	// Primary: read from OTel span context.
 	sc := trace.SpanContextFromContext(ctx)
 	if sc.IsValid() {
 		traceID = sc.TraceID().String()
 		spanID = sc.SpanID().String()
-	} else {
-		// Fallback: legacy manual trace ID (deprecated, for migration).
-		traceID = TraceIDFrom(ctx)
 	}
 
 	if traceID == "" {

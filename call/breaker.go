@@ -22,6 +22,8 @@ const (
 	StateOpen
 	// StateHalfOpen allows a single probe request through.
 	StateHalfOpen
+	// stateProbing means a half-open probe is in-flight; reject all others.
+	stateProbing
 )
 
 // Breaker defines the circuit breaker behavior. Consumers can provide their
@@ -42,7 +44,6 @@ var breakers sync.Map
 // giving the downstream service time to recover.
 type CircuitBreaker struct {
 	mu           sync.Mutex
-	name         string
 	state        State
 	failures     int
 	threshold    int
@@ -59,7 +60,6 @@ func GetBreaker(name string, threshold int, resetTimeout time.Duration) *Circuit
 	}
 
 	cb := &CircuitBreaker{
-		name:         name,
 		state:        StateClosed,
 		threshold:    threshold,
 		resetTimeout: resetTimeout,
@@ -81,17 +81,14 @@ func (cb *CircuitBreaker) Allow() error {
 
 	case StateOpen:
 		if time.Since(cb.lastFailure) >= cb.resetTimeout {
-			cb.state = StateHalfOpen
+			cb.state = stateProbing
 			return nil
 		}
 		return ErrCircuitOpen
 
-	case StateHalfOpen:
-		// Only one probe request is allowed; subsequent callers while the
-		// probe is in-flight are rejected. The first caller to reach
-		// half-open proceeds (handled by the state transition in the Open
-		// case above), so if we're already in HalfOpen we allow it.
-		return nil
+	case StateHalfOpen, stateProbing:
+		// A probe is already in-flight; reject until it completes.
+		return ErrCircuitOpen
 	}
 
 	return nil
@@ -115,7 +112,7 @@ func (cb *CircuitBreaker) Record(success bool) {
 			cb.state = StateOpen
 		}
 
-	case StateHalfOpen:
+	case StateHalfOpen, stateProbing:
 		if success {
 			cb.state = StateClosed
 			cb.failures = 0
@@ -126,10 +123,14 @@ func (cb *CircuitBreaker) Record(success bool) {
 	}
 }
 
-// State returns the current state of the circuit breaker.
+// State returns the current state of the circuit breaker. The internal probing
+// state is reported as StateHalfOpen to external consumers.
 func (cb *CircuitBreaker) State() State {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
+	if cb.state == stateProbing {
+		return StateHalfOpen
+	}
 	return cb.state
 }
 

@@ -30,7 +30,7 @@ Every service must declare which major version of chassis it supports. This prev
 
 ```go
 func main() {
-    chassis.RequireMajor(3) // crashes if chassis major version != 3
+    chassis.RequireMajor(4) // crashes if chassis major version != 4
     // ... rest of startup
 }
 ```
@@ -48,6 +48,7 @@ import (
     "github.com/ai8future/chassis-go/health"
     "github.com/ai8future/chassis-go/httpkit"
     "github.com/ai8future/chassis-go/lifecycle"
+    "github.com/ai8future/chassis-go/work"
     "github.com/ai8future/chassis-go/logz"
     "github.com/ai8future/chassis-go/metrics"
     "github.com/ai8future/chassis-go/secval"
@@ -164,9 +165,9 @@ json.Unmarshal(body, &req) // safe to unmarshal now
 
 ---
 
-### metrics — Prometheus metrics
+### metrics — OTel metrics with cardinality protection
 
-**When to use**: You want to expose Prometheus metrics with built-in request recording and cardinality protection.
+**When to use**: You want structured metrics with built-in request recording and cardinality protection. Metrics flow out via OTLP push — no scrape endpoint required.
 
 ```go
 import "github.com/ai8future/chassis-go/metrics"
@@ -175,16 +176,14 @@ import "github.com/ai8future/chassis-go/metrics"
 recorder := metrics.New("mysvc", logger)
 
 // Record request metrics
-recorder.RecordRequest("POST", "200", 42.5, 1024)
+recorder.RecordRequest(ctx, "POST", "200", 42.5, 1024)
 
-// Compose onto admin port alongside health checks
-adminMux := http.NewServeMux()
-adminMux.Handle("/metrics", recorder.Handler())
-adminMux.Handle("/health", health.Handler(checks))
+// Create custom counters and histograms
+counter := recorder.Counter("searches_total")
+counter.Add(ctx, 1, "type", "organic")
 
-// Or use the convenience wrapper that serves both
-srv, err := recorder.StartServer(9090, logger, healthChecks)
-defer srv.Shutdown(context.Background())
+hist := recorder.Histogram("pdf_size_bytes", metrics.ContentBuckets)
+hist.Observe(ctx, 524288, "format", "pdf")
 ```
 
 **What it records per `RecordRequest` call**:
@@ -193,10 +192,82 @@ defer srv.Shutdown(context.Background())
 - `{prefix}_content_size_bytes{method}` — Histogram
 
 **Integration notes**:
+- Requires `otel.Init()` to be called first to configure the OTLP metric exporter. Without it, metrics are recorded to the no-op global meter.
 - Cardinality protection: max 1000 label combinations per metric. On overflow, new combinations are silently dropped and a warning is logged once.
 - The metric prefix is caller-supplied — use your service name.
-- `Handler()` returns an `http.Handler` you can mount anywhere. `StartServer()` is a convenience wrapper that also mounts a `/health` endpoint.
-- Uses `prometheus/client_golang` (new dependency in v2.0).
+- Uses OpenTelemetry metric API — no Prometheus dependency.
+
+---
+
+### otel — OpenTelemetry bootstrap
+
+**When to use**: You want distributed tracing and metrics export via OTLP. This is the single SDK consumer — all other chassis modules depend only on OTel API packages.
+
+```go
+import otelinit "github.com/ai8future/chassis-go/otel"
+
+shutdown := otelinit.Init(otelinit.Config{
+    ServiceName:    "mysvc",
+    ServiceVersion: chassis.Version,
+    Endpoint:       "otel-collector:4317", // defaults to localhost:4317
+    Sampler:        otelinit.RatioSample(0.1), // defaults to AlwaysSample
+})
+defer shutdown(context.Background())
+```
+
+**Behavior**:
+- Configures OTLP gRPC trace and metric exporters.
+- Sets the global `TracerProvider`, `MeterProvider`, and `TextMapPropagator` (W3C TraceContext + Baggage).
+- Degrades gracefully — if the exporter can't connect, tracing and metrics become no-ops rather than crashing.
+- Returns a `ShutdownFunc` that drains pending spans/metrics on process exit.
+
+**Utilities**:
+- `otel.DetachContext(ctx)` — returns a new `context.Background()` that preserves the OTel span context but detaches cancellation. Use when spawning background goroutines from request handlers.
+- `otel.AlwaysSample()` — samples every trace (default).
+- `otel.RatioSample(fraction)` — samples a fraction of traces by trace ID.
+
+**Integration notes**:
+- Call `otel.Init()` early in `main()`, after `config.MustLoad` and `logz.New`, but before creating middleware or metrics recorders.
+- Without `otel.Init()`, all tracing and metrics across chassis are no-ops — `httpkit.Tracing()`, `grpckit.UnaryTracing()`, `call.Do`, `work.Map`, and `metrics.RecordRequest` all degrade gracefully.
+- The shutdown function should be deferred in `main()` to ensure spans and metrics are flushed before exit.
+
+---
+
+### guard — Request guards
+
+**When to use**: You need request-level protection — enforcing timeouts, rate limits, or body size limits as HTTP middleware.
+
+```go
+import "github.com/ai8future/chassis-go/guard"
+
+// Timeout — returns 504 if handler doesn't complete in time
+handler = guard.Timeout(10 * time.Second)(handler)
+
+// Rate limiting — per-key token bucket
+handler = guard.RateLimit(guard.RateLimitConfig{
+    Rate:    100,
+    Window:  time.Minute,
+    KeyFunc: guard.RemoteAddr(),
+})(handler)
+
+// Body size limit — rejects oversized payloads
+handler = guard.MaxBody(2 * 1024 * 1024)(handler) // 2MB max
+```
+
+**Available middleware**:
+- `guard.Timeout(d)` — sets context deadline, buffers response, returns 504 Gateway Timeout with RFC 9457 Problem Details if deadline fires.
+- `guard.RateLimit(cfg)` — per-key token bucket rate limiting. Returns 429 Too Many Requests with Problem Details on limit exceeded.
+- `guard.MaxBody(maxBytes)` — rejects requests with `Content-Length` exceeding the limit with 413 Payload Too Large. Wraps the body with `http.MaxBytesReader` as a safety net.
+
+**Key extraction functions**:
+- `guard.RemoteAddr()` — uses the request's remote address (without port).
+- `guard.XForwardedFor(trustedCIDRs...)` — reads client IP from `X-Forwarded-For`, falling back to `RemoteAddr` if the immediate peer is not in a trusted CIDR range.
+- `guard.HeaderKey(header)` — uses the value of any request header as the rate limit key.
+
+**Integration notes**:
+- Place `Timeout` inside `Recovery` but outside `Logging` so timeouts are caught and logged properly.
+- Rate limit state is in-memory per process. In multi-replica deployments, each replica enforces its own limit.
+- All guard middleware returns RFC 9457 Problem Details JSON on rejection for consistency with `httpkit.JSONError`.
 
 ---
 
@@ -207,16 +278,16 @@ defer srv.Shutdown(context.Background())
 ```go
 logger := logz.New("info") // "debug", "info", "warn", "error"
 
-// Propagate trace IDs through context
-ctx := logz.WithTraceID(ctx, "abc-123")
+// Trace IDs are injected automatically from OTel span context.
+// Use httpkit.Tracing() or grpckit.UnaryTracing() to set up spans at ingress.
 logger.InfoContext(ctx, "handling request", "path", "/api/users")
-// Output includes: {"trace_id":"abc-123", "msg":"handling request", ...}
+// Output includes: {"trace_id":"...", "span_id":"...", "msg":"handling request", ...}
 ```
 
 **Integration notes**:
 - `logz.New` returns a standard `*slog.Logger`. Every package in your codebase that accepts `*slog.Logger` works with it unchanged.
 - If you already have a logger, you can use chassis packages that accept `*slog.Logger` with your own logger instance. There is no coupling to `logz`.
-- Trace ID propagation works through context. Set it once at your HTTP/gRPC ingress point and it flows through all downstream log calls that use `Context` variants.
+- Trace IDs are read automatically from the OTel span context. Use `httpkit.Tracing()` or `grpckit.UnaryTracing()` middleware at your ingress point — downstream log calls that use `InfoContext`/`ErrorContext` will include `trace_id` and `span_id` automatically.
 
 ---
 
@@ -255,6 +326,7 @@ err := lifecycle.Run(context.Background(),
 - Catches SIGTERM and SIGINT, cancels the shared context.
 - If any component returns an error, all others are signalled to stop.
 - Uses `errgroup` under the hood — returns the first non-nil error.
+- `Run` accepts `Component` values or bare `func(ctx context.Context) error` functions. Non-component arguments are silently ignored.
 
 **Integration notes**:
 - Every component function **must** watch `ctx.Done()`. A component that ignores the context will block shutdown indefinitely.
@@ -286,48 +358,49 @@ http.ListenAndServe(":8080", handler)
 - `httpkit.RequestID` — generates a UUID v4 request ID, sets `X-Request-ID` header, stores in context.
 - `httpkit.Logging(logger)` — logs method, path, status, duration per request.
 - `httpkit.Recovery(logger)` — catches panics, logs with stack trace, returns 500 JSON error.
+- `httpkit.Tracing()` — creates OTel spans for each request, extracting W3C TraceContext from incoming headers. Requires `otel.Init()` for real spans; no-op otherwise.
 
 **Utilities**:
-- `httpkit.JSONError(w, r, statusCode, message)` — writes a standard `{"error": "...", "status_code": N, "request_id": "..."}` response.
+- `httpkit.JSONError(w, r, statusCode, message)` — writes an RFC 9457 Problem Details JSON response (`{"type": "...", "title": "...", "status": N, "detail": "...", "instance": "/path"}`). When a request ID is present in context, it appears as a top-level `request_id` extension member per RFC 9457.
+- `httpkit.JSONProblem(w, r, serviceError)` — writes a `ServiceError` directly as RFC 9457 Problem Details.
 - `httpkit.RequestIDFrom(ctx)` — retrieves the request ID from context (useful in your handlers).
 
 **Integration notes**:
 - These are standard `func(http.Handler) http.Handler` middleware. They compose with any router (chi, gorilla/mux, stdlib ServeMux).
 - The `responseWriter` wrapper implements `Unwrap()`, so `http.NewResponseController` can still access `Flusher` and `Hijacker` on the underlying writer. SSE and WebSocket upgrades work through the middleware stack.
-- Recommended middleware order (outermost first): Recovery → RequestID → Logging → your routes. Recovery should be outermost so it catches panics from all other middleware.
+- Recommended middleware order (outermost first): Recovery → Tracing → RequestID → Logging → your routes. Recovery should be outermost so it catches panics from all other middleware.
 
 ---
 
 ### grpckit — gRPC interceptors
 
-**When to use**: You run a gRPC server and want logging, panic recovery, and health check wiring.
+**When to use**: You run a gRPC server and want logging, panic recovery, metrics, tracing, and health check wiring.
 
 ```go
 srv := grpc.NewServer(
     grpc.ChainUnaryInterceptor(
         grpckit.UnaryRecovery(logger),
+        grpckit.UnaryTracing(),
         grpckit.UnaryLogging(logger),
-        grpckit.UnaryMetrics(logger),
+        grpckit.UnaryMetrics(),
     ),
     grpc.ChainStreamInterceptor(
         grpckit.StreamRecovery(logger),
+        grpckit.StreamTracing(),
         grpckit.StreamLogging(logger),
-        grpckit.StreamMetrics(logger),
+        grpckit.StreamMetrics(),
     ),
 )
 
 // Wire up standard gRPC health check
-grpckit.RegisterHealth(srv, func(ctx context.Context) error {
-    _, err := healthChecker(ctx)
-    return err
-})
+grpckit.RegisterHealth(srv, health.CheckFunc(checks))
 ```
 
 **Integration notes**:
 - Recovery interceptors log the panic value **and full stack trace**, then return `codes.Internal`.
 - Place recovery interceptors first in the chain so they catch panics from all downstream interceptors and handlers.
 - `grpckit.RegisterHealth` decouples gRPC from the `health` package. It accepts any `func(ctx context.Context) error` — you can wire in your own health logic without importing `health`.
-- The metrics interceptors are placeholders that log at Debug level. Replace the function bodies with your metrics library (Prometheus, OpenTelemetry, etc.).
+- The metrics interceptors record per-RPC OTel histograms (`grpc_server_duration_seconds`) using the configured `otel.MeterProvider`.
 
 ---
 
@@ -354,7 +427,7 @@ results, err := runAll(ctx)
 ```
 
 **Behavior**:
-- All checks run in parallel.
+- All checks run in parallel via `work.Map`.
 - Returns 200 + `{"status":"healthy"}` when all pass.
 - Returns 503 + `{"status":"unhealthy","checks":[...]}` when any fail.
 - Individual check failures don't short-circuit other checks.
@@ -362,6 +435,59 @@ results, err := runAll(ctx)
 **Integration notes**:
 - Health checks should be fast. Set timeouts on the context you pass, or use a context with deadline in your check functions.
 - The `health.Check` type is just `func(ctx context.Context) error`. Wrap any existing health check function to match.
+- Use `health.CheckFunc(checks)` to get a simple `func(ctx) error` suitable for passing directly to `grpckit.RegisterHealth`:
+  ```go
+  grpckit.RegisterHealth(srv, health.CheckFunc(checks))
+  ```
+
+---
+
+### work — Structured concurrency
+
+**When to use**: You have fan-out/fan-in workloads — batch processing, parallel dependency checks, racing fallback strategies, or streaming pipelines — and need bounded concurrency with OTel tracing.
+
+```go
+import "github.com/ai8future/chassis-go/work"
+
+// Map: apply a function to each item with bounded concurrency
+results, err := work.Map(ctx, userIDs, func(ctx context.Context, id string) (*User, error) {
+    return fetchUser(ctx, id)
+}, work.Workers(10))
+// results is []User in input order; err is *work.Errors if any failed
+
+// All: run heterogeneous tasks concurrently
+err := work.All(ctx, []func(context.Context) error{
+    func(ctx context.Context) error { return migrateDB(ctx) },
+    func(ctx context.Context) error { return warmCache(ctx) },
+}, work.Workers(3))
+
+// Race: first success wins, remaining tasks cancelled
+result, err := work.Race(ctx,
+    func(ctx context.Context) (string, error) { return fetchFromPrimary(ctx) },
+    func(ctx context.Context) (string, error) { return fetchFromReplica(ctx) },
+)
+
+// Stream: process channel items with bounded concurrency
+out := work.Stream(ctx, inputCh, func(ctx context.Context, item Job) (Result, error) {
+    return process(ctx, item)
+}, work.Workers(5))
+for r := range out {
+    if r.Err != nil { log.Error("failed", "index", r.Index, "err", r.Err) }
+}
+```
+
+**Patterns**:
+- `Map[T, R]` — ordered fan-out/fan-in. Returns `[]R` in input order. On partial failure returns both results and `*work.Errors`.
+- `All` — heterogeneous tasks (no input slice). Returns `*work.Errors` if any fail.
+- `Race[R]` — first success wins, context cancelled for losers. All fail → `*work.Errors`.
+- `Stream[T, R]` — channel-based pipeline. Sends `Result[R]` to output channel as items complete. Output channel closes when input closes and all workers finish.
+
+**Integration notes**:
+- Default worker count is `runtime.NumCPU()`. Override with `work.Workers(n)`.
+- Every function creates an OTel parent span (`work.Map`, `work.All`, `work.Race`, `work.Stream`) with per-item child spans. Span attributes include `work.total`, `work.succeeded`, `work.failed`, and `work.pattern`.
+- If no `TracerProvider` is configured, spans are no-ops — graceful degradation.
+- All functions call `chassis.AssertVersionChecked()` internally. No separate version gate is needed per call, but `RequireMajor(4)` must have been called once at startup.
+- `*work.Errors` implements `Unwrap() []error` for use with `errors.Is`/`errors.As`.
 
 ---
 
@@ -390,6 +516,18 @@ resp, err := client.Do(req)
 - Circuit breakers are singletons keyed by name. If multiple `call.Client` instances use the same breaker name, they share state. Use distinct names for distinct downstream services.
 - If you have a custom circuit breaker (e.g., wrapping sony/gobreaker), implement the `call.Breaker` interface and use `call.WithBreaker(yourBreaker)`.
 - The client returns the raw `*http.Response` — you are responsible for closing the body.
+- **Retry body constraint**: Retries re-send the same `*http.Request`. For requests with a non-nil body, the body must be rewindable (implement `GetBody`) or the retry will send an empty/consumed body. Bodiless requests (GET, DELETE, HEAD) are always safe to retry.
+
+**Batch requests**:
+
+```go
+reqs := []*http.Request{req1, req2, req3}
+responses, err := client.Batch(ctx, reqs, work.Workers(5))
+// responses is []*http.Response in input order
+// err is *work.Errors if any requests failed
+```
+
+`Batch` uses `work.Map` internally — each request goes through the full client pipeline (tracing, circuit breaker, retry).
 
 ---
 
@@ -427,6 +565,7 @@ func TestMyHandler(t *testing.T) {
 
 ```go
 func main() {
+    chassis.RequireMajor(4)
     cfg := config.MustLoad[ServiceConfig]()
     logger := logz.New(cfg.LogLevel)
 
@@ -512,4 +651,4 @@ But the goal is to get to full adoption. Each package is designed with the assum
 
 **secval errors are NOT ServiceError.** `secval.ValidateJSON` returns module-local errors (`ErrDangerousKey`, etc.), not `*errors.ServiceError`. Convert them at the handler boundary with `errors.ValidationError(err.Error())`.
 
-**The toolkit has three external dependencies.** `golang.org/x/sync` (for errgroup), `google.golang.org/grpc` (for grpckit and errors), and `prometheus/client_golang` (for metrics). If you only use Tier 1 packages (config, logz, lifecycle, testkit), only `x/sync` is pulled in.
+**The toolkit has three external dependencies.** `golang.org/x/sync` (for errgroup), `google.golang.org/grpc` (for grpckit and errors), and `go.opentelemetry.io/otel` (for otel, metrics, call, and work). If you only use Tier 1 packages (config, logz, lifecycle, testkit), only `x/sync` is pulled in.

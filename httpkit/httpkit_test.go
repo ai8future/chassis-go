@@ -7,15 +7,22 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
+	chassis "github.com/ai8future/chassis-go"
 	"github.com/ai8future/chassis-go/errors"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+func TestMain(m *testing.M) {
+	chassis.RequireMajor(4)
+	os.Exit(m.Run())
+}
 
 func TestRequestID_SetsHeader(t *testing.T) {
 	handler := RequestID(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -123,13 +130,21 @@ func TestRecovery_CatchesPanic(t *testing.T) {
 		t.Fatalf("expected status 500, got %d", rec.Code)
 	}
 
-	// Verify JSON error body.
-	var errResp ErrorResponse
-	if err := json.NewDecoder(rec.Body).Decode(&errResp); err != nil {
+	// Verify RFC 9457 Problem Details body.
+	var pd map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&pd); err != nil {
 		t.Fatalf("failed to decode error response: %v", err)
 	}
-	if errResp.StatusCode != 500 {
-		t.Fatalf("expected status_code 500 in body, got %d", errResp.StatusCode)
+	if pd["status"] != float64(500) {
+		t.Fatalf("expected status 500 in body, got %v", pd["status"])
+	}
+	if pd["type"] != "https://chassis.ai8future.com/errors/internal" {
+		t.Fatalf("expected internal type URI, got %v", pd["type"])
+	}
+
+	// Verify Content-Type.
+	if ct := rec.Header().Get("Content-Type"); ct != "application/problem+json" {
+		t.Fatalf("expected Content-Type application/problem+json, got %q", ct)
 	}
 
 	// Verify the panic was logged.
@@ -152,22 +167,25 @@ func TestJSONError_Format(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected status 404, got %d", rec.Code)
 	}
-	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("expected Content-Type application/json, got %q", ct)
+	if ct := rec.Header().Get("Content-Type"); ct != "application/problem+json" {
+		t.Fatalf("expected Content-Type application/problem+json, got %q", ct)
 	}
 
-	var errResp ErrorResponse
-	if err := json.NewDecoder(rec.Body).Decode(&errResp); err != nil {
+	var pd map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&pd); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if errResp.Error != "not found" {
-		t.Fatalf("expected error %q, got %q", "not found", errResp.Error)
+	if pd["detail"] != "not found" {
+		t.Fatalf("expected detail %q, got %v", "not found", pd["detail"])
 	}
-	if errResp.StatusCode != 404 {
-		t.Fatalf("expected status_code 404, got %d", errResp.StatusCode)
+	if pd["status"] != float64(404) {
+		t.Fatalf("expected status 404, got %v", pd["status"])
 	}
-	if errResp.RequestID != "test-req-123" {
-		t.Fatalf("expected request_id %q, got %q", "test-req-123", errResp.RequestID)
+	if pd["type"] != "https://chassis.ai8future.com/errors/not-found" {
+		t.Fatalf("expected not-found type URI, got %v", pd["type"])
+	}
+	if pd["request_id"] != "test-req-123" {
+		t.Fatalf("expected request_id as top-level member, got %v", pd["request_id"])
 	}
 }
 
@@ -177,9 +195,11 @@ func TestJSONError_OmitsEmptyRequestID(t *testing.T) {
 
 	JSONError(rec, req, http.StatusBadRequest, "bad request")
 
-	body := rec.Body.String()
-	if strings.Contains(body, "request_id") {
-		t.Fatalf("expected request_id to be omitted, got: %s", body)
+	var pd map[string]any
+	json.NewDecoder(rec.Body).Decode(&pd)
+	// request_id should not be present when empty
+	if _, has := pd["request_id"]; has {
+		t.Fatalf("expected no request_id, got: %v", pd["request_id"])
 	}
 }
 

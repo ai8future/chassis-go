@@ -10,7 +10,7 @@ A composable Go toolkit providing standardized building blocks that services wir
 | `config` | Load env vars into structs via tags. Panic on missing required config. |
 | `logz` | Structured JSON logging wrapping `log/slog` with TraceID extraction. |
 | `lifecycle` | Graceful shutdown orchestration via `errgroup`. |
-| `testkit` | Testing utilities: `NewLogger`, `LoadConfig`, `GetFreePort`. |
+| `testkit` | Testing utilities: `NewLogger`, `SetEnv`, `GetFreePort`. |
 
 ### Tier 2: Transports & Clients
 | Package | Purpose |
@@ -33,10 +33,25 @@ func main() {
 
     lifecycle.Run(context.Background(),
         func(ctx context.Context) error {
-            return httpServer.ListenAndServe()
+            errCh := make(chan error, 1)
+            go func() { errCh <- httpServer.ListenAndServe() }()
+            select {
+            case <-ctx.Done():
+                return httpServer.Shutdown(context.Background())
+            case err := <-errCh:
+                return err
+            }
         },
         func(ctx context.Context) error {
-            return grpcServer.Serve(lis)
+            errCh := make(chan error, 1)
+            go func() { errCh <- grpcServer.Serve(lis) }()
+            select {
+            case <-ctx.Done():
+                grpcServer.GracefulStop()
+                return nil
+            case err := <-errCh:
+                return err
+            }
         },
     )
 }

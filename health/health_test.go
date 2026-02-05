@@ -6,15 +6,42 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	chassis "github.com/ai8future/chassis-go"
 )
+
+func TestMain(m *testing.M) {
+	chassis.RequireMajor(4)
+	os.Exit(m.Run())
+}
 
 // ---------------------------------------------------------------------------
 // All tests
 // ---------------------------------------------------------------------------
+
+func TestCheckFunc_Healthy(t *testing.T) {
+	checks := map[string]Check{
+		"a": func(ctx context.Context) error { return nil },
+		"b": func(ctx context.Context) error { return nil },
+	}
+	if err := CheckFunc(checks)(context.Background()); err != nil {
+		t.Errorf("CheckFunc healthy: unexpected error: %v", err)
+	}
+}
+
+func TestCheckFunc_Unhealthy(t *testing.T) {
+	checks := map[string]Check{
+		"a": func(ctx context.Context) error { return errors.New("fail") },
+	}
+	if err := CheckFunc(checks)(context.Background()); err == nil {
+		t.Error("CheckFunc unhealthy: expected error, got nil")
+	}
+}
 
 func TestAll_AllHealthy(t *testing.T) {
 	checks := map[string]Check{

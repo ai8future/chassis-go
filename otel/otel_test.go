@@ -12,7 +12,7 @@ import (
 
 func TestInitReturnsShutdownFunc(t *testing.T) {
 	chassis.ResetVersionCheck()
-	chassis.RequireMajor(3)
+	chassis.RequireMajor(4)
 
 	shutdown := otel.Init(otel.Config{
 		ServiceName:    "test-svc",
@@ -28,7 +28,7 @@ func TestInitReturnsShutdownFunc(t *testing.T) {
 
 func TestDetachContextPreservesSpanContext(t *testing.T) {
 	chassis.ResetVersionCheck()
-	chassis.RequireMajor(3)
+	chassis.RequireMajor(4)
 
 	// Create a span context with a known trace ID.
 	traceID, _ := trace.TraceIDFromHex("4bf92f3577b34da6a3ce929d0e0e4736")

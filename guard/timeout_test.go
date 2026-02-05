@@ -45,3 +45,42 @@ func TestTimeoutRespectsExistingTighterDeadline(t *testing.T) {
 		t.Fatal("expected existing tighter deadline to be preserved")
 	}
 }
+
+func TestTimeoutReturns504WhenExceeded(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Simulate a slow handler that blocks until context is cancelled.
+		<-r.Context().Done()
+	})
+
+	handler := guard.Timeout(50 * time.Millisecond)(inner)
+	req := httptest.NewRequest("GET", "/slow", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusGatewayTimeout {
+		t.Fatalf("expected status 504, got %d", rec.Code)
+	}
+}
+
+func TestTimeoutFlushesOnSuccess(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Custom", "yes")
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte("ok"))
+	})
+
+	handler := guard.Timeout(5 * time.Second)(inner)
+	req := httptest.NewRequest("GET", "/fast", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", rec.Code)
+	}
+	if rec.Header().Get("X-Custom") != "yes" {
+		t.Fatal("expected X-Custom header to be flushed")
+	}
+	if rec.Body.String() != "ok" {
+		t.Fatalf("expected body 'ok', got %q", rec.Body.String())
+	}
+}

@@ -2,14 +2,14 @@ package grpckit
 
 import (
 	"context"
-	"log/slog"
 	"testing"
 
+	otelapi "go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-
-	otelapi "go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 func TestUnaryTracingCreatesSpan(t *testing.T) {
@@ -19,8 +19,7 @@ func TestUnaryTracingCreatesSpan(t *testing.T) {
 	defer func() { _ = tp.Shutdown(context.Background()) }()
 	otelapi.SetTracerProvider(tp)
 
-	logger := slog.Default()
-	interceptor := UnaryTracing(logger)
+	interceptor := UnaryTracing()
 
 	info := &grpc.UnaryServerInfo{FullMethod: "/api.v1.UserService/GetUser"}
 	handler := func(ctx context.Context, req any) (any, error) {
@@ -59,14 +58,47 @@ func TestUnaryTracingCreatesSpan(t *testing.T) {
 	}
 }
 
+func TestUnaryTracingPropagatesIncomingTrace(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	defer func() { _ = tp.Shutdown(context.Background()) }()
+	otelapi.SetTracerProvider(tp)
+	otelapi.SetTextMapPropagator(propagation.TraceContext{})
+
+	interceptor := UnaryTracing()
+
+	info := &grpc.UnaryServerInfo{FullMethod: "/api.v1.UserService/GetUser"}
+	handler := func(ctx context.Context, req any) (any, error) {
+		return "ok", nil
+	}
+
+	// Simulate incoming gRPC metadata with W3C traceparent.
+	md := metadata.Pairs("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+
+	_, err := interceptor(ctx, "req", info, handler)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	spans := exporter.GetSpans()
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(spans))
+	}
+
+	traceID := spans[0].SpanContext.TraceID().String()
+	if traceID != "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Fatalf("expected trace ID %q, got %q", "4bf92f3577b34da6a3ce929d0e0e4736", traceID)
+	}
+}
+
 func TestStreamTracingCreatesSpan(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
 	defer func() { _ = tp.Shutdown(context.Background()) }()
 	otelapi.SetTracerProvider(tp)
 
-	logger := slog.Default()
-	interceptor := StreamTracing(logger)
+	interceptor := StreamTracing()
 
 	info := &grpc.StreamServerInfo{FullMethod: "/api.v1.UserService/ListUsers"}
 	ss := &mockServerStream{ctx: context.Background()}

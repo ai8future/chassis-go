@@ -4,13 +4,20 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 
+	chassis "github.com/ai8future/chassis-go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func TestMain(m *testing.M) {
+	chassis.RequireMajor(4)
+	os.Exit(m.Run())
+}
 
 // newTestLogger returns a logger that writes JSON to the provided buffer.
 func newTestLogger(buf *bytes.Buffer) *slog.Logger {
@@ -178,10 +185,7 @@ func TestStreamRecovery(t *testing.T) {
 // ---------- Metrics interceptor tests ----------
 
 func TestUnaryMetrics(t *testing.T) {
-	var buf bytes.Buffer
-	logger := newTestLogger(&buf)
-
-	interceptor := UnaryMetrics(logger)
+	interceptor := UnaryMetrics()
 
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/MetricsMethod"}
 	handler := func(ctx context.Context, req any) (any, error) {
@@ -195,24 +199,13 @@ func TestUnaryMetrics(t *testing.T) {
 	if resp != "ok" {
 		t.Fatalf("expected resp 'ok', got %v", resp)
 	}
-
-	log := buf.String()
-	if !strings.Contains(log, "unary RPC metrics") {
-		t.Errorf("expected log to contain 'unary RPC metrics', got: %s", log)
-	}
-	if !strings.Contains(log, "/test.Service/MetricsMethod") {
-		t.Errorf("expected log to contain method name, got: %s", log)
-	}
-	if !strings.Contains(log, "duration") {
-		t.Errorf("expected log to contain duration, got: %s", log)
-	}
+	// UnaryMetrics now records an OTel histogram rather than logging.
+	// We verify it doesn't panic and returns correctly. Full metric
+	// verification requires an OTel SDK test meter.
 }
 
 func TestStreamMetrics(t *testing.T) {
-	var buf bytes.Buffer
-	logger := newTestLogger(&buf)
-
-	interceptor := StreamMetrics(logger)
+	interceptor := StreamMetrics()
 
 	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamMetrics"}
 	ss := &mockServerStream{ctx: context.Background()}
@@ -224,12 +217,5 @@ func TestStreamMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
-	log := buf.String()
-	if !strings.Contains(log, "stream RPC metrics") {
-		t.Errorf("expected log to contain 'stream RPC metrics', got: %s", log)
-	}
-	if !strings.Contains(log, "/test.Service/StreamMetrics") {
-		t.Errorf("expected log to contain method name, got: %s", log)
-	}
+	// StreamMetrics now records an OTel histogram rather than logging.
 }

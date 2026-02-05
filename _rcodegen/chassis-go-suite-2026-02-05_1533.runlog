@@ -1,0 +1,14 @@
+Tool:      rgemini
+Model: gemini-3-pro-preview
+Codebase:  chassis-go
+Output:    /Users/cliff/Desktop/_code/chassis-go/_rcodegen
+Command:   rgemini suite
+Started:   2026-02-05 15:33:07
+Ended:     2026-02-05 15:45:08
+Duration:  12m 1s
+Exit Code: 0
+
+--- Token Usage ---
+Input:     122177
+Output:    2044
+Cache Read: 69181

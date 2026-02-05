@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	chassis "github.com/ai8future/chassis-go"
 )
 
 // MustLoad loads environment variables into a struct of type T based on struct
@@ -23,6 +25,7 @@ import (
 //
 // Supported field types: string, int, int64, float64, bool, time.Duration, []string.
 func MustLoad[T any]() T {
+	chassis.AssertVersionChecked()
 	var cfg T
 	v := reflect.ValueOf(&cfg).Elem()
 	t := v.Type()
@@ -82,6 +85,10 @@ func setField(fieldVal reflect.Value, raw string) error {
 
 	// Handle []string specially.
 	if fieldVal.Type() == reflect.TypeOf([]string{}) {
+		if raw == "" {
+			fieldVal.Set(reflect.ValueOf([]string{}))
+			return nil
+		}
 		parts := strings.Split(raw, ",")
 		trimmed := make([]string, 0, len(parts))
 		for _, p := range parts {
@@ -96,7 +103,11 @@ func setField(fieldVal reflect.Value, raw string) error {
 		fieldVal.SetString(raw)
 
 	case reflect.Int, reflect.Int64:
-		n, err := strconv.ParseInt(raw, 10, 64)
+		bitSize := 64
+		if fieldVal.Kind() == reflect.Int {
+			bitSize = strconv.IntSize
+		}
+		n, err := strconv.ParseInt(raw, 10, bitSize)
 		if err != nil {
 			return fmt.Errorf("invalid int: %w", err)
 		}

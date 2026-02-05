@@ -9,7 +9,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(3)
+	chassis.RequireMajor(4)
 	os.Exit(m.Run())
 }
 

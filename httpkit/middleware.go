@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"runtime/debug"
 	"time"
+
+	chassis "github.com/ai8future/chassis-go"
 )
 
 // requestIDKey is the unexported context key used to store request IDs.
@@ -39,6 +41,7 @@ func generateID() string {
 // RequestID is middleware that generates a unique request ID, stores it in the
 // request context, and sets it as the X-Request-ID response header.
 func RequestID(next http.Handler) http.Handler {
+	chassis.AssertVersionChecked()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := generateID()
 		ctx := context.WithValue(r.Context(), requestIDKey{}, id)
@@ -47,22 +50,36 @@ func RequestID(next http.Handler) http.Handler {
 	})
 }
 
-// responseWriter wraps http.ResponseWriter to capture the status code.
+// responseWriter wraps http.ResponseWriter to capture the status code
+// and track whether headers have been sent.
 type responseWriter struct {
 	http.ResponseWriter
-	statusCode int
+	statusCode    int
+	headerWritten bool
 }
 
 // WriteHeader captures the status code before delegating to the underlying writer.
+// Only the first call's status code is recorded for logging/metrics accuracy.
 func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
+	if !rw.headerWritten {
+		rw.statusCode = code
+		rw.headerWritten = true
+	}
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// Unwrap returns the underlying http.ResponseWriter so that
+// http.NewResponseController can access optional interfaces like
+// http.Flusher and http.Hijacker.
+func (rw *responseWriter) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
 }
 
 // Logging returns middleware that logs each request's method, path, status code,
 // and duration using the provided structured logger. If a request ID is present
 // in the context, it is included in the log entry.
 func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
+	chassis.AssertVersionChecked()
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
@@ -87,9 +104,13 @@ func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
 
 // Recovery returns middleware that catches panics in downstream handlers,
 // logs them at Error level with stack information, and returns a 500 JSON error.
+// If the handler has already started writing the response, the error body is
+// skipped to avoid corrupting the response.
 func Recovery(logger *slog.Logger) func(http.Handler) http.Handler {
+	chassis.AssertVersionChecked()
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			rw, isWrapped := w.(*responseWriter)
 			defer func() {
 				if err := recover(); err != nil {
 					stack := debug.Stack()
@@ -97,6 +118,9 @@ func Recovery(logger *slog.Logger) func(http.Handler) http.Handler {
 						"error", fmt.Sprint(err),
 						"stack", string(stack),
 					)
+					if isWrapped && rw.headerWritten {
+						return // headers already sent — cannot write error response
+					}
 					JSONError(w, r, http.StatusInternalServerError, "internal server error")
 				}
 			}()

@@ -14,7 +14,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(3)
+	chassis.RequireMajor(4)
 	os.Exit(m.Run())
 }
 
@@ -92,11 +92,18 @@ func TestJSONOutputFormat(t *testing.T) {
 	}
 }
 
-func TestTraceIDInjection(t *testing.T) {
+func TestTraceIDInjectionFromOTel(t *testing.T) {
 	var buf bytes.Buffer
 	logger := newTestLogger(&buf, "info")
 
-	ctx := WithTraceID(context.Background(), "abc-123")
+	traceIDHex, _ := trace.TraceIDFromHex("0af7651916cd43dd8448eb211c80319c")
+	spanIDHex, _ := trace.SpanIDFromHex("b7ad6b7169203331")
+	sc := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    traceIDHex,
+		SpanID:     spanIDHex,
+		TraceFlags: trace.FlagsSampled,
+	})
+	ctx := trace.ContextWithSpanContext(context.Background(), sc)
 	logger.InfoContext(ctx, "traced message")
 
 	var entry map[string]interface{}
@@ -104,9 +111,13 @@ func TestTraceIDInjection(t *testing.T) {
 		t.Fatalf("output is not valid JSON: %v\nraw: %s", err, buf.String())
 	}
 
-	traceID, ok := entry["trace_id"].(string)
-	if !ok || traceID != "abc-123" {
-		t.Errorf("expected trace_id=%q, got %v", "abc-123", entry["trace_id"])
+	tid, ok := entry["trace_id"].(string)
+	if !ok || tid != "0af7651916cd43dd8448eb211c80319c" {
+		t.Errorf("expected trace_id=%q, got %v", "0af7651916cd43dd8448eb211c80319c", entry["trace_id"])
+	}
+	sid, ok := entry["span_id"].(string)
+	if !ok || sid != "b7ad6b7169203331" {
+		t.Errorf("expected span_id=%q, got %v", "b7ad6b7169203331", entry["span_id"])
 	}
 }
 
@@ -119,27 +130,6 @@ func TestTraceIDAbsent(t *testing.T) {
 	raw := buf.String()
 	if strings.Contains(raw, "trace_id") {
 		t.Errorf("expected no trace_id in output, got: %s", raw)
-	}
-}
-
-func TestWithTraceIDAndTraceIDFromRoundTrip(t *testing.T) {
-	ctx := context.Background()
-
-	// No trace ID set yet.
-	if got := TraceIDFrom(ctx); got != "" {
-		t.Errorf("expected empty trace ID from bare context, got %q", got)
-	}
-
-	// Set and retrieve.
-	ctx = WithTraceID(ctx, "xyz-789")
-	if got := TraceIDFrom(ctx); got != "xyz-789" {
-		t.Errorf("expected trace ID %q, got %q", "xyz-789", got)
-	}
-
-	// Overwrite.
-	ctx = WithTraceID(ctx, "new-id")
-	if got := TraceIDFrom(ctx); got != "new-id" {
-		t.Errorf("expected trace ID %q, got %q", "new-id", got)
 	}
 }
 
@@ -163,7 +153,14 @@ func TestWithAttrsPreservesTraceHandler(t *testing.T) {
 	logger := newTestLogger(&buf, "info")
 	logger = logger.With("service", "test-svc")
 
-	ctx := WithTraceID(context.Background(), "attr-trace")
+	traceIDHex, _ := trace.TraceIDFromHex("0af7651916cd43dd8448eb211c80319c")
+	spanIDHex, _ := trace.SpanIDFromHex("b7ad6b7169203331")
+	sc := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    traceIDHex,
+		SpanID:     spanIDHex,
+		TraceFlags: trace.FlagsSampled,
+	})
+	ctx := trace.ContextWithSpanContext(context.Background(), sc)
 	logger.InfoContext(ctx, "with attrs")
 
 	var entry map[string]interface{}
@@ -174,8 +171,8 @@ func TestWithAttrsPreservesTraceHandler(t *testing.T) {
 	if v, _ := entry["service"].(string); v != "test-svc" {
 		t.Errorf("expected service=%q, got %v", "test-svc", entry["service"])
 	}
-	if v, _ := entry["trace_id"].(string); v != "attr-trace" {
-		t.Errorf("expected trace_id=%q, got %v", "attr-trace", entry["trace_id"])
+	if v, _ := entry["trace_id"].(string); v != "0af7651916cd43dd8448eb211c80319c" {
+		t.Errorf("expected trace_id=%q, got %v", "0af7651916cd43dd8448eb211c80319c", entry["trace_id"])
 	}
 }
 
@@ -184,7 +181,14 @@ func TestWithGroupPreservesTraceHandler(t *testing.T) {
 	logger := newTestLogger(&buf, "info")
 	logger = logger.WithGroup("grp")
 
-	ctx := WithTraceID(context.Background(), "group-trace")
+	traceIDHex, _ := trace.TraceIDFromHex("0af7651916cd43dd8448eb211c80319c")
+	spanIDHex, _ := trace.SpanIDFromHex("b7ad6b7169203331")
+	sc := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    traceIDHex,
+		SpanID:     spanIDHex,
+		TraceFlags: trace.FlagsSampled,
+	})
+	ctx := trace.ContextWithSpanContext(context.Background(), sc)
 	logger.InfoContext(ctx, "grouped", "k", "v")
 
 	var entry map[string]interface{}
@@ -193,8 +197,8 @@ func TestWithGroupPreservesTraceHandler(t *testing.T) {
 	}
 
 	// trace_id should be at top level (added before group delegation).
-	if v, _ := entry["trace_id"].(string); v != "group-trace" {
-		t.Errorf("expected trace_id=%q, got %v", "group-trace", entry["trace_id"])
+	if v, _ := entry["trace_id"].(string); v != "0af7651916cd43dd8448eb211c80319c" {
+		t.Errorf("expected trace_id=%q, got %v", "0af7651916cd43dd8448eb211c80319c", entry["trace_id"])
 	}
 
 	// "k" should be nested under "grp".

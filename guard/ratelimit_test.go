@@ -1,13 +1,21 @@
 package guard_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
+	chassis "github.com/ai8future/chassis-go"
 	"github.com/ai8future/chassis-go/guard"
 )
+
+func TestMain(m *testing.M) {
+	chassis.RequireMajor(4)
+	os.Exit(m.Run())
+}
 
 func TestRateLimitAllowsWithinLimit(t *testing.T) {
 	mw := guard.RateLimit(guard.RateLimitConfig{
@@ -51,8 +59,27 @@ func TestRateLimitRejectsOverLimit(t *testing.T) {
 		if i < 2 && rec.Code != http.StatusOK {
 			t.Fatalf("request %d: expected 200, got %d", i+1, rec.Code)
 		}
-		if i == 2 && rec.Code != http.StatusTooManyRequests {
-			t.Fatalf("request %d: expected 429, got %d", i+1, rec.Code)
+		if i == 2 {
+			if rec.Code != http.StatusTooManyRequests {
+				t.Fatalf("request %d: expected 429, got %d", i+1, rec.Code)
+			}
+			ct := rec.Header().Get("Content-Type")
+			if ct != "application/problem+json" {
+				t.Fatalf("Content-Type = %q, want application/problem+json", ct)
+			}
+			var pd map[string]any
+			if err := json.NewDecoder(rec.Body).Decode(&pd); err != nil {
+				t.Fatalf("failed to decode problem detail: %v", err)
+			}
+			if pd["type"] != "https://chassis.ai8future.com/errors/rate-limit" {
+				t.Errorf("type = %v", pd["type"])
+			}
+			if pd["title"] != "Rate Limit Exceeded" {
+				t.Errorf("title = %v", pd["title"])
+			}
+			if int(pd["status"].(float64)) != 429 {
+				t.Errorf("status = %v", pd["status"])
+			}
 		}
 	}
 }

@@ -1,10 +1,12 @@
 package guard
 
 import (
-	"encoding/json"
 	"net/http"
 	"sync"
 	"time"
+
+	chassis "github.com/ai8future/chassis-go"
+	"github.com/ai8future/chassis-go/errors"
 )
 
 // RateLimitConfig configures the rate limiter.
@@ -19,18 +21,24 @@ type bucket struct {
 	lastFill time.Time
 }
 
+// maxBuckets is the upper bound on tracked keys. When exceeded, a sweep is
+// forced and the oldest idle buckets are evicted.
+const maxBuckets = 100_000
+
 type limiter struct {
-	mu      sync.Mutex
-	buckets map[string]*bucket
-	rate    int
-	window  time.Duration
+	mu        sync.Mutex
+	buckets   map[string]*bucket
+	rate      int
+	window    time.Duration
+	lastSweep time.Time
 }
 
 func newLimiter(rate int, window time.Duration) *limiter {
 	return &limiter{
-		buckets: make(map[string]*bucket),
-		rate:    rate,
-		window:  window,
+		buckets:   make(map[string]*bucket),
+		rate:      rate,
+		window:    window,
+		lastSweep: time.Now(),
 	}
 }
 
@@ -38,6 +46,18 @@ func (l *limiter) allow(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := time.Now()
+
+	// Lazy sweep: evict stale buckets every window period or when map is full.
+	if now.Sub(l.lastSweep) >= l.window || len(l.buckets) >= maxBuckets {
+		staleThreshold := now.Add(-2 * l.window)
+		for k, b := range l.buckets {
+			if b.lastFill.Before(staleThreshold) {
+				delete(l.buckets, k)
+			}
+		}
+		l.lastSweep = now
+	}
+
 	b, ok := l.buckets[key]
 	if !ok {
 		b = &bucket{tokens: float64(l.rate), lastFill: now}
@@ -59,17 +79,13 @@ func (l *limiter) allow(key string) bool {
 
 // RateLimit returns middleware enforcing per-key rate limiting with token bucket.
 func RateLimit(cfg RateLimitConfig) func(http.Handler) http.Handler {
+	chassis.AssertVersionChecked()
 	lim := newLimiter(cfg.Rate, cfg.Window)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key := cfg.KeyFunc(r)
 			if !lim.allow(key) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusTooManyRequests)
-				json.NewEncoder(w).Encode(map[string]any{
-					"error":  "rate limit exceeded",
-					"status": http.StatusTooManyRequests,
-				})
+				writeProblem(w, r, errors.RateLimitError("rate limit exceeded"))
 				return
 			}
 			next.ServeHTTP(w, r)

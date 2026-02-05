@@ -3,6 +3,7 @@ package grpckit
 import (
 	"context"
 
+	chassis "github.com/ai8future/chassis-go"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
@@ -17,6 +18,7 @@ type HealthChecker func(ctx context.Context) error
 // gRPC health status: SERVING when the checker returns nil, NOT_SERVING when
 // it returns an error.
 func RegisterHealth(server *grpc.Server, checker HealthChecker) {
+	chassis.AssertVersionChecked()
 	healthpb.RegisterHealthServer(server, &healthServer{checker: checker})
 }
 

@@ -5,12 +5,16 @@ package otel
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"time"
 
 	chassis "github.com/ai8future/chassis-go"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
@@ -52,14 +56,18 @@ func Init(cfg Config) ShutdownFunc {
 
 	ctx := context.Background()
 
-	res, _ := resource.New(ctx,
+	res, resErr := resource.New(ctx,
 		resource.WithAttributes(
 			semconv.ServiceName(cfg.ServiceName),
 			semconv.ServiceVersion(cfg.ServiceVersion),
 		),
 	)
+	if resErr != nil {
+		slog.Warn("otel: resource creation failed, using default", "error", resErr)
+	}
 
-	exporter, err := otlptracegrpc.New(ctx,
+	// --- Trace pipeline ---
+	traceExporter, err := otlptracegrpc.New(ctx,
 		otlptracegrpc.WithEndpoint(cfg.Endpoint),
 		otlptracegrpc.WithInsecure(),
 	)
@@ -69,7 +77,7 @@ func Init(cfg Config) ShutdownFunc {
 	}
 
 	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
+		sdktrace.WithBatcher(traceExporter),
 		sdktrace.WithResource(res),
 		sdktrace.WithSampler(cfg.Sampler),
 	)
@@ -80,10 +88,33 @@ func Init(cfg Config) ShutdownFunc {
 		propagation.Baggage{},
 	))
 
+	// --- Metric pipeline ---
+	metricExporter, err := otlpmetricgrpc.New(ctx,
+		otlpmetricgrpc.WithEndpoint(cfg.Endpoint),
+		otlpmetricgrpc.WithInsecure(),
+	)
+	if err != nil {
+		// Tracing works, metrics degrade.
+		return func(ctx context.Context) error {
+			shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			return tp.Shutdown(shutdownCtx)
+		}
+	}
+
+	mp := metric.NewMeterProvider(
+		metric.WithReader(metric.NewPeriodicReader(metricExporter)),
+		metric.WithResource(res),
+	)
+
+	otel.SetMeterProvider(mp)
+
 	return func(ctx context.Context) error {
 		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		return tp.Shutdown(shutdownCtx)
+		tErr := tp.Shutdown(shutdownCtx)
+		mErr := mp.Shutdown(shutdownCtx)
+		return errors.Join(tErr, mErr)
 	}
 }
 

@@ -54,6 +54,16 @@ func TestTimeoutError(t *testing.T) {
 	}
 }
 
+func TestPayloadTooLargeError(t *testing.T) {
+	err := PayloadTooLargeError("too big")
+	if err.HTTPCode != http.StatusRequestEntityTooLarge {
+		t.Errorf("HTTPCode = %d, want %d", err.HTTPCode, http.StatusRequestEntityTooLarge)
+	}
+	if err.GRPCCode != codes.InvalidArgument {
+		t.Errorf("GRPCCode = %v, want %v", err.GRPCCode, codes.InvalidArgument)
+	}
+}
+
 func TestRateLimitError(t *testing.T) {
 	err := RateLimitError("throttled")
 	if err.HTTPCode != http.StatusTooManyRequests {
@@ -109,6 +119,17 @@ func TestWithDetail(t *testing.T) {
 	}
 	if err.Details["reason"] != "invalid" {
 		t.Errorf("Details[reason] = %q, want %q", err.Details["reason"], "invalid")
+	}
+}
+
+func TestWithDetails(t *testing.T) {
+	details := map[string]string{"k1": "v1", "k2": "v2"}
+	err := ValidationError("bad").WithDetails(details)
+	if err.Details["k1"] != "v1" {
+		t.Errorf("Details[k1] = %q, want %q", err.Details["k1"], "v1")
+	}
+	if err.Details["k2"] != "v2" {
+		t.Errorf("Details[k2] = %q, want %q", err.Details["k2"], "v2")
 	}
 }
 

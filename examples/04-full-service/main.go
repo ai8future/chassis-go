@@ -1,5 +1,5 @@
-// Example 04-full-service demonstrates all chassis 3.0 modules wired together:
-// config, logz, lifecycle, errors, secval, metrics, health, httpkit, grpckit.
+// Example 04-full-service demonstrates all chassis 4.0 modules wired together:
+// config, logz, lifecycle, errors, secval, metrics, health, httpkit, grpckit, otel.
 //
 // Copy this directory to start a new service.
 //
@@ -10,7 +10,6 @@
 // Test:
 //
 //	curl http://localhost:9090/health
-//	curl http://localhost:9090/metrics
 //	curl -X POST http://localhost:8080/v1/demo -d '{"input":"hello"}'
 //	curl -X POST http://localhost:8080/v1/demo -d '{"__proto__":"evil"}'  # → 400
 package main
@@ -27,11 +26,13 @@ import (
 	chassis "github.com/ai8future/chassis-go"
 	"github.com/ai8future/chassis-go/config"
 	chassiserrors "github.com/ai8future/chassis-go/errors"
+	"github.com/ai8future/chassis-go/guard"
 	"github.com/ai8future/chassis-go/health"
 	"github.com/ai8future/chassis-go/httpkit"
 	"github.com/ai8future/chassis-go/lifecycle"
 	"github.com/ai8future/chassis-go/logz"
 	"github.com/ai8future/chassis-go/metrics"
+	otelinit "github.com/ai8future/chassis-go/otel"
 	"github.com/ai8future/chassis-go/secval"
 )
 
@@ -42,11 +43,18 @@ type AppConfig struct {
 }
 
 func main() {
-	chassis.RequireMajor(3)
+	chassis.RequireMajor(4)
 
 	cfg := config.MustLoad[AppConfig]()
 	logger := logz.New(cfg.LogLevel)
 	logger.Info("starting full-service demo", "version", chassis.Version)
+
+	// --- OTel bootstrap (traces + metrics via OTLP) ---
+	shutdown := otelinit.Init(otelinit.Config{
+		ServiceName:    "demosvc",
+		ServiceVersion: chassis.Version,
+	})
+	defer shutdown(context.Background())
 
 	// --- Metrics ---
 	rec := metrics.New("demosvc", logger)
@@ -66,14 +74,14 @@ func main() {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			writeServiceError(w, r, chassiserrors.ValidationError("request body too large"))
-			rec.RecordRequest(r.Method, "error", float64(time.Since(start).Milliseconds()), 0)
+			rec.RecordRequest(r.Context(), r.Method, "error", float64(time.Since(start).Milliseconds()), 0)
 			return
 		}
 
 		// Security validation
 		if err := secval.ValidateJSON(body); err != nil {
 			writeServiceError(w, r, chassiserrors.ValidationError(err.Error()))
-			rec.RecordRequest(r.Method, "error", float64(time.Since(start).Milliseconds()), float64(len(body)))
+			rec.RecordRequest(r.Context(), r.Method, "error", float64(time.Since(start).Milliseconds()), float64(len(body)))
 			return
 		}
 
@@ -83,7 +91,7 @@ func main() {
 		}
 		if err := json.Unmarshal(body, &req); err != nil {
 			writeServiceError(w, r, chassiserrors.ValidationError("invalid JSON: "+err.Error()))
-			rec.RecordRequest(r.Method, "error", float64(time.Since(start).Milliseconds()), float64(len(body)))
+			rec.RecordRequest(r.Context(), r.Method, "error", float64(time.Since(start).Milliseconds()), float64(len(body)))
 			return
 		}
 
@@ -93,14 +101,20 @@ func main() {
 		// Success response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"result": result})
-		rec.RecordRequest(r.Method, "200", float64(time.Since(start).Milliseconds()), float64(len(body)))
+		if err := json.NewEncoder(w).Encode(map[string]string{"result": result}); err != nil {
+			logger.Error("failed to encode response", "error", err)
+		}
+		rec.RecordRequest(r.Context(), r.Method, "200", float64(time.Since(start).Milliseconds()), float64(len(body)))
 	})
 
-	// Wrap with httpkit middleware
-	handler := httpkit.RequestID(
-		httpkit.Logging(logger)(
-			httpkit.Recovery(logger)(mux),
+	// Wrap with httpkit middleware: Recovery → Tracing → RequestID → Timeout → Logging → handler
+	handler := httpkit.Recovery(logger)(
+		httpkit.Tracing()(
+			httpkit.RequestID(
+				guard.Timeout(10*time.Second)(
+					httpkit.Logging(logger)(mux),
+				),
+			),
 		),
 	)
 
@@ -127,10 +141,9 @@ func main() {
 				return err
 			}
 		},
-		// Admin server (metrics + health) component
+		// Admin server (health only — metrics flow via OTLP)
 		func(ctx context.Context) error {
 			adminMux := http.NewServeMux()
-			adminMux.Handle("GET /metrics", rec.Handler())
 			adminMux.Handle("GET /health", health.Handler(checks))
 
 			addr := fmt.Sprintf(":%d", cfg.AdminPort)
@@ -159,8 +172,7 @@ func main() {
 	}
 }
 
-// writeServiceError writes a ServiceError as an HTTP JSON response.
-// This is the WIRING layer — it maps ServiceError to HTTP responses.
+// writeServiceError writes a ServiceError as an RFC 9457 Problem Details response.
 func writeServiceError(w http.ResponseWriter, r *http.Request, svcErr *chassiserrors.ServiceError) {
-	httpkit.JSONError(w, r, svcErr.HTTPCode, svcErr.Message)
+	httpkit.JSONProblem(w, r, svcErr)
 }

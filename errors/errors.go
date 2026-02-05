@@ -88,6 +88,11 @@ func TimeoutError(msg string) *ServiceError {
 	return &ServiceError{Message: msg, GRPCCode: codes.DeadlineExceeded, HTTPCode: http.StatusGatewayTimeout}
 }
 
+// PayloadTooLargeError creates an error for oversized request bodies (413 / INVALID_ARGUMENT).
+func PayloadTooLargeError(msg string) *ServiceError {
+	return &ServiceError{Message: msg, GRPCCode: codes.InvalidArgument, HTTPCode: http.StatusRequestEntityTooLarge}
+}
+
 // RateLimitError creates an error for rate limiting (429 / RESOURCE_EXHAUSTED).
 func RateLimitError(msg string) *ServiceError {
 	return &ServiceError{Message: msg, GRPCCode: codes.ResourceExhausted, HTTPCode: http.StatusTooManyRequests}
@@ -108,6 +113,9 @@ func InternalError(msg string) *ServiceError {
 // FromError converts any error to a ServiceError. If the error is already
 // a ServiceError it is returned as-is; otherwise it is wrapped as internal.
 func FromError(err error) *ServiceError {
+	if err == nil {
+		return nil
+	}
 	if se, ok := err.(*ServiceError); ok {
 		return se
 	}

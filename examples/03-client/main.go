@@ -28,7 +28,7 @@ type ClientConfig struct {
 }
 
 func main() {
-	chassis.RequireMajor(3)
+	chassis.RequireMajor(4)
 	cfg := config.MustLoad[ClientConfig]()
 	logger := logz.New(cfg.LogLevel)
 
@@ -60,7 +60,7 @@ func main() {
 			continue
 		}
 
-		body, err := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024)) // 10MB max
 		resp.Body.Close()
 		if err != nil {
 			logger.Error("failed to read response body",

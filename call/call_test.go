@@ -13,6 +13,7 @@ import (
 	"time"
 
 	chassis "github.com/ai8future/chassis-go"
+	"github.com/ai8future/chassis-go/work"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -21,7 +22,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(3)
+	chassis.RequireMajor(4)
 	os.Exit(m.Run())
 }
 
@@ -345,6 +346,102 @@ func TestTimeoutEnforcement(t *testing.T) {
 	}
 }
 
+func TestRetrySpanEvents(t *testing.T) {
+	// Set up in-memory span exporter.
+	exporter := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	defer tp.Shutdown(context.Background())
+
+	prevTP := otelapi.GetTracerProvider()
+	otelapi.SetTracerProvider(tp)
+	defer otelapi.SetTracerProvider(prevTP)
+
+	// Server returns 500 twice, then 200.
+	srv, _ := counterServer(500, 500)
+	defer srv.Close()
+
+	c := New(
+		WithTimeout(5*time.Second),
+		WithRetry(3, 10*time.Millisecond),
+	)
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	resp.Body.Close()
+
+	tp.ForceFlush(context.Background())
+
+	spans := exporter.GetSpans()
+	var retryEvents int
+	for _, s := range spans {
+		for _, e := range s.Events {
+			if e.Name == "retry" {
+				retryEvents++
+			}
+		}
+	}
+	if retryEvents != 2 {
+		t.Fatalf("expected 2 retry span events, got %d", retryEvents)
+	}
+}
+
+func TestCircuitBreakerSpanEvents(t *testing.T) {
+	// Set up in-memory span exporter.
+	exporter := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	defer tp.Shutdown(context.Background())
+
+	prevTP := otelapi.GetTracerProvider()
+	otelapi.SetTracerProvider(tp)
+	defer otelapi.SetTracerProvider(prevTP)
+
+	srv, _ := counterServer(500, 500, 500, 500)
+	defer srv.Close()
+
+	name := uniqueBreakerName()
+	c := New(
+		WithTimeout(5*time.Second),
+		WithCircuitBreaker(name, 3, 1*time.Second),
+	)
+
+	// Fire 3 requests that all fail — breaker opens.
+	for range 3 {
+		req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+		c.Do(req)
+	}
+
+	// Fourth request should be rejected by the breaker.
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	_, err := c.Do(req)
+	if err != ErrCircuitOpen {
+		t.Fatalf("expected ErrCircuitOpen, got %v", err)
+	}
+
+	tp.ForceFlush(context.Background())
+
+	spans := exporter.GetSpans()
+	var rejectedEvents, recordEvents int
+	for _, s := range spans {
+		for _, e := range s.Events {
+			if e.Name == "circuit_breaker_rejected" {
+				rejectedEvents++
+			}
+			if e.Name == "circuit_breaker_record" {
+				recordEvents++
+			}
+		}
+	}
+	if rejectedEvents != 1 {
+		t.Fatalf("expected 1 circuit_breaker_rejected event, got %d", rejectedEvents)
+	}
+	if recordEvents < 3 {
+		t.Fatalf("expected at least 3 circuit_breaker_record events, got %d", recordEvents)
+	}
+}
+
 func TestDoPropagatestraceparentHeader(t *testing.T) {
 	// Set up in-memory span exporter with TracerProvider.
 	exporter := tracetest.NewInMemoryExporter()
@@ -409,5 +506,42 @@ func TestDoPropagatestraceparentHeader(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("expected a SpanKindClient span to be created")
+	}
+}
+
+func TestBatch(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	c := New(WithTimeout(5 * time.Second))
+
+	requests := make([]*http.Request, 5)
+	for i := range requests {
+		requests[i], _ = http.NewRequest(http.MethodGet, srv.URL, nil)
+	}
+
+	responses, err := c.Batch(context.Background(), requests, work.Workers(2))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(responses) != 5 {
+		t.Fatalf("expected 5 responses, got %d", len(responses))
+	}
+
+	for i, resp := range responses {
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("response %d: expected 200, got %d", i, resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+
+	if n := int(hits.Load()); n != 5 {
+		t.Fatalf("expected 5 server hits, got %d", n)
 	}
 }

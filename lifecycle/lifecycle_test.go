@@ -13,7 +13,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(3)
+	chassis.RequireMajor(4)
 	os.Exit(m.Run())
 }
 
@@ -90,6 +90,18 @@ func TestRunComponentsRespectContextCancellation(t *testing.T) {
 	}
 	if n := stopped.Load(); n != 3 {
 		t.Fatalf("expected 3 components to observe cancellation, got %d", n)
+	}
+}
+
+func TestRunIgnoresUnknownArgs(t *testing.T) {
+	comp := func(ctx context.Context) error {
+		return nil
+	}
+
+	// Passing non-Component args should be silently ignored.
+	err := Run(context.Background(), comp, "ignored-string", 42)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
 	}
 }
 

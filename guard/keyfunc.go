@@ -9,20 +9,26 @@ import (
 // KeyFunc extracts a rate limit key from an HTTP request.
 type KeyFunc func(r *http.Request) string
 
+// remoteHost extracts the host portion of r.RemoteAddr, falling back to the
+// full RemoteAddr if SplitHostPort fails.
+func remoteHost(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
 // RemoteAddr returns a KeyFunc that uses the request's RemoteAddr (without port).
 func RemoteAddr() KeyFunc {
 	return func(r *http.Request) string {
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			return r.RemoteAddr
-		}
-		return host
+		return remoteHost(r)
 	}
 }
 
 // XForwardedFor returns a KeyFunc that reads the client IP from X-Forwarded-For,
 // but only if RemoteAddr is within a trusted CIDR range. Falls back to RemoteAddr
-// if untrusted.
+// if untrusted or if the X-Forwarded-For value is not a valid IP address.
 func XForwardedFor(trustedCIDRs ...string) KeyFunc {
 	var nets []*net.IPNet
 	for _, cidr := range trustedCIDRs {
@@ -32,8 +38,8 @@ func XForwardedFor(trustedCIDRs ...string) KeyFunc {
 		}
 	}
 	return func(r *http.Request) string {
-		remoteHost, _, _ := net.SplitHostPort(r.RemoteAddr)
-		remoteIP := net.ParseIP(remoteHost)
+		host := remoteHost(r)
+		remoteIP := net.ParseIP(host)
 		trusted := false
 		if remoteIP != nil {
 			for _, n := range nets {
@@ -48,22 +54,22 @@ func XForwardedFor(trustedCIDRs ...string) KeyFunc {
 			if xff != "" {
 				parts := strings.SplitN(xff, ",", 2)
 				clientIP := strings.TrimSpace(parts[0])
-				if clientIP != "" {
+				if clientIP != "" && net.ParseIP(clientIP) != nil {
 					return clientIP
 				}
 			}
 		}
-		return remoteHost
+		return host
 	}
 }
 
 // HeaderKey returns a KeyFunc using the value of a request header as the key.
+// Falls back to RemoteAddr if the header is absent.
 func HeaderKey(header string) KeyFunc {
 	return func(r *http.Request) string {
 		v := r.Header.Get(header)
 		if v == "" {
-			host, _, _ := net.SplitHostPort(r.RemoteAddr)
-			return host
+			return remoteHost(r)
 		}
 		return v
 	}

@@ -36,7 +36,7 @@ type ServiceConfig struct {
 }
 
 func main() {
-	chassis.RequireMajor(3)
+	chassis.RequireMajor(4)
 	cfg := config.MustLoad[ServiceConfig]()
 	logger := logz.New(cfg.LogLevel)
 
@@ -47,25 +47,20 @@ func main() {
 		},
 	}
 
-	// Build a health checker function from health.All.
-	// health.All returns ([]Result, error); wrap it to satisfy HealthChecker.
-	runChecks := health.All(checks)
-	checker := func(ctx context.Context) error {
-		_, err := runChecks(ctx)
-		return err
-	}
+	// Bridge health.All → grpckit.RegisterHealth via CheckFunc convenience adapter.
+	checker := health.CheckFunc(checks)
 
 	// Create the gRPC server with standard interceptors.
 	srv := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			grpckit.UnaryRecovery(logger),
 			grpckit.UnaryLogging(logger),
-			grpckit.UnaryMetrics(logger),
+			grpckit.UnaryMetrics(),
 		),
 		grpc.ChainStreamInterceptor(
 			grpckit.StreamRecovery(logger),
 			grpckit.StreamLogging(logger),
-			grpckit.StreamMetrics(logger),
+			grpckit.StreamMetrics(),
 		),
 	)
 

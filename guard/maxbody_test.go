@@ -1,6 +1,7 @@
 package guard_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,6 +23,28 @@ func TestMaxBodyRejectsOversizedRequest(t *testing.T) {
 
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status = %d, want 413", rec.Code)
+	}
+
+	ct := rec.Header().Get("Content-Type")
+	if ct != "application/problem+json" {
+		t.Fatalf("Content-Type = %q, want application/problem+json", ct)
+	}
+
+	var pd map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&pd); err != nil {
+		t.Fatalf("failed to decode problem detail: %v", err)
+	}
+	if pd["type"] != "https://chassis.ai8future.com/errors/payload-too-large" {
+		t.Errorf("type = %v", pd["type"])
+	}
+	if pd["title"] != "Payload Too Large" {
+		t.Errorf("title = %v", pd["title"])
+	}
+	if int(pd["status"].(float64)) != 413 {
+		t.Errorf("status = %v", pd["status"])
+	}
+	if pd["detail"] != "request body too large" {
+		t.Errorf("detail = %v", pd["detail"])
 	}
 }
 

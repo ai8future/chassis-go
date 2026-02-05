@@ -2,19 +2,44 @@ package call
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	chassis "github.com/ai8future/chassis-go"
+	"github.com/ai8future/chassis-go/work"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
 
 const tracerName = "github.com/ai8future/chassis-go/call"
+
+var (
+	clientDurationOnce sync.Once
+	clientDuration     metric.Float64Histogram
+)
+
+func getClientDuration() metric.Float64Histogram {
+	clientDurationOnce.Do(func() {
+		meter := otelapi.GetMeterProvider().Meter(tracerName)
+		var err error
+		clientDuration, err = meter.Float64Histogram(
+			"http.client.request.duration",
+			metric.WithDescription("Duration of HTTP client requests."),
+			metric.WithUnit("s"),
+		)
+		if err != nil {
+			otelapi.Handle(err)
+		}
+	})
+	return clientDuration
+}
 
 // cancelBody wraps a response body so that a context cancel function is called
 // when the body is closed, rather than when Do() returns. This prevents
@@ -66,11 +91,16 @@ func WithTimeout(d time.Duration) Option {
 }
 
 // WithRetry enables automatic retries for transient (5xx) errors using
-// exponential backoff with jitter.
+// exponential backoff with jitter. MaxAttempts is clamped to a minimum of 1.
+//
+// Note: retries re-send the same *http.Request. For requests with a non-nil
+// Body, the body must be rewindable (implement GetBody) or the retry will
+// send an empty/consumed body. Requests with nil Body (GET, DELETE, HEAD)
+// are always safe to retry.
 func WithRetry(maxAttempts int, baseDelay time.Duration) Option {
 	return func(c *Client) {
 		c.retrier = &Retrier{
-			MaxAttempts: maxAttempts,
+			MaxAttempts: max(1, maxAttempts),
 			BaseDelay:   baseDelay,
 		}
 	}
@@ -97,6 +127,8 @@ func WithBreaker(b Breaker) Option {
 // If the request does not carry a context, one is created with the configured
 // timeout. If a context is already present its deadline is respected.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
+	start := time.Now()
+
 	// Ensure the request always has a context with a deadline.
 	ctx := req.Context()
 	var cancel context.CancelFunc
@@ -121,7 +153,15 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	// Circuit breaker gate — reject early if open.
 	if c.breaker != nil {
 		if err := c.breaker.Allow(); err != nil {
+			span.AddEvent("circuit_breaker_rejected")
 			span.End()
+			getClientDuration().Record(ctx, time.Since(start).Seconds(),
+				metric.WithAttributes(
+					attribute.String("http.request.method", req.Method),
+					attribute.String("server.address", req.URL.Host),
+					attribute.String("error.type", fmt.Sprintf("%T", err)),
+				),
+			)
 			if cancel != nil {
 				cancel()
 			}
@@ -146,7 +186,31 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	// Record the result with the circuit breaker.
 	if c.breaker != nil {
 		success := err == nil && resp != nil && resp.StatusCode < 500
+
+		// Capture state before recording to detect transitions.
+		type stater interface{ State() State }
+		var prevState State
+		hasPrev := false
+		if s, ok := c.breaker.(stater); ok {
+			prevState = s.State()
+			hasPrev = true
+		}
+
 		c.breaker.Record(success)
+
+		eventAttrs := []attribute.KeyValue{attribute.Bool("success", success)}
+		if hasPrev {
+			if s, ok := c.breaker.(stater); ok {
+				newState := s.State()
+				if newState != prevState {
+					eventAttrs = append(eventAttrs,
+						attribute.String("from_state", stateName(prevState)),
+						attribute.String("to_state", stateName(newState)),
+					)
+				}
+			}
+		}
+		span.AddEvent("circuit_breaker_record", trace.WithAttributes(eventAttrs...))
 	}
 
 	// OTel: record result on the client span.
@@ -161,6 +225,24 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	}
 	span.End()
 
+	// OTel: record http.client.request.duration metric.
+	durationAttrs := []attribute.KeyValue{
+		attribute.String("http.request.method", req.Method),
+		attribute.String("server.address", req.URL.Host),
+	}
+	if resp != nil {
+		durationAttrs = append(durationAttrs,
+			attribute.Int("http.response.status_code", resp.StatusCode),
+		)
+	} else if err != nil {
+		durationAttrs = append(durationAttrs,
+			attribute.String("error.type", fmt.Sprintf("%T", err)),
+		)
+	}
+	getClientDuration().Record(ctx, time.Since(start).Seconds(),
+		metric.WithAttributes(durationAttrs...),
+	)
+
 	// If we created a cancel func, attach it to the response body so the
 	// context lives until the caller closes the body. On error, cancel now.
 	if cancel != nil {
@@ -172,4 +254,27 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	}
 
 	return resp, err
+}
+
+// Batch executes multiple requests concurrently with bounded concurrency
+// using work.Map. Results are returned in the same order as the input requests.
+func (c *Client) Batch(ctx context.Context, requests []*http.Request, opts ...work.Option) ([]*http.Response, error) {
+	return work.Map(ctx, requests, func(ctx context.Context, req *http.Request) (*http.Response, error) {
+		req = req.WithContext(ctx)
+		return c.Do(req)
+	}, opts...)
+}
+
+// stateName returns a human-readable name for a circuit breaker state.
+func stateName(s State) string {
+	switch s {
+	case StateClosed:
+		return "closed"
+	case StateOpen:
+		return "open"
+	case StateHalfOpen:
+		return "half-open"
+	default:
+		return "unknown"
+	}
 }
