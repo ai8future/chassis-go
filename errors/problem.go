@@ -2,6 +2,7 @@ package errors
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 )
 
@@ -11,6 +12,7 @@ var typeURIs = map[int]string{
 	http.StatusBadRequest:            typeBaseURI + "validation",
 	http.StatusNotFound:              typeBaseURI + "not-found",
 	http.StatusUnauthorized:          typeBaseURI + "unauthorized",
+	http.StatusForbidden:             typeBaseURI + "forbidden",
 	http.StatusGatewayTimeout:        typeBaseURI + "timeout",
 	http.StatusRequestEntityTooLarge: typeBaseURI + "payload-too-large",
 	http.StatusTooManyRequests:       typeBaseURI + "rate-limit",
@@ -22,6 +24,7 @@ var titleMap = map[int]string{
 	http.StatusBadRequest:            "Validation Error",
 	http.StatusNotFound:              "Not Found",
 	http.StatusUnauthorized:          "Unauthorized",
+	http.StatusForbidden:             "Forbidden",
 	http.StatusGatewayTimeout:        "Timeout",
 	http.StatusRequestEntityTooLarge: "Payload Too Large",
 	http.StatusTooManyRequests:       "Rate Limit Exceeded",
@@ -32,12 +35,12 @@ var titleMap = map[int]string{
 // ProblemDetail represents an RFC 9457 Problem Details object.
 // Extension members are serialized as top-level fields per the RFC spec.
 type ProblemDetail struct {
-	Type       string            `json:"type"`
-	Title      string            `json:"title"`
-	Status     int               `json:"status"`
-	Detail     string            `json:"detail"`
-	Instance   string            `json:"instance,omitempty"`
-	Extensions map[string]string `json:"-"` // serialized as top-level members
+	Type       string         `json:"type"`
+	Title      string         `json:"title"`
+	Status     int            `json:"status"`
+	Detail     string         `json:"detail"`
+	Instance   string         `json:"instance,omitempty"`
+	Extensions map[string]any `json:"-"` // serialized as top-level members
 }
 
 // MarshalJSON implements custom serialization to place extension members at
@@ -88,10 +91,36 @@ func (e *ServiceError) ProblemDetail(r *http.Request) ProblemDetail {
 		Instance: instance,
 	}
 	if len(e.Details) > 0 {
-		pd.Extensions = make(map[string]string, len(e.Details))
+		pd.Extensions = make(map[string]any, len(e.Details))
 		for k, v := range e.Details {
 			pd.Extensions[k] = v
 		}
 	}
 	return pd
+}
+
+// WriteProblem writes an RFC 9457 Problem Details JSON response for the given
+// error. It converts the error to a ServiceError via FromError, builds a
+// ProblemDetail, and injects the requestID as an extension member if non-empty.
+// This is the canonical write path used by httpkit and guard.
+func WriteProblem(w http.ResponseWriter, r *http.Request, err error, requestID string) {
+	if err == nil {
+		return
+	}
+	svcErr := FromError(err)
+	pd := svcErr.ProblemDetail(r)
+
+	if requestID != "" {
+		if pd.Extensions == nil {
+			pd.Extensions = make(map[string]any)
+		}
+		pd.Extensions["request_id"] = requestID
+	}
+
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(svcErr.HTTPCode)
+
+	if encErr := json.NewEncoder(w).Encode(pd); encErr != nil {
+		slog.ErrorContext(r.Context(), "errors: failed to encode problem detail", "error", encErr)
+	}
 }

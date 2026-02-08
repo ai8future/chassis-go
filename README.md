@@ -20,10 +20,21 @@ A composable Go toolkit providing standardized building blocks that services wir
 | `health` | Health check protocol with parallel aggregation. HTTP + gRPC. |
 | `call` | Intelligent HTTP client: retries, circuit breaking, deadline propagation. |
 
+### Tier 3: Cross-Cutting
+| Package | Purpose |
+|---------|---------|
+| `guard` | Request guards: rate limiting (LRU), CORS, security headers, IP filtering, timeouts, body limits. |
+| `flagz` | Feature flags with percentage rollouts and pluggable sources. |
+| `metrics` | OTel metrics with cardinality protection. |
+| `otel` | OpenTelemetry bootstrap (traces + metrics). |
+| `errors` | Unified error type with HTTP + gRPC codes and RFC 9457 Problem Details. |
+| `secval` | JSON security validation (dangerous keys, nesting depth). |
+
 ## Usage
 
 ```go
 func main() {
+    chassis.RequireMajor(5)
     cfg := config.MustLoad[AppConfig]()
     logger := logz.New(cfg.LogLevel)
 
@@ -68,7 +79,7 @@ func main() {
 ## Install
 
 ```bash
-go get github.com/ai8future/chassis-go
+go get github.com/ai8future/chassis-go/v5
 ```
 
 ## License

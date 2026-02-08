@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go"
-	"github.com/ai8future/chassis-go/guard"
+	chassis "github.com/ai8future/chassis-go/v5"
+	"github.com/ai8future/chassis-go/v5/guard"
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(4)
+	chassis.RequireMajor(5)
 	os.Exit(m.Run())
 }
 
@@ -22,6 +22,7 @@ func TestRateLimitAllowsWithinLimit(t *testing.T) {
 		Rate:    5,
 		Window:  time.Minute,
 		KeyFunc: guard.RemoteAddr(),
+		MaxKeys: 1000,
 	})
 
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +45,7 @@ func TestRateLimitRejectsOverLimit(t *testing.T) {
 		Rate:    2,
 		Window:  time.Hour, // long window so no refill happens
 		KeyFunc: guard.RemoteAddr(),
+		MaxKeys: 1000,
 	})
 
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -89,6 +91,7 @@ func TestXForwardedForExtractor(t *testing.T) {
 		Rate:    1,
 		Window:  time.Hour,
 		KeyFunc: guard.XForwardedFor("10.0.0.0/8"),
+		MaxKeys: 1000,
 	})
 
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -121,6 +124,7 @@ func TestXForwardedForIgnoresUntrustedProxy(t *testing.T) {
 		Rate:    1,
 		Window:  time.Hour,
 		KeyFunc: guard.XForwardedFor("172.16.0.0/12"), // only trust 172.16.x.x
+		MaxKeys: 1000,
 	})
 
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -147,4 +151,109 @@ func TestXForwardedForIgnoresUntrustedProxy(t *testing.T) {
 	if rec2.Code != http.StatusTooManyRequests {
 		t.Fatalf("second request: expected 429, got %d (XFF should be ignored for untrusted proxy)", rec2.Code)
 	}
+}
+
+func TestRateLimit_LRUEviction(t *testing.T) {
+	mw := guard.RateLimit(guard.RateLimitConfig{
+		Rate:    1,
+		Window:  time.Hour,
+		KeyFunc: guard.RemoteAddr(),
+		MaxKeys: 2,
+	})
+
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// Use up the token for IP-A.
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "1.1.1.1:1111"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("IP-A first: expected 200, got %d", rec.Code)
+	}
+
+	// Use up the token for IP-B.
+	req = httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "2.2.2.2:2222"
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("IP-B first: expected 200, got %d", rec.Code)
+	}
+
+	// Add IP-C — this should evict IP-A (LRU).
+	req = httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "3.3.3.3:3333"
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("IP-C first: expected 200, got %d", rec.Code)
+	}
+
+	// IP-A should be evicted and get a fresh bucket (1 token).
+	req = httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "1.1.1.1:1111"
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("IP-A after eviction: expected 200 (fresh bucket), got %d", rec.Code)
+	}
+}
+
+func TestRateLimit_PanicsOnZeroRate(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for zero Rate")
+		}
+	}()
+	guard.RateLimit(guard.RateLimitConfig{
+		Rate:    0,
+		Window:  time.Minute,
+		KeyFunc: guard.RemoteAddr(),
+		MaxKeys: 100,
+	})
+}
+
+func TestRateLimit_PanicsOnZeroWindow(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for zero Window")
+		}
+	}()
+	guard.RateLimit(guard.RateLimitConfig{
+		Rate:    10,
+		Window:  0,
+		KeyFunc: guard.RemoteAddr(),
+		MaxKeys: 100,
+	})
+}
+
+func TestRateLimit_PanicsOnNilKeyFunc(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for nil KeyFunc")
+		}
+	}()
+	guard.RateLimit(guard.RateLimitConfig{
+		Rate:    10,
+		Window:  time.Minute,
+		KeyFunc: nil,
+		MaxKeys: 100,
+	})
+}
+
+func TestRateLimit_PanicsOnZeroMaxKeys(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for zero MaxKeys")
+		}
+	}()
+	guard.RateLimit(guard.RateLimitConfig{
+		Rate:    10,
+		Window:  time.Minute,
+		KeyFunc: guard.RemoteAddr(),
+		MaxKeys: 0,
+	})
 }

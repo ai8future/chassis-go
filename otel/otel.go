@@ -9,7 +9,7 @@ import (
 	"log/slog"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go"
+	chassis "github.com/ai8future/chassis-go/v5"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -27,6 +27,7 @@ type Config struct {
 	ServiceVersion string
 	Endpoint       string           // OTLP gRPC endpoint, defaults to localhost:4317
 	Sampler        sdktrace.Sampler // defaults to AlwaysSample
+	Insecure       bool             // when true, disables TLS for OTLP connections
 }
 
 // ShutdownFunc drains and closes all OTel providers.
@@ -64,15 +65,19 @@ func Init(cfg Config) ShutdownFunc {
 	)
 	if resErr != nil {
 		slog.Warn("otel: resource creation failed, using default", "error", resErr)
+		res = resource.Default()
 	}
 
 	// --- Trace pipeline ---
-	traceExporter, err := otlptracegrpc.New(ctx,
+	traceOpts := []otlptracegrpc.Option{
 		otlptracegrpc.WithEndpoint(cfg.Endpoint),
-		otlptracegrpc.WithInsecure(),
-	)
+	}
+	if cfg.Insecure {
+		traceOpts = append(traceOpts, otlptracegrpc.WithInsecure())
+	}
+	traceExporter, err := otlptracegrpc.New(ctx, traceOpts...)
 	if err != nil {
-		// Degrade gracefully — no tracing but no crash.
+		slog.Error("otel: trace exporter creation failed, all telemetry disabled", "error", err)
 		return func(ctx context.Context) error { return nil }
 	}
 
@@ -89,12 +94,15 @@ func Init(cfg Config) ShutdownFunc {
 	))
 
 	// --- Metric pipeline ---
-	metricExporter, err := otlpmetricgrpc.New(ctx,
+	metricOpts := []otlpmetricgrpc.Option{
 		otlpmetricgrpc.WithEndpoint(cfg.Endpoint),
-		otlpmetricgrpc.WithInsecure(),
-	)
+	}
+	if cfg.Insecure {
+		metricOpts = append(metricOpts, otlpmetricgrpc.WithInsecure())
+	}
+	metricExporter, err := otlpmetricgrpc.New(ctx, metricOpts...)
 	if err != nil {
-		// Tracing works, metrics degrade.
+		slog.Warn("otel: metric exporter creation failed, metrics disabled", "error", err)
 		return func(ctx context.Context) error {
 			shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()

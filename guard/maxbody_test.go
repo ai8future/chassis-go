@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ai8future/chassis-go/guard"
+	"github.com/ai8future/chassis-go/v5/guard"
 )
 
 func TestMaxBodyRejectsOversizedRequest(t *testing.T) {
@@ -84,4 +84,22 @@ func TestMaxBodyAllowsGETWithNoBody(t *testing.T) {
 	if !called {
 		t.Fatal("handler was not called for GET")
 	}
+}
+
+func TestMaxBodyPanicsOnZero(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic on MaxBody(0)")
+		}
+	}()
+	guard.MaxBody(0)
+}
+
+func TestMaxBodyPanicsOnNegative(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic on MaxBody(-1)")
+		}
+	}()
+	guard.MaxBody(-1)
 }

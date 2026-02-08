@@ -49,6 +49,24 @@ func TestRetrier_RetriesOnNetworkErrorAndClosesBody(t *testing.T) {
 	}
 }
 
+func TestRetrier_ZeroBaseDelayDoesNotPanic(t *testing.T) {
+	r := &Retrier{MaxAttempts: 2, BaseDelay: 0}
+	var attempts int
+	_, err := r.Do(context.Background(), func() (*http.Response, error) {
+		attempts++
+		if attempts < 2 {
+			return &http.Response{StatusCode: 500, Body: http.NoBody}, nil
+		}
+		return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
 func TestRetrier_BackoffHonorsContextCancel(t *testing.T) {
 	r := &Retrier{BaseDelay: 200 * time.Millisecond}
 	ctx, cancel := context.WithCancel(context.Background())

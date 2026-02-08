@@ -1,12 +1,13 @@
 package guard
 
 import (
+	"container/list"
 	"net/http"
 	"sync"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go"
-	"github.com/ai8future/chassis-go/errors"
+	chassis "github.com/ai8future/chassis-go/v5"
+	"github.com/ai8future/chassis-go/v5/errors"
 )
 
 // RateLimitConfig configures the rate limiter.
@@ -14,6 +15,7 @@ type RateLimitConfig struct {
 	Rate    int
 	Window  time.Duration
 	KeyFunc KeyFunc // REQUIRED
+	MaxKeys int     // REQUIRED: upper bound on tracked keys
 }
 
 type bucket struct {
@@ -21,24 +23,29 @@ type bucket struct {
 	lastFill time.Time
 }
 
-// maxBuckets is the upper bound on tracked keys. When exceeded, a sweep is
-// forced and the oldest idle buckets are evicted.
-const maxBuckets = 100_000
-
-type limiter struct {
-	mu        sync.Mutex
-	buckets   map[string]*bucket
-	rate      int
-	window    time.Duration
-	lastSweep time.Time
+// lruEntry holds a bucket and its position in the LRU list.
+type lruEntry struct {
+	key    string
+	bucket *bucket
+	elem   *list.Element
 }
 
-func newLimiter(rate int, window time.Duration) *limiter {
+type limiter struct {
+	mu      sync.Mutex
+	entries map[string]*lruEntry
+	order   *list.List // front=MRU, back=LRU
+	rate    int
+	window  time.Duration
+	maxKeys int
+}
+
+func newLimiter(rate int, window time.Duration, maxKeys int) *limiter {
 	return &limiter{
-		buckets:   make(map[string]*bucket),
-		rate:      rate,
-		window:    window,
-		lastSweep: time.Now(),
+		entries: make(map[string]*lruEntry),
+		order:   list.New(),
+		rate:    rate,
+		window:  window,
+		maxKeys: maxKeys,
 	}
 }
 
@@ -47,22 +54,22 @@ func (l *limiter) allow(key string) bool {
 	defer l.mu.Unlock()
 	now := time.Now()
 
-	// Lazy sweep: evict stale buckets every window period or when map is full.
-	if now.Sub(l.lastSweep) >= l.window || len(l.buckets) >= maxBuckets {
-		staleThreshold := now.Add(-2 * l.window)
-		for k, b := range l.buckets {
-			if b.lastFill.Before(staleThreshold) {
-				delete(l.buckets, k)
-			}
+	entry, ok := l.entries[key]
+	if ok {
+		// Move to front (MRU).
+		l.order.MoveToFront(entry.elem)
+	} else {
+		// Evict LRU if at capacity.
+		for len(l.entries) >= l.maxKeys {
+			l.evictLRU()
 		}
-		l.lastSweep = now
+		b := &bucket{tokens: float64(l.rate), lastFill: now}
+		elem := l.order.PushFront(key)
+		entry = &lruEntry{key: key, bucket: b, elem: elem}
+		l.entries[key] = entry
 	}
 
-	b, ok := l.buckets[key]
-	if !ok {
-		b = &bucket{tokens: float64(l.rate), lastFill: now}
-		l.buckets[key] = b
-	}
+	b := entry.bucket
 	elapsed := now.Sub(b.lastFill)
 	refill := elapsed.Seconds() / l.window.Seconds() * float64(l.rate)
 	b.tokens += refill
@@ -77,14 +84,39 @@ func (l *limiter) allow(key string) bool {
 	return false
 }
 
+// evictLRU removes the least recently used entry. Must be called with mu held.
+func (l *limiter) evictLRU() {
+	back := l.order.Back()
+	if back == nil {
+		return
+	}
+	key := back.Value.(string)
+	l.order.Remove(back)
+	delete(l.entries, key)
+}
+
 // RateLimit returns middleware enforcing per-key rate limiting with token bucket.
+// Panics if Rate, Window, KeyFunc, or MaxKeys are invalid.
 func RateLimit(cfg RateLimitConfig) func(http.Handler) http.Handler {
 	chassis.AssertVersionChecked()
-	lim := newLimiter(cfg.Rate, cfg.Window)
+	if cfg.Rate <= 0 {
+		panic("guard: RateLimitConfig.Rate must be > 0")
+	}
+	if cfg.Window <= 0 {
+		panic("guard: RateLimitConfig.Window must be > 0")
+	}
+	if cfg.KeyFunc == nil {
+		panic("guard: RateLimitConfig.KeyFunc must not be nil")
+	}
+	if cfg.MaxKeys <= 0 {
+		panic("guard: RateLimitConfig.MaxKeys must be > 0")
+	}
+	lim := newLimiter(cfg.Rate, cfg.Window, cfg.MaxKeys)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key := cfg.KeyFunc(r)
 			if !lim.allow(key) {
+				w.Header().Set("Retry-After", "1")
 				writeProblem(w, r, errors.RateLimitError("rate limit exceeded"))
 				return
 			}

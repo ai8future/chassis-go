@@ -6,13 +6,13 @@ import (
 	"os"
 	"testing"
 
-	chassis "github.com/ai8future/chassis-go"
-	"github.com/ai8future/chassis-go/config"
-	"github.com/ai8future/chassis-go/testkit"
+	chassis "github.com/ai8future/chassis-go/v5"
+	"github.com/ai8future/chassis-go/v5/config"
+	"github.com/ai8future/chassis-go/v5/testkit"
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(4)
+	chassis.RequireMajor(5)
 	os.Exit(m.Run())
 }
 

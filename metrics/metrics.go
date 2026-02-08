@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	chassis "github.com/ai8future/chassis-go"
+	chassis "github.com/ai8future/chassis-go/v5"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -44,22 +44,31 @@ func New(prefix string, logger *slog.Logger) *Recorder {
 	chassis.AssertVersionChecked()
 	meter := otelapi.GetMeterProvider().Meter(prefix)
 
-	requestsTotal, _ := meter.Float64Counter(
+	requestsTotal, err := meter.Float64Counter(
 		prefix+"_requests_total",
 		metric.WithDescription("Total number of requests."),
 	)
+	if err != nil && logger != nil {
+		logger.Warn("metrics: failed to create requests_total counter", "error", err)
+	}
 
-	requestDuration, _ := meter.Float64Histogram(
+	requestDuration, err := meter.Float64Histogram(
 		prefix+"_request_duration_seconds",
 		metric.WithDescription("Request duration in seconds."),
 		metric.WithExplicitBucketBoundaries(DurationBuckets...),
 	)
+	if err != nil && logger != nil {
+		logger.Warn("metrics: failed to create request_duration histogram", "error", err)
+	}
 
-	contentSize, _ := meter.Float64Histogram(
+	contentSize, err := meter.Float64Histogram(
 		prefix+"_content_size_bytes",
 		metric.WithDescription("Content size in bytes."),
 		metric.WithExplicitBucketBoundaries(ContentBuckets...),
 	)
+	if err != nil && logger != nil {
+		logger.Warn("metrics: failed to create content_size histogram", "error", err)
+	}
 
 	return &Recorder{
 		prefix:          prefix,
@@ -104,49 +113,41 @@ func (r *Recorder) RecordRequest(ctx context.Context, method, status string, dur
 
 // checkCardinality returns true if the combo is allowed (under limit).
 func (r *Recorder) checkCardinality(metricName, combo string) bool {
+	// Fast path: check under read lock if the combo is already known.
 	r.mu.RLock()
-	combos, exists := r.seenCombos[metricName]
-	if exists {
+	if combos, exists := r.seenCombos[metricName]; exists {
 		if _, seen := combos[combo]; seen {
 			r.mu.RUnlock()
 			return true
 		}
-		if len(combos) >= MaxLabelCombinations {
-			r.mu.RUnlock()
-			r.warnOnceOverflow(metricName)
-			return false
-		}
 	}
 	r.mu.RUnlock()
 
+	// Slow path: acquire write lock and re-check everything.
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.seenCombos[metricName] == nil {
 		r.seenCombos[metricName] = make(map[string]struct{})
 	}
+	// Re-check: another goroutine may have added this combo while we waited.
+	if _, seen := r.seenCombos[metricName][combo]; seen {
+		return true
+	}
 	if len(r.seenCombos[metricName]) >= MaxLabelCombinations {
+		r.warnOnceOverflowLocked(metricName)
 		return false
 	}
 	r.seenCombos[metricName][combo] = struct{}{}
 	return true
 }
 
-func (r *Recorder) warnOnceOverflow(metricName string) {
-	r.mu.RLock()
+// warnOnceOverflowLocked logs a cardinality overflow warning once per metric.
+// Must be called with r.mu held.
+func (r *Recorder) warnOnceOverflowLocked(metricName string) {
 	if r.overflowWarned[metricName] {
-		r.mu.RUnlock()
-		return
-	}
-	r.mu.RUnlock()
-
-	r.mu.Lock()
-	if r.overflowWarned[metricName] {
-		r.mu.Unlock()
 		return
 	}
 	r.overflowWarned[metricName] = true
-	r.mu.Unlock()
-
 	if r.logger != nil {
 		r.logger.Warn("metrics cardinality limit reached, dropping new label combinations",
 			"metric", metricName,
@@ -164,8 +165,7 @@ type CounterVec struct {
 
 // Add increments the counter with the given label pairs (key, value, key, value, ...).
 func (c *CounterVec) Add(ctx context.Context, val float64, labelPairs ...string) {
-	labels := pairsToValues(labelPairs)
-	combo := strings.Join(labels, "\x00")
+	combo := pairsToCombo(labelPairs)
 	if c.recorder.checkCardinality(c.name, combo) {
 		c.inner.Add(ctx, val, metric.WithAttributes(pairsToAttributes(labelPairs)...))
 	}
@@ -180,8 +180,7 @@ type HistogramVec struct {
 
 // Observe records a value in the histogram with the given label pairs.
 func (h *HistogramVec) Observe(ctx context.Context, val float64, labelPairs ...string) {
-	labels := pairsToValues(labelPairs)
-	combo := strings.Join(labels, "\x00")
+	combo := pairsToCombo(labelPairs)
 	if h.recorder.checkCardinality(h.name, combo) {
 		h.inner.Record(ctx, val, metric.WithAttributes(pairsToAttributes(labelPairs)...))
 	}
@@ -208,13 +207,15 @@ func (r *Recorder) Histogram(name string, buckets []float64) *HistogramVec {
 	return &HistogramVec{inner: hv, name: name, recorder: r}
 }
 
-// pairsToValues extracts values from key-value pairs (skipping keys).
-func pairsToValues(pairs []string) []string {
-	values := make([]string, 0, len(pairs)/2)
-	for i := 1; i < len(pairs); i += 2 {
-		values = append(values, pairs[i])
+// pairsToCombo joins key=value pairs with \x00 as a unique combo key.
+// Including both keys and values prevents collisions where different
+// label names happen to share the same values.
+func pairsToCombo(pairs []string) string {
+	parts := make([]string, 0, len(pairs)/2)
+	for i := 0; i+1 < len(pairs); i += 2 {
+		parts = append(parts, pairs[i]+"="+pairs[i+1])
 	}
-	return values
+	return strings.Join(parts, "\x00")
 }
 
 // pairsToAttributes converts key-value pairs to OTel attributes.

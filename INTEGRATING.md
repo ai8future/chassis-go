@@ -13,13 +13,13 @@ Practical guide for teams adopting chassis-go into an existing Go codebase.
 ## Installation
 
 ```bash
-go get github.com/ai8future/chassis-go
+go get github.com/ai8future/chassis-go/v5
 ```
 
 The top-level package exports the library version for diagnostics:
 
 ```go
-import chassis "github.com/ai8future/chassis-go"
+import chassis "github.com/ai8future/chassis-go/v5"
 
 logger.Info("starting", "chassis_version", chassis.Version)
 ```
@@ -30,7 +30,7 @@ Every service must declare which major version of chassis it supports. This prev
 
 ```go
 func main() {
-    chassis.RequireMajor(4) // crashes if chassis major version != 4
+    chassis.RequireMajor(5) // crashes if chassis major version != 5
     // ... rest of startup
 }
 ```
@@ -41,24 +41,24 @@ A typical service imports all packages:
 
 ```go
 import (
-    "github.com/ai8future/chassis-go/call"
-    "github.com/ai8future/chassis-go/config"
-    "github.com/ai8future/chassis-go/errors"
-    "github.com/ai8future/chassis-go/grpckit"
-    "github.com/ai8future/chassis-go/health"
-    "github.com/ai8future/chassis-go/httpkit"
-    "github.com/ai8future/chassis-go/lifecycle"
-    "github.com/ai8future/chassis-go/work"
-    "github.com/ai8future/chassis-go/logz"
-    "github.com/ai8future/chassis-go/metrics"
-    "github.com/ai8future/chassis-go/secval"
+    "github.com/ai8future/chassis-go/v5/call"
+    "github.com/ai8future/chassis-go/v5/config"
+    "github.com/ai8future/chassis-go/v5/errors"
+    "github.com/ai8future/chassis-go/v5/grpckit"
+    "github.com/ai8future/chassis-go/v5/health"
+    "github.com/ai8future/chassis-go/v5/httpkit"
+    "github.com/ai8future/chassis-go/v5/lifecycle"
+    "github.com/ai8future/chassis-go/v5/work"
+    "github.com/ai8future/chassis-go/v5/logz"
+    "github.com/ai8future/chassis-go/v5/metrics"
+    "github.com/ai8future/chassis-go/v5/secval"
 )
 ```
 
 And in test files:
 
 ```go
-import "github.com/ai8future/chassis-go/testkit"
+import "github.com/ai8future/chassis-go/v5/testkit"
 ```
 
 The packages are designed to work together. While you *can* import selectively (a CLI tool might only need `config` + `logz`), the standard path for any service is to use the full toolkit.
@@ -101,12 +101,13 @@ cfg := config.MustLoad[AppConfig]()
 **When to use**: You need error types that carry both HTTP and gRPC status codes for consistent error handling across transport layers.
 
 ```go
-import "github.com/ai8future/chassis-go/errors"
+import "github.com/ai8future/chassis-go/v5/errors"
 
 // Factory constructors for common error categories
 err := errors.ValidationError("name is required")         // 400 / INVALID_ARGUMENT
 err := errors.NotFoundError("user not found")              // 404 / NOT_FOUND
 err := errors.UnauthorizedError("invalid token")           // 401 / UNAUTHENTICATED
+err := errors.ForbiddenError("access denied")              // 403 / PERMISSION_DENIED
 err := errors.TimeoutError("request timed out")            // 504 / DEADLINE_EXCEEDED
 err := errors.RateLimitError("too many requests")          // 429 / RESOURCE_EXHAUSTED
 err := errors.DependencyError("database unavailable")      // 503 / UNAVAILABLE
@@ -143,7 +144,7 @@ svcErr := errors.InternalError("db failed").WithCause(originalErr)
 **When to use**: You want to reject JSON payloads containing dangerous keys (prototype pollution, injection patterns) before processing them.
 
 ```go
-import "github.com/ai8future/chassis-go/secval"
+import "github.com/ai8future/chassis-go/v5/secval"
 
 // Validate JSON before unmarshalling
 if err := secval.ValidateJSON(body); err != nil {
@@ -170,7 +171,7 @@ json.Unmarshal(body, &req) // safe to unmarshal now
 **When to use**: You want structured metrics with built-in request recording and cardinality protection. Metrics flow out via OTLP push — no scrape endpoint required.
 
 ```go
-import "github.com/ai8future/chassis-go/metrics"
+import "github.com/ai8future/chassis-go/v5/metrics"
 
 // Create a recorder with a metric prefix
 recorder := metrics.New("mysvc", logger)
@@ -204,13 +205,14 @@ hist.Observe(ctx, 524288, "format", "pdf")
 **When to use**: You want distributed tracing and metrics export via OTLP. This is the single SDK consumer — all other chassis modules depend only on OTel API packages.
 
 ```go
-import otelinit "github.com/ai8future/chassis-go/otel"
+import otelinit "github.com/ai8future/chassis-go/v5/otel"
 
 shutdown := otelinit.Init(otelinit.Config{
     ServiceName:    "mysvc",
     ServiceVersion: chassis.Version,
     Endpoint:       "otel-collector:4317", // defaults to localhost:4317
     Sampler:        otelinit.RatioSample(0.1), // defaults to AlwaysSample
+    Insecure:       false, // default: uses TLS. Set true for plaintext (dev/test)
 })
 defer shutdown(context.Background())
 ```
@@ -235,29 +237,51 @@ defer shutdown(context.Background())
 
 ### guard — Request guards
 
-**When to use**: You need request-level protection — enforcing timeouts, rate limits, or body size limits as HTTP middleware.
+**When to use**: You need request-level protection — enforcing timeouts, rate limits, CORS, security headers, IP filtering, or body size limits as HTTP middleware.
 
 ```go
-import "github.com/ai8future/chassis-go/guard"
+import "github.com/ai8future/chassis-go/v5/guard"
 
 // Timeout — returns 504 if handler doesn't complete in time
 handler = guard.Timeout(10 * time.Second)(handler)
 
-// Rate limiting — per-key token bucket
+// Rate limiting — per-key token bucket with LRU eviction
 handler = guard.RateLimit(guard.RateLimitConfig{
     Rate:    100,
     Window:  time.Minute,
     KeyFunc: guard.RemoteAddr(),
+    MaxKeys: 10000, // LRU eviction when exceeded
 })(handler)
 
 // Body size limit — rejects oversized payloads
 handler = guard.MaxBody(2 * 1024 * 1024)(handler) // 2MB max
+
+// CORS — Cross-Origin Resource Sharing
+handler = guard.CORS(guard.CORSConfig{
+    AllowOrigins:     []string{"https://app.example.com"},
+    AllowMethods:     []string{"GET", "POST", "PUT", "DELETE"},
+    AllowHeaders:     []string{"Authorization", "Content-Type"},
+    MaxAge:           24 * time.Hour,
+    AllowCredentials: true,
+})(handler)
+
+// Security headers — sets secure defaults
+handler = guard.SecurityHeaders(guard.DefaultSecurityHeaders)(handler)
+
+// IP filtering — allow/deny by CIDR
+handler = guard.IPFilter(guard.IPFilterConfig{
+    Allow: []string{"10.0.0.0/8", "172.16.0.0/12"},
+    Deny:  []string{"10.0.0.1/32"}, // deny takes precedence
+})(handler)
 ```
 
 **Available middleware**:
 - `guard.Timeout(d)` — sets context deadline, buffers response, returns 504 Gateway Timeout with RFC 9457 Problem Details if deadline fires.
-- `guard.RateLimit(cfg)` — per-key token bucket rate limiting. Returns 429 Too Many Requests with Problem Details on limit exceeded.
+- `guard.RateLimit(cfg)` — per-key token bucket rate limiting with LRU eviction. Returns 429 Too Many Requests with Problem Details on limit exceeded. `MaxKeys` controls the LRU capacity.
 - `guard.MaxBody(maxBytes)` — rejects requests with `Content-Length` exceeding the limit with 413 Payload Too Large. Wraps the body with `http.MaxBytesReader` as a safety net.
+- `guard.CORS(cfg)` — handles CORS preflight (204) and sets Access-Control headers on matching origins. Panics if `AllowCredentials` is used with wildcard origin.
+- `guard.SecurityHeaders(cfg)` — sets security headers (CSP, HSTS, X-Frame-Options, etc.). Use `guard.DefaultSecurityHeaders` for secure defaults.
+- `guard.IPFilter(cfg)` — filters requests by client IP using CIDR allow/deny lists. Deny rules are evaluated first and take precedence. Returns 403 Forbidden on rejection.
 
 **Key extraction functions**:
 - `guard.RemoteAddr()` — uses the request's remote address (without port).
@@ -268,6 +292,58 @@ handler = guard.MaxBody(2 * 1024 * 1024)(handler) // 2MB max
 - Place `Timeout` inside `Recovery` but outside `Logging` so timeouts are caught and logged properly.
 - Rate limit state is in-memory per process. In multi-replica deployments, each replica enforces its own limit.
 - All guard middleware returns RFC 9457 Problem Details JSON on rejection for consistency with `httpkit.JSONError`.
+- All guard constructors validate their config at construction time and panic on invalid values (e.g., zero rate, nil KeyFunc).
+
+---
+
+### flagz — Feature flags
+
+**When to use**: You need feature flags with percentage rollouts, multiple sources, and OTel tracing integration.
+
+```go
+import "github.com/ai8future/chassis-go/v5/flagz"
+
+// Create flags from environment variables (FLAG_NEW_UI=true → "new-ui")
+src := flagz.FromEnv("FLAG")
+
+// Or from a JSON file
+src := flagz.FromJSON("/etc/flags.json")
+
+// Or from multiple sources (later overrides earlier)
+src := flagz.Multi(
+    flagz.FromJSON("/etc/defaults.json"),
+    flagz.FromEnv("FLAG"),
+)
+
+flags := flagz.New(src)
+
+// Simple boolean check
+if flags.Enabled("new-ui") {
+    renderNewUI()
+}
+
+// Percentage rollout with consistent bucketing
+if flags.EnabledFor(ctx, "experiment", flagz.Context{
+    UserID:  userID,
+    Percent: 25, // 25% of users
+}) {
+    showExperiment()
+}
+
+// Variant (raw string value)
+theme := flags.Variant("theme", "light") // "light" is the default
+```
+
+**Sources**:
+- `flagz.FromEnv(prefix)` — reads env vars at construction. `FLAG_NEW_THING=true` maps to flag `"new-thing"`.
+- `flagz.FromMap(m)` — in-memory map, useful for testing.
+- `flagz.FromJSON(path)` — reads a flat JSON object from a file.
+- `flagz.Multi(sources...)` — layers sources; later sources override earlier.
+
+**Integration notes**:
+- `EnabledFor` uses FNV-1a hashing of flag name + user ID for consistent percentage bucketing. The same user always gets the same result for the same flag.
+- When OTel is initialized, `EnabledFor` records `flag.evaluation` span events with flag name, enabled status, and user ID.
+- Flag sources are read at construction time (not on each lookup). For dynamic flags, create a new `Flags` instance when the source changes.
 
 ---
 
@@ -447,7 +523,7 @@ results, err := runAll(ctx)
 **When to use**: You have fan-out/fan-in workloads — batch processing, parallel dependency checks, racing fallback strategies, or streaming pipelines — and need bounded concurrency with OTel tracing.
 
 ```go
-import "github.com/ai8future/chassis-go/work"
+import "github.com/ai8future/chassis-go/v5/work"
 
 // Map: apply a function to each item with bounded concurrency
 results, err := work.Map(ctx, userIDs, func(ctx context.Context, id string) (*User, error) {
@@ -486,7 +562,7 @@ for r := range out {
 - Default worker count is `runtime.NumCPU()`. Override with `work.Workers(n)`.
 - Every function creates an OTel parent span (`work.Map`, `work.All`, `work.Race`, `work.Stream`) with per-item child spans. Span attributes include `work.total`, `work.succeeded`, `work.failed`, and `work.pattern`.
 - If no `TracerProvider` is configured, spans are no-ops — graceful degradation.
-- All functions call `chassis.AssertVersionChecked()` internally. No separate version gate is needed per call, but `RequireMajor(4)` must have been called once at startup.
+- All functions call `chassis.AssertVersionChecked()` internally. No separate version gate is needed per call, but `RequireMajor(5)` must have been called once at startup.
 - `*work.Errors` implements `Unwrap() []error` for use with `errors.Is`/`errors.As`.
 
 ---
@@ -565,7 +641,7 @@ func TestMyHandler(t *testing.T) {
 
 ```go
 func main() {
-    chassis.RequireMajor(4)
+    chassis.RequireMajor(5)
     cfg := config.MustLoad[ServiceConfig]()
     logger := logz.New(cfg.LogLevel)
 

@@ -8,14 +8,14 @@ import (
 	"strings"
 	"testing"
 
-	chassis "github.com/ai8future/chassis-go"
+	chassis "github.com/ai8future/chassis-go/v5"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(4)
+	chassis.RequireMajor(5)
 	os.Exit(m.Run())
 }
 

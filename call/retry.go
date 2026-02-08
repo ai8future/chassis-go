@@ -36,8 +36,9 @@ func (r *Retrier) Do(ctx context.Context, fn func() (*http.Response, error)) (*h
 
 		resp, err = fn()
 		if err != nil {
-			// Clean up any partial response body to avoid connection leaks.
+			// Drain and close any partial response body so the connection can be reused.
 			if resp != nil && resp.Body != nil {
+				io.Copy(io.Discard, resp.Body)
 				resp.Body.Close()
 			}
 			// Network-level error — worth retrying.
@@ -83,13 +84,17 @@ func (r *Retrier) Do(ctx context.Context, fn func() (*http.Response, error)) (*h
 // returns an error if the context is cancelled during the wait.
 func (r *Retrier) backoff(ctx context.Context, attempt int) error {
 	delay := r.BaseDelay
+	if delay <= 0 {
+		delay = 100 * time.Millisecond
+	}
 	for range attempt {
 		delay *= 2
 	}
 
 	// Add jitter: random duration in [0, delay/2).
-	jitter := time.Duration(rand.Int64N(int64(delay / 2)))
-	delay += jitter
+	if half := int64(delay / 2); half > 0 {
+		delay += time.Duration(rand.Int64N(half))
+	}
 
 	t := time.NewTimer(delay)
 	defer t.Stop()

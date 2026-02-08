@@ -28,7 +28,7 @@ func RequireMajor(required int) {
 	actual, err := strconv.Atoi(parts[0])
 	if err != nil {
 		fmt.Fprintf(os.Stderr,
-			"FATAL: Invalid VERSION format %q — expected semver like \"4.0.0\".\n", Version)
+			"FATAL: Invalid VERSION format %q — expected semver like \"5.0.0\".\n", Version)
 		os.Exit(1)
 	}
 	if actual != required {

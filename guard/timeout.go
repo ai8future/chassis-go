@@ -2,12 +2,14 @@ package guard
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"sync"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go"
-	"github.com/ai8future/chassis-go/errors"
+	chassis "github.com/ai8future/chassis-go/v5"
+	"github.com/ai8future/chassis-go/v5/errors"
 )
 
 // Timeout returns middleware that sets a context deadline on the request and
@@ -16,6 +18,9 @@ import (
 // deadline wins and no new deadline is applied.
 func Timeout(d time.Duration) func(http.Handler) http.Handler {
 	chassis.AssertVersionChecked()
+	if d <= 0 {
+		panic("guard: Timeout duration must be > 0")
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
@@ -30,18 +35,34 @@ func Timeout(d time.Duration) func(http.Handler) http.Handler {
 			r = r.WithContext(ctx)
 
 			done := make(chan struct{})
+			panicChan := make(chan any, 1)
 			tw := &timeoutWriter{w: w, req: r}
 			go func() {
+				defer func() {
+					if p := recover(); p != nil {
+						slog.Error("guard: panic in handler behind Timeout middleware",
+							"error", p,
+							"stack", string(debug.Stack()),
+						)
+						panicChan <- p
+					}
+				}()
 				next.ServeHTTP(tw, r)
 				close(done)
 			}()
 
 			select {
+			case p := <-panicChan:
+				// Re-panic on the original goroutine so Recovery middleware can catch it.
+				panic(p)
 			case <-done:
 				// Handler finished in time — flush any buffered response.
 				tw.flush()
 			case <-ctx.Done():
 				// Deadline exceeded — write 504 if handler hasn't started writing.
+				// The goroutine may still be running but its context is cancelled;
+				// well-behaved handlers will return promptly. This matches the
+				// behavior of Go's stdlib http.TimeoutHandler.
 				tw.timeout()
 			}
 		})
@@ -109,7 +130,9 @@ func (tw *timeoutWriter) flush() {
 		tw.w.WriteHeader(tw.code)
 	}
 	if len(tw.buf) > 0 {
-		tw.w.Write(tw.buf)
+		if _, err := tw.w.Write(tw.buf); err != nil {
+			slog.Error("guard: timeout flush write failed", "error", err)
+		}
 	}
 }
 
@@ -117,7 +140,7 @@ func (tw *timeoutWriter) flush() {
 func (tw *timeoutWriter) timeout() {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
-	if tw.written {
+	if tw.written || tw.started {
 		return
 	}
 	tw.written = true

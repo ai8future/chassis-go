@@ -1,11 +1,12 @@
 package health
 
 import (
+	"bytes"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 
-	chassis "github.com/ai8future/chassis-go"
+	chassis "github.com/ai8future/chassis-go/v5"
 )
 
 // response is the JSON envelope returned by the health handler.
@@ -31,13 +32,17 @@ func Handler(checks map[string]Check) http.Handler {
 			code = http.StatusServiceUnavailable
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(code)
-		if err := json.NewEncoder(w).Encode(response{
+		var buf bytes.Buffer
+		if encErr := json.NewEncoder(&buf).Encode(response{
 			Status: status,
 			Checks: results,
-		}); err != nil {
-			slog.ErrorContext(r.Context(), "health: failed to encode response", "error", err)
+		}); encErr != nil {
+			slog.ErrorContext(r.Context(), "health: failed to encode response", "error", encErr)
+			http.Error(w, `{"status":"error"}`, http.StatusInternalServerError)
+			return
 		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(code)
+		w.Write(buf.Bytes())
 	})
 }

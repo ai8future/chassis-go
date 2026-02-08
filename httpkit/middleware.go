@@ -7,10 +7,14 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"sync/atomic"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go"
+	chassis "github.com/ai8future/chassis-go/v5"
 )
+
+// idCounter is a fallback counter used when crypto/rand fails.
+var idCounter uint64
 
 // requestIDKey is the unexported context key used to store request IDs.
 type requestIDKey struct{}
@@ -26,10 +30,11 @@ func RequestIDFrom(ctx context.Context) string {
 }
 
 // generateID produces a UUID-v4-like random identifier using crypto/rand.
+// Falls back to a timestamp+counter scheme if crypto/rand is unavailable.
 func generateID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		panic("httpkit: crypto/rand.Read failed: " + err.Error())
+		return fmt.Sprintf("%x-%d", time.Now().UnixNano(), atomic.AddUint64(&idCounter, 1))
 	}
 	// Set version (4) and variant (RFC 4122) bits.
 	b[6] = (b[6] & 0x0f) | 0x40
@@ -58,13 +63,15 @@ type responseWriter struct {
 	headerWritten bool
 }
 
-// WriteHeader captures the status code before delegating to the underlying writer.
-// Only the first call's status code is recorded for logging/metrics accuracy.
+// WriteHeader captures the status code and delegates to the underlying writer.
+// Only the first call takes effect; subsequent calls are suppressed to prevent
+// "superfluous WriteHeader" warnings from net/http.
 func (rw *responseWriter) WriteHeader(code int) {
-	if !rw.headerWritten {
-		rw.statusCode = code
-		rw.headerWritten = true
+	if rw.headerWritten {
+		return
 	}
+	rw.statusCode = code
+	rw.headerWritten = true
 	rw.ResponseWriter.WriteHeader(code)
 }
 
@@ -110,7 +117,13 @@ func Recovery(logger *slog.Logger) func(http.Handler) http.Handler {
 	chassis.AssertVersionChecked()
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			rw, isWrapped := w.(*responseWriter)
+			// Ensure we have a responseWriter to track headerWritten state,
+			// whether or not Logging/Tracing middleware has already wrapped w.
+			rw, ok := w.(*responseWriter)
+			if !ok {
+				rw = &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+				w = rw
+			}
 			defer func() {
 				if err := recover(); err != nil {
 					stack := debug.Stack()
@@ -118,7 +131,7 @@ func Recovery(logger *slog.Logger) func(http.Handler) http.Handler {
 						"error", fmt.Sprint(err),
 						"stack", string(stack),
 					)
-					if isWrapped && rw.headerWritten {
+					if rw.headerWritten {
 						return // headers already sent — cannot write error response
 					}
 					JSONError(w, r, http.StatusInternalServerError, "internal server error")

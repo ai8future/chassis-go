@@ -5,9 +5,11 @@ package health
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sort"
 
-	chassis "github.com/ai8future/chassis-go"
-	"github.com/ai8future/chassis-go/work"
+	chassis "github.com/ai8future/chassis-go/v5"
+	"github.com/ai8future/chassis-go/v5/work"
 )
 
 // Check is the standard health check signature. A nil return indicates a
@@ -27,6 +29,12 @@ type namedCheck struct {
 	check Check
 }
 
+// checkResult holds the Result plus the original error for wrapping.
+type checkResult struct {
+	result Result
+	err    error
+}
+
 // CheckFunc returns a simple health check function suitable for passing
 // directly to grpckit.RegisterHealth. It runs all checks via All and
 // discards the individual results, returning only the aggregate error.
@@ -42,28 +50,37 @@ func CheckFunc(checks map[string]Check) func(ctx context.Context) error {
 // All returns a function that runs every named check in parallel using
 // work.Map. All checks execute regardless of individual failures. The
 // returned error is errors.Join of every failing check (nil when all pass).
+// Original errors are wrapped with the check name using fmt.Errorf so that
+// errors.Is chains are preserved.
 func All(checks map[string]Check) func(ctx context.Context) ([]Result, error) {
 	chassis.AssertVersionChecked()
 	return func(ctx context.Context) ([]Result, error) {
+		names := make([]string, 0, len(checks))
+		for name := range checks {
+			names = append(names, name)
+		}
+		sort.Strings(names)
 		entries := make([]namedCheck, 0, len(checks))
-		for name, check := range checks {
-			entries = append(entries, namedCheck{name: name, check: check})
+		for _, name := range names {
+			entries = append(entries, namedCheck{name: name, check: checks[name]})
 		}
 
-		results, _ := work.Map(ctx, entries, func(ctx context.Context, nc namedCheck) (Result, error) {
+		crs, _ := work.Map(ctx, entries, func(ctx context.Context, nc namedCheck) (checkResult, error) {
 			err := nc.check(ctx)
 			r := Result{Name: nc.name, Healthy: err == nil}
 			if err != nil {
 				r.Error = err.Error()
 			}
 			// Always return nil error so Map collects all results.
-			return r, nil
+			return checkResult{result: r, err: err}, nil
 		})
 
+		results := make([]Result, len(crs))
 		var errs []error
-		for _, r := range results {
-			if !r.Healthy && r.Error != "" {
-				errs = append(errs, errors.New(r.Error))
+		for i, cr := range crs {
+			results[i] = cr.result
+			if cr.err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", cr.result.Name, cr.err))
 			}
 		}
 

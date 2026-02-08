@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go"
+	chassis "github.com/ai8future/chassis-go/v5"
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(4)
+	chassis.RequireMajor(5)
 	os.Exit(m.Run())
 }
 
@@ -370,5 +370,73 @@ func TestStream_ClosedChannel(t *testing.T) {
 
 	if count != 0 {
 		t.Fatalf("expected 0 results from closed channel, got %d", count)
+	}
+}
+
+func TestErrors_Error(t *testing.T) {
+	e := &Errors{Failures: []Failure{
+		{Index: 0, Err: errors.New("a")},
+		{Index: 2, Err: errors.New("b")},
+		{Index: 4, Err: errors.New("c")},
+	}}
+	want := "3 task(s) failed"
+	if got := e.Error(); got != want {
+		t.Fatalf("Error() = %q, want %q", got, want)
+	}
+}
+
+func TestErrors_Unwrap(t *testing.T) {
+	errA := errors.New("a")
+	errB := errors.New("b")
+	e := &Errors{Failures: []Failure{
+		{Index: 0, Err: errA},
+		{Index: 1, Err: errB},
+	}}
+	unwrapped := e.Unwrap()
+	if len(unwrapped) != 2 {
+		t.Fatalf("Unwrap() returned %d errors, want 2", len(unwrapped))
+	}
+	if !errors.Is(e, errA) {
+		t.Error("errors.Is should find errA via Unwrap")
+	}
+	if !errors.Is(e, errB) {
+		t.Error("errors.Is should find errB via Unwrap")
+	}
+}
+
+func TestRace_ZeroTasks(t *testing.T) {
+	result, err := Race[string](context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "" {
+		t.Fatalf("expected zero value, got %q", result)
+	}
+}
+
+func TestAll_EmptySlice(t *testing.T) {
+	err := All(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWorkers_ClampsToOne(t *testing.T) {
+	items := []int{1, 2, 3}
+	results, err := Map(context.Background(), items, func(_ context.Context, n int) (int, error) {
+		return n * 2, nil
+	}, Workers(0))
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+	// Workers(0) should clamp to 1, still processing all items.
+	for i, v := range results {
+		if want := items[i] * 2; v != want {
+			t.Errorf("results[%d] = %d, want %d", i, v, want)
+		}
 	}
 }

@@ -139,7 +139,7 @@ Ship **living documentation** inside the repo, not a wiki:
 
 ## 7. Implementation Roadmap
 
-1. **Initialize Repo:** Create `github.com/ai8future/chassis-go`.
+1. **Initialize Repo:** Create `github.com/ai8future/chassis-go/v5`.
 2. **Step 1 (Foundation):** Implement `config`, `logz`, and `testkit`.
 3. **Step 2 (Foundation Validation):** Port `pricing-cli` to use Step 1.
 4. **Step 3 (Orchestration):** Implement `lifecycle`.

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	chassis "github.com/ai8future/chassis-go"
-	"github.com/ai8future/chassis-go/errors"
+	chassis "github.com/ai8future/chassis-go/v5"
+	"github.com/ai8future/chassis-go/v5/errors"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -20,7 +20,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(4)
+	chassis.RequireMajor(5)
 	os.Exit(m.Run())
 }
 
@@ -315,5 +315,91 @@ func TestJSONProblemWritesRFC9457(t *testing.T) {
 	}
 	if pd["instance"] != "/api/users" {
 		t.Errorf("instance = %v", pd["instance"])
+	}
+}
+
+func TestJSONProblemNilError(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+
+	JSONProblem(rec, req, nil)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	var pd map[string]any
+	json.NewDecoder(rec.Body).Decode(&pd)
+	if pd["detail"] != "unknown error" {
+		t.Errorf("detail = %v, want %q", pd["detail"], "unknown error")
+	}
+}
+
+func TestJSONError_AllStatusMappings(t *testing.T) {
+	cases := []struct {
+		code       int
+		wantStatus int // response status (unmapped codes map to 500)
+		wantURI    string
+	}{
+		{http.StatusBadRequest, 400, "https://chassis.ai8future.com/errors/validation"},
+		{http.StatusNotFound, 404, "https://chassis.ai8future.com/errors/not-found"},
+		{http.StatusUnauthorized, 401, "https://chassis.ai8future.com/errors/unauthorized"},
+		{http.StatusForbidden, 403, "https://chassis.ai8future.com/errors/forbidden"},
+		{http.StatusGatewayTimeout, 504, "https://chassis.ai8future.com/errors/timeout"},
+		{http.StatusRequestEntityTooLarge, 413, "https://chassis.ai8future.com/errors/payload-too-large"},
+		{http.StatusTooManyRequests, 429, "https://chassis.ai8future.com/errors/rate-limit"},
+		{http.StatusServiceUnavailable, 503, "https://chassis.ai8future.com/errors/dependency"},
+		{http.StatusInternalServerError, 500, "https://chassis.ai8future.com/errors/internal"},
+		{http.StatusTeapot, 500, "https://chassis.ai8future.com/errors/internal"}, // unmapped → InternalError(500)
+	}
+
+	for _, tc := range cases {
+		t.Run(http.StatusText(tc.code), func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest("GET", "/", nil)
+			JSONError(rec, req, tc.code, "msg")
+
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, tc.wantStatus)
+			}
+			var pd map[string]any
+			json.NewDecoder(rec.Body).Decode(&pd)
+			if pd["type"] != tc.wantURI {
+				t.Errorf("type = %v, want %q", pd["type"], tc.wantURI)
+			}
+		})
+	}
+}
+
+func TestResponseWriter_Unwrap(t *testing.T) {
+	inner := httptest.NewRecorder()
+	rw := &responseWriter{ResponseWriter: inner}
+	if got := rw.Unwrap(); got != inner {
+		t.Fatal("Unwrap() did not return the underlying ResponseWriter")
+	}
+}
+
+func TestRecovery_AfterHeadersWritten(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	// Recovery wraps a responseWriter that has already written headers.
+	handler := Recovery(logger)(Logging(logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("partial"))
+		panic("late panic")
+	})))
+
+	req := httptest.NewRequest(http.MethodGet, "/panic-late", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	// The panic should be logged.
+	output := buf.String()
+	if !strings.Contains(output, "panic recovered") {
+		t.Error("expected panic log entry")
+	}
+	// Status should be 200 (set before the panic), not 500.
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (headers already written)", rec.Code)
 	}
 }

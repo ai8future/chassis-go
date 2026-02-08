@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go"
+	chassis "github.com/ai8future/chassis-go/v5"
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(4)
+	chassis.RequireMajor(5)
 	os.Exit(m.Run())
 }
 
@@ -93,16 +93,25 @@ func TestRunComponentsRespectContextCancellation(t *testing.T) {
 	}
 }
 
-func TestRunIgnoresUnknownArgs(t *testing.T) {
+func TestRunPanicsOnUnknownArgs(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic on unsupported argument type, got none")
+		}
+		msg, ok := r.(string)
+		if !ok {
+			t.Fatalf("expected string panic, got %T: %v", r, r)
+		}
+		if got, want := msg, "lifecycle: Run received unsupported argument type string"; got != want {
+			t.Fatalf("panic message = %q, want %q", got, want)
+		}
+	}()
+
 	comp := func(ctx context.Context) error {
 		return nil
 	}
-
-	// Passing non-Component args should be silently ignored.
-	err := Run(context.Background(), comp, "ignored-string", 42)
-	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
-	}
+	Run(context.Background(), comp, "unsupported-string")
 }
 
 func TestRunSignalHandling(t *testing.T) {

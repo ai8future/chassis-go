@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	chassis "github.com/ai8future/chassis-go"
+	chassis "github.com/ai8future/chassis-go/v5"
 	"go.opentelemetry.io/otel/trace"
 )
 

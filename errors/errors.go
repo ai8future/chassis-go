@@ -2,6 +2,7 @@
 package errors
 
 import (
+	stderrors "errors"
 	"fmt"
 	"net/http"
 
@@ -14,7 +15,7 @@ type ServiceError struct {
 	Message  string
 	GRPCCode codes.Code
 	HTTPCode int
-	Details  map[string]string
+	Details  map[string]any
 	cause    error
 	typeURI  string // custom RFC 9457 type URI (optional)
 }
@@ -34,36 +35,54 @@ func (e *ServiceError) GRPCStatus() *status.Status {
 	return status.New(e.GRPCCode, e.Message)
 }
 
-// WithDetail adds a single detail key-value pair (fluent).
-func (e *ServiceError) WithDetail(key, value string) *ServiceError {
-	if e.Details == nil {
-		e.Details = make(map[string]string)
+// WithDetail returns a copy of the error with the given detail key-value pair added.
+// The receiver is not modified, making it safe to decorate errors across goroutines.
+func (e *ServiceError) WithDetail(key string, value any) *ServiceError {
+	out := e.clone()
+	if out.Details == nil {
+		out.Details = make(map[string]any)
 	}
-	e.Details[key] = value
-	return e
+	out.Details[key] = value
+	return out
 }
 
-// WithDetails adds multiple detail key-value pairs at once (fluent).
-func (e *ServiceError) WithDetails(details map[string]string) *ServiceError {
-	if e.Details == nil {
-		e.Details = make(map[string]string, len(details))
+// WithDetails returns a copy of the error with the given detail key-value pairs added.
+// The receiver is not modified, making it safe to decorate errors across goroutines.
+func (e *ServiceError) WithDetails(details map[string]any) *ServiceError {
+	out := e.clone()
+	if out.Details == nil {
+		out.Details = make(map[string]any, len(details))
 	}
 	for k, v := range details {
-		e.Details[k] = v
+		out.Details[k] = v
 	}
-	return e
+	return out
 }
 
-// WithType sets a custom RFC 9457 type URI, overriding the default.
+// WithType returns a copy of the error with a custom RFC 9457 type URI, overriding the default.
 func (e *ServiceError) WithType(uri string) *ServiceError {
-	e.typeURI = uri
-	return e
+	out := e.clone()
+	out.typeURI = uri
+	return out
 }
 
-// WithCause sets the underlying error cause for Unwrap chaining.
+// WithCause returns a copy of the error with the underlying error cause set for Unwrap chaining.
 func (e *ServiceError) WithCause(err error) *ServiceError {
-	e.cause = err
-	return e
+	out := e.clone()
+	out.cause = err
+	return out
+}
+
+// clone returns a shallow copy of the ServiceError with a deep-copied Details map.
+func (e *ServiceError) clone() *ServiceError {
+	out := *e
+	if e.Details != nil {
+		out.Details = make(map[string]any, len(e.Details))
+		for k, v := range e.Details {
+			out.Details[k] = v
+		}
+	}
+	return &out
 }
 
 // --- Factory constructors ---
@@ -81,6 +100,11 @@ func NotFoundError(msg string) *ServiceError {
 // UnauthorizedError creates an error for auth failures (401 / UNAUTHENTICATED).
 func UnauthorizedError(msg string) *ServiceError {
 	return &ServiceError{Message: msg, GRPCCode: codes.Unauthenticated, HTTPCode: http.StatusUnauthorized}
+}
+
+// ForbiddenError creates an error for permission denials (403 / PERMISSION_DENIED).
+func ForbiddenError(msg string) *ServiceError {
+	return &ServiceError{Message: msg, GRPCCode: codes.PermissionDenied, HTTPCode: http.StatusForbidden}
 }
 
 // TimeoutError creates an error for deadline exceeded (504 / DEADLINE_EXCEEDED).
@@ -116,7 +140,8 @@ func FromError(err error) *ServiceError {
 	if err == nil {
 		return nil
 	}
-	if se, ok := err.(*ServiceError); ok {
+	var se *ServiceError
+	if stderrors.As(err, &se) {
 		return se
 	}
 	return InternalError(err.Error()).WithCause(err)

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go"
+	chassis "github.com/ai8future/chassis-go/v5"
 )
 
 // MustLoad loads environment variables into a struct of type T based on struct
@@ -85,10 +85,6 @@ func setField(fieldVal reflect.Value, raw string) error {
 
 	// Handle []string specially.
 	if fieldVal.Type() == reflect.TypeOf([]string{}) {
-		if raw == "" {
-			fieldVal.Set(reflect.ValueOf([]string{}))
-			return nil
-		}
 		parts := strings.Split(raw, ",")
 		trimmed := make([]string, 0, len(parts))
 		for _, p := range parts {

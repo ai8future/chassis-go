@@ -3,10 +3,10 @@ package httpkit
 import (
 	"fmt"
 	"net/http"
-	"sync"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go"
+	chassis "github.com/ai8future/chassis-go/v5"
+	"github.com/ai8future/chassis-go/v5/internal/otelutil"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
@@ -15,28 +15,14 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const tracerName = "github.com/ai8future/chassis-go/httpkit"
+const tracerName = "github.com/ai8future/chassis-go/v5/httpkit"
 
-var (
-	httpDurationOnce      sync.Once
-	httpDurationHistogram metric.Float64Histogram
+var getHTTPDurationHistogram = otelutil.LazyHistogram(
+	tracerName,
+	"http.server.request.duration",
+	metric.WithUnit("s"),
+	metric.WithDescription("Duration of HTTP server requests"),
 )
-
-func getHTTPDurationHistogram() metric.Float64Histogram {
-	httpDurationOnce.Do(func() {
-		meter := otelapi.GetMeterProvider().Meter(tracerName)
-		var err error
-		httpDurationHistogram, err = meter.Float64Histogram(
-			"http.server.request.duration",
-			metric.WithUnit("s"),
-			metric.WithDescription("Duration of HTTP server requests"),
-		)
-		if err != nil {
-			otelapi.Handle(err)
-		}
-	})
-	return httpDurationHistogram
-}
 
 // Tracing returns middleware that creates OpenTelemetry server spans for each
 // HTTP request. It extracts incoming trace context from request headers using

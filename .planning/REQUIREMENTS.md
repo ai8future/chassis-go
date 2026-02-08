@@ -9,7 +9,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Project Setup
 
-- [x] **SETUP-01**: Go module initialized at `github.com/ai8future/chassis-go` with Go 1.22+ minimum
+- [x] **SETUP-01**: Go module initialized at `github.com/ai8future/chassis-go/v5` with Go 1.22+ minimum
 - [x] **SETUP-02**: CI pipeline runs tests, linting, and vet on every push
 - [x] **SETUP-03**: Project has .gitignore, LICENSE, and base README
 

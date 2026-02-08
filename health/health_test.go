@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go"
+	chassis "github.com/ai8future/chassis-go/v5"
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(4)
+	chassis.RequireMajor(5)
 	os.Exit(m.Run())
 }
 
@@ -199,6 +199,28 @@ func TestAll_ContextCancellation(t *testing.T) {
 
 	if !sawCancelled.Load() {
 		t.Error("check did not observe context cancellation")
+	}
+}
+
+func TestAll_PreservesOriginalError(t *testing.T) {
+	sentinel := errors.New("sentinel error")
+	checks := map[string]Check{
+		"db": func(ctx context.Context) error { return sentinel },
+	}
+
+	_, err := All(checks)(context.Background())
+	if err == nil {
+		t.Fatal("expected non-nil error")
+	}
+
+	// errors.Is should find the sentinel through the wrapping chain.
+	if !errors.Is(err, sentinel) {
+		t.Error("expected errors.Is to find sentinel error through wrapping")
+	}
+
+	// The error message should contain the check name.
+	if !strings.Contains(err.Error(), "db") {
+		t.Errorf("expected error to contain check name 'db', got %q", err.Error())
 	}
 }
 

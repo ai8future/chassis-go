@@ -61,7 +61,7 @@ Every service in the ecosystem gets production-grade operational concerns (confi
 ## Constraints
 
 - **Go version**: Go 1.22+ minimum
-- **Module strategy**: Single Go module (`github.com/ai8future/chassis-go`), not multi-module. Split into separate repos only if a single package needs a breaking change that doesn't affect others.
+- **Module strategy**: Single Go module (`github.com/ai8future/chassis-go/v5`), not multi-module. Split into separate repos only if a single package needs a breaking change that doesn't affect others.
 - **Versioning**: SemVer strictly. Start at `v0.x.x`.
 - **Zero cross-deps**: Importing `chassis/config` must not pull in `chassis/grpc`. Packages are independent.
 - **No framework behavior**: Chassis never owns `main()`. It never calls your code. You call it.

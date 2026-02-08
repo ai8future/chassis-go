@@ -5,10 +5,11 @@ package lifecycle
 
 import (
 	"context"
+	"fmt"
 	"os/signal"
 	"syscall"
 
-	chassis "github.com/ai8future/chassis-go"
+	chassis "github.com/ai8future/chassis-go/v5"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -33,6 +34,8 @@ func Run(ctx context.Context, args ...any) error {
 			components = append(components, v)
 		case func(ctx context.Context) error:
 			components = append(components, v)
+		default:
+			panic(fmt.Sprintf("lifecycle: Run received unsupported argument type %T", a))
 		}
 	}
 

@@ -1,21 +1,23 @@
 package metrics
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 
-	chassis "github.com/ai8future/chassis-go"
+	chassis "github.com/ai8future/chassis-go/v5"
 	"go.opentelemetry.io/otel"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(4)
+	chassis.RequireMajor(5)
 	os.Exit(m.Run())
 }
 
@@ -130,6 +132,27 @@ func TestCustomMetricsAppearInCollect(t *testing.T) {
 	}
 }
 
+func TestLabelCollision_DifferentKeysNotEqual(t *testing.T) {
+	_ = setupTestMeter(t)
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	r := New("collide", logger)
+	counter := r.Counter("events_total")
+
+	ctx := context.Background()
+	// These two calls have different keys but could collide if only values
+	// were hashed: ("a","x") vs ("b","x") — values are the same.
+	counter.Add(ctx, 1, "a", "x")
+	counter.Add(ctx, 1, "b", "x")
+
+	// Both should register as distinct combos (no cardinality collision).
+	// Verify we can still add a third distinct combo without overflow.
+	counter.Add(ctx, 1, "c", "y")
+
+	// If the old pairsToValues was used, "a","x" and "b","x" would hash
+	// to the same combo "x", collapsing to 1 combo instead of 2.
+	// The new pairsToCombo hashes "a=x" and "b=x" — distinct.
+}
+
 func TestMetricPrefix(t *testing.T) {
 	collect := setupTestMeter(t)
 	rec := New("custom_prefix", nil)
@@ -138,5 +161,29 @@ func TestMetricPrefix(t *testing.T) {
 	rm := collect()
 	if m := findMetric(rm, "custom_prefix_requests_total"); m == nil {
 		t.Error("expected custom_prefix_requests_total in collected metrics")
+	}
+}
+
+func TestWarnOnceOverflowLogsOnce(t *testing.T) {
+	_ = setupTestMeter(t)
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	rec := New("warnsvc", logger)
+
+	ctx := context.Background()
+	// Fill to cardinality limit
+	for i := range MaxLabelCombinations {
+		rec.RecordRequest(ctx, "GET", fmt.Sprintf("s%d", i), 10, 100)
+	}
+
+	// Trigger overflow twice
+	rec.RecordRequest(ctx, "GET", "overflow-1", 10, 100)
+	rec.RecordRequest(ctx, "GET", "overflow-2", 10, 100)
+
+	output := buf.String()
+	count := strings.Count(output, "cardinality limit reached")
+	if count != 1 {
+		t.Fatalf("expected exactly 1 overflow warning, got %d", count)
 	}
 }

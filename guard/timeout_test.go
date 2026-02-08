@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ai8future/chassis-go/guard"
+	"github.com/ai8future/chassis-go/v5/guard"
 )
 
 func TestTimeoutSetsDeadline(t *testing.T) {
@@ -83,4 +83,22 @@ func TestTimeoutFlushesOnSuccess(t *testing.T) {
 	if rec.Body.String() != "ok" {
 		t.Fatalf("expected body 'ok', got %q", rec.Body.String())
 	}
+}
+
+func TestTimeoutPanicsOnZero(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic on Timeout(0)")
+		}
+	}()
+	guard.Timeout(0)
+}
+
+func TestTimeoutPanicsOnNegative(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic on Timeout(-1)")
+		}
+	}()
+	guard.Timeout(-1)
 }

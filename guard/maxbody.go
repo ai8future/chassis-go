@@ -3,14 +3,17 @@ package guard
 import (
 	"net/http"
 
-	chassis "github.com/ai8future/chassis-go"
-	"github.com/ai8future/chassis-go/errors"
+	chassis "github.com/ai8future/chassis-go/v5"
+	"github.com/ai8future/chassis-go/v5/errors"
 )
 
 // MaxBody returns middleware that rejects requests with a body exceeding
 // maxBytes with 413 Payload Too Large.
 func MaxBody(maxBytes int64) func(http.Handler) http.Handler {
 	chassis.AssertVersionChecked()
+	if maxBytes <= 0 {
+		panic("guard: MaxBody maxBytes must be > 0")
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.ContentLength > maxBytes {

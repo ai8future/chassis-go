@@ -3,6 +3,7 @@ package guard
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -58,13 +59,6 @@ func TestXForwardedForKeyFunc(t *testing.T) {
 			want:        "10.2.3.4",
 		},
 		{
-			name:        "invalid cidr ignored",
-			trustedCIDR: "not-a-cidr",
-			remoteAddr:  "10.9.9.9:8080",
-			xff:         "203.0.113.7",
-			want:        "10.9.9.9",
-		},
-		{
 			name:        "non-IP xff value falls back to remote",
 			trustedCIDR: "10.0.0.0/8",
 			remoteAddr:  "10.1.2.3:8080",
@@ -86,6 +80,20 @@ func TestXForwardedForKeyFunc(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestXForwardedForPanicsOnInvalidCIDR(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic on invalid CIDR, got none")
+		}
+		msg, ok := r.(string)
+		if !ok || !strings.Contains(msg, "invalid trusted CIDR") {
+			t.Fatalf("unexpected panic message: %v", r)
+		}
+	}()
+	XForwardedFor("not-a-cidr")
 }
 
 func TestHeaderKeyFunc(t *testing.T) {

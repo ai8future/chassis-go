@@ -2,11 +2,9 @@
 package httpkit
 
 import (
-	"encoding/json"
-	"log/slog"
 	"net/http"
 
-	"github.com/ai8future/chassis-go/errors"
+	"github.com/ai8future/chassis-go/v5/errors"
 )
 
 // JSONError writes an RFC 9457 Problem Details JSON response for the given
@@ -23,21 +21,8 @@ func JSONProblem(w http.ResponseWriter, r *http.Request, err *errors.ServiceErro
 	if err == nil {
 		err = errors.InternalError("unknown error")
 	}
-	pd := err.ProblemDetail(r)
-
-	if id := RequestIDFrom(r.Context()); id != "" {
-		if pd.Extensions == nil {
-			pd.Extensions = make(map[string]string)
-		}
-		pd.Extensions["request_id"] = id
-	}
-
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(err.HTTPCode)
-
-	if encErr := json.NewEncoder(w).Encode(pd); encErr != nil {
-		slog.ErrorContext(r.Context(), "httpkit: failed to encode problem detail", "error", encErr)
-	}
+	requestID := RequestIDFrom(r.Context())
+	errors.WriteProblem(w, r, err, requestID)
 }
 
 // errorForStatus maps an HTTP status code to an appropriate ServiceError factory.
@@ -49,6 +34,8 @@ func errorForStatus(code int, message string) *errors.ServiceError {
 		return errors.NotFoundError(message)
 	case http.StatusUnauthorized:
 		return errors.UnauthorizedError(message)
+	case http.StatusForbidden:
+		return errors.ForbiddenError(message)
 	case http.StatusGatewayTimeout:
 		return errors.TimeoutError(message)
 	case http.StatusRequestEntityTooLarge:

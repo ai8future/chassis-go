@@ -6,10 +6,10 @@ import (
 	"context"
 	"log/slog"
 	"runtime/debug"
-	"sync"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go"
+	chassis "github.com/ai8future/chassis-go/v5"
+	"github.com/ai8future/chassis-go/v5/internal/otelutil"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -21,28 +21,14 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const tracerName = "github.com/ai8future/chassis-go/grpckit"
+const tracerName = "github.com/ai8future/chassis-go/v5/grpckit"
 
-var (
-	rpcDurationOnce      sync.Once
-	rpcDurationHistogram metric.Float64Histogram
+var getRPCDurationHistogram = otelutil.LazyHistogram(
+	tracerName,
+	"rpc.server.duration",
+	metric.WithUnit("s"),
+	metric.WithDescription("Duration of gRPC server requests"),
 )
-
-func getRPCDurationHistogram() metric.Float64Histogram {
-	rpcDurationOnce.Do(func() {
-		meter := otelapi.GetMeterProvider().Meter(tracerName)
-		var err error
-		rpcDurationHistogram, err = meter.Float64Histogram(
-			"rpc.server.duration",
-			metric.WithUnit("s"),
-			metric.WithDescription("Duration of gRPC server requests"),
-		)
-		if err != nil {
-			otelapi.Handle(err)
-		}
-	})
-	return rpcDurationHistogram
-}
 
 // UnaryLogging returns a unary server interceptor that logs the method name,
 // duration, and error (if any) for each RPC at Info level.
@@ -151,6 +137,18 @@ func ctx(ss grpc.ServerStream) context.Context {
 	return ss.Context()
 }
 
+// grpcCodeFromError extracts the gRPC status code from an error.
+// Returns codes.OK when err is nil, codes.Unknown for non-gRPC errors.
+func grpcCodeFromError(err error) codes.Code {
+	if err == nil {
+		return codes.OK
+	}
+	if st, ok := status.FromError(err); ok {
+		return st.Code()
+	}
+	return codes.Unknown
+}
+
 // UnaryMetrics returns a unary server interceptor that records rpc.server.duration
 // as an OTel histogram with method and status code attributes.
 func UnaryMetrics() grpc.UnaryServerInterceptor {
@@ -165,19 +163,12 @@ func UnaryMetrics() grpc.UnaryServerInterceptor {
 		resp, err := handler(ctx, req)
 		duration := time.Since(start).Seconds()
 
-		grpcCode := codes.OK
-		if err != nil {
-			if st, ok := status.FromError(err); ok {
-				grpcCode = st.Code()
-			}
-		}
-
 		if h := getRPCDurationHistogram(); h != nil {
 			h.Record(ctx, duration,
 				metric.WithAttributes(
 					attribute.String("rpc.method", info.FullMethod),
 					attribute.String("rpc.system", "grpc"),
-					attribute.Int("rpc.grpc.status_code", int(grpcCode)),
+					attribute.Int("rpc.grpc.status_code", int(grpcCodeFromError(err))),
 				),
 			)
 		}
@@ -200,19 +191,12 @@ func StreamMetrics() grpc.StreamServerInterceptor {
 		err := handler(srv, ss)
 		duration := time.Since(start).Seconds()
 
-		grpcCode := codes.OK
-		if err != nil {
-			if st, ok := status.FromError(err); ok {
-				grpcCode = st.Code()
-			}
-		}
-
 		if h := getRPCDurationHistogram(); h != nil {
 			h.Record(ctx(ss), duration,
 				metric.WithAttributes(
 					attribute.String("rpc.method", info.FullMethod),
 					attribute.String("rpc.system", "grpc"),
-					attribute.Int("rpc.grpc.status_code", int(grpcCode)),
+					attribute.Int("rpc.grpc.status_code", int(grpcCodeFromError(err))),
 				),
 			)
 		}

@@ -1,4 +1,4 @@
-// Example 04-full-service demonstrates all chassis 4.0 modules wired together:
+// Example 04-full-service demonstrates all chassis 5.0 modules wired together:
 // config, logz, lifecycle, errors, secval, metrics, health, httpkit, grpckit, otel.
 //
 // Copy this directory to start a new service.
@@ -23,17 +23,17 @@ import (
 	"net/http"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go"
-	"github.com/ai8future/chassis-go/config"
-	chassiserrors "github.com/ai8future/chassis-go/errors"
-	"github.com/ai8future/chassis-go/guard"
-	"github.com/ai8future/chassis-go/health"
-	"github.com/ai8future/chassis-go/httpkit"
-	"github.com/ai8future/chassis-go/lifecycle"
-	"github.com/ai8future/chassis-go/logz"
-	"github.com/ai8future/chassis-go/metrics"
-	otelinit "github.com/ai8future/chassis-go/otel"
-	"github.com/ai8future/chassis-go/secval"
+	chassis "github.com/ai8future/chassis-go/v5"
+	"github.com/ai8future/chassis-go/v5/config"
+	chassiserrors "github.com/ai8future/chassis-go/v5/errors"
+	"github.com/ai8future/chassis-go/v5/guard"
+	"github.com/ai8future/chassis-go/v5/health"
+	"github.com/ai8future/chassis-go/v5/httpkit"
+	"github.com/ai8future/chassis-go/v5/lifecycle"
+	"github.com/ai8future/chassis-go/v5/logz"
+	"github.com/ai8future/chassis-go/v5/metrics"
+	otelinit "github.com/ai8future/chassis-go/v5/otel"
+	"github.com/ai8future/chassis-go/v5/secval"
 )
 
 type AppConfig struct {
@@ -43,7 +43,7 @@ type AppConfig struct {
 }
 
 func main() {
-	chassis.RequireMajor(4)
+	chassis.RequireMajor(5)
 
 	cfg := config.MustLoad[AppConfig]()
 	logger := logz.New(cfg.LogLevel)

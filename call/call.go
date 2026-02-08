@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sync"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go"
-	"github.com/ai8future/chassis-go/work"
+	chassis "github.com/ai8future/chassis-go/v5"
+	"github.com/ai8future/chassis-go/v5/internal/otelutil"
+	"github.com/ai8future/chassis-go/v5/work"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -18,28 +18,14 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const tracerName = "github.com/ai8future/chassis-go/call"
+const tracerName = "github.com/ai8future/chassis-go/v5/call"
 
-var (
-	clientDurationOnce sync.Once
-	clientDuration     metric.Float64Histogram
+var getClientDuration = otelutil.LazyHistogram(
+	tracerName,
+	"http.client.request.duration",
+	metric.WithDescription("Duration of HTTP client requests."),
+	metric.WithUnit("s"),
 )
-
-func getClientDuration() metric.Float64Histogram {
-	clientDurationOnce.Do(func() {
-		meter := otelapi.GetMeterProvider().Meter(tracerName)
-		var err error
-		clientDuration, err = meter.Float64Histogram(
-			"http.client.request.duration",
-			metric.WithDescription("Duration of HTTP client requests."),
-			metric.WithUnit("s"),
-		)
-		if err != nil {
-			otelapi.Handle(err)
-		}
-	})
-	return clientDuration
-}
 
 // cancelBody wraps a response body so that a context cancel function is called
 // when the body is closed, rather than when Do() returns. This prevents
@@ -155,13 +141,15 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		if err := c.breaker.Allow(); err != nil {
 			span.AddEvent("circuit_breaker_rejected")
 			span.End()
-			getClientDuration().Record(ctx, time.Since(start).Seconds(),
-				metric.WithAttributes(
-					attribute.String("http.request.method", req.Method),
-					attribute.String("server.address", req.URL.Host),
-					attribute.String("error.type", fmt.Sprintf("%T", err)),
-				),
-			)
+			if h := getClientDuration(); h != nil {
+				h.Record(ctx, time.Since(start).Seconds(),
+					metric.WithAttributes(
+						attribute.String("http.request.method", req.Method),
+						attribute.String("server.address", req.URL.Host),
+						attribute.String("error.type", fmt.Sprintf("%T", err)),
+					),
+				)
+			}
 			if cancel != nil {
 				cancel()
 			}
@@ -239,9 +227,11 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 			attribute.String("error.type", fmt.Sprintf("%T", err)),
 		)
 	}
-	getClientDuration().Record(ctx, time.Since(start).Seconds(),
-		metric.WithAttributes(durationAttrs...),
-	)
+	if h := getClientDuration(); h != nil {
+		h.Record(ctx, time.Since(start).Seconds(),
+			metric.WithAttributes(durationAttrs...),
+		)
+	}
 
 	// If we created a cancel func, attach it to the response body so the
 	// context lives until the caller closes the body. On error, cancel now.

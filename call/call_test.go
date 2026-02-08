@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go"
-	"github.com/ai8future/chassis-go/work"
+	chassis "github.com/ai8future/chassis-go/v5"
+	"github.com/ai8future/chassis-go/v5/work"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -22,7 +22,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(4)
+	chassis.RequireMajor(5)
 	os.Exit(m.Run())
 }
 
@@ -508,6 +508,73 @@ func TestDoPropagatestraceparentHeader(t *testing.T) {
 		t.Fatal("expected a SpanKindClient span to be created")
 	}
 }
+
+func TestWithBreakerCustomImplementation(t *testing.T) {
+	// Verify that WithBreaker accepts a custom Breaker implementation.
+	var allowCalled, recordCalled bool
+	custom := &testBreaker{
+		allowFn: func() error {
+			allowCalled = true
+			return nil
+		},
+		recordFn: func(success bool) {
+			recordCalled = true
+			if !success {
+				t.Error("expected success=true for 200 response")
+			}
+		},
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(WithTimeout(5*time.Second), WithBreaker(custom))
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	resp.Body.Close()
+
+	if !allowCalled {
+		t.Error("custom breaker Allow() was not called")
+	}
+	if !recordCalled {
+		t.Error("custom breaker Record() was not called")
+	}
+}
+
+func TestWithBreakerRejectsWhenOpen(t *testing.T) {
+	custom := &testBreaker{
+		allowFn: func() error {
+			return ErrCircuitOpen
+		},
+		recordFn: func(_ bool) {},
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Fatal("request should not reach server when breaker is open")
+	}))
+	defer srv.Close()
+
+	c := New(WithTimeout(5*time.Second), WithBreaker(custom))
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	_, err := c.Do(req)
+	if err != ErrCircuitOpen {
+		t.Fatalf("expected ErrCircuitOpen, got %v", err)
+	}
+}
+
+// testBreaker is a mock Breaker for testing WithBreaker.
+type testBreaker struct {
+	allowFn  func() error
+	recordFn func(bool)
+}
+
+func (b *testBreaker) Allow() error      { return b.allowFn() }
+func (b *testBreaker) Record(success bool) { b.recordFn(success) }
 
 func TestBatch(t *testing.T) {
 	var hits atomic.Int32
