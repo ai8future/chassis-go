@@ -83,6 +83,55 @@ func TestHelperProcess(t *testing.T) {
 	os.Exit(0)
 }
 
+func TestPortDeterministic(t *testing.T) {
+	p1 := Port("serp_svc")
+	p2 := Port("serp_svc")
+	if p1 != p2 {
+		t.Errorf("Port is not deterministic: %d != %d", p1, p2)
+	}
+}
+
+func TestPortInRange(t *testing.T) {
+	names := []string{"a", "serp_svc", "my-service", "x", "very-long-service-name-for-testing"}
+	for _, name := range names {
+		p := Port(name)
+		if p < 5000 || p > 48000 {
+			t.Errorf("Port(%q) = %d, outside range 5000–48000", name, p)
+		}
+	}
+}
+
+func TestPortDifferentNames(t *testing.T) {
+	p1 := Port("service_a")
+	p2 := Port("service_b")
+	if p1 == p2 {
+		t.Errorf("Port collision: service_a and service_b both got %d", p1)
+	}
+}
+
+func TestPortOffset(t *testing.T) {
+	base := Port("my_svc")
+	http := Port("my_svc", PortHTTP)
+	grpc := Port("my_svc", PortGRPC)
+	metrics := Port("my_svc", PortMetrics)
+
+	if http != base {
+		t.Errorf("PortHTTP: got %d, want %d", http, base)
+	}
+	if grpc != base+1 {
+		t.Errorf("PortGRPC: got %d, want %d", grpc, base+1)
+	}
+	if metrics != base+2 {
+		t.Errorf("PortMetrics: got %d, want %d", metrics, base+2)
+	}
+}
+
+func TestPortDefaultOffsetZero(t *testing.T) {
+	if Port("x") != Port("x", 0) {
+		t.Error("Port with no offset should equal Port with offset 0")
+	}
+}
+
 func parseMajor(t *testing.T, version string) int {
 	t.Helper()
 	parts := strings.SplitN(strings.TrimSpace(version), ".", 2)

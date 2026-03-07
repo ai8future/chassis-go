@@ -56,3 +56,31 @@ func AssertVersionChecked() {
 func ResetVersionCheck() {
 	majorVersionAsserted.Store(false)
 }
+
+// Standard port role offsets for chassis transport roles.
+const (
+	PortHTTP    = 0 // Primary HTTP/REST API
+	PortGRPC    = 1 // gRPC transport
+	PortMetrics = 2 // Admin, Prometheus metrics, health
+)
+
+// Port returns a deterministic port number derived from a service name using
+// the djb2 hash algorithm. The result is in the range 5000–48000, well below
+// the OS ephemeral port range (49152+).
+//
+// The optional offset parameter (default 0) allows multiple ports per service:
+//
+//	chassis.Port("my_svc")                    // base port (HTTP)
+//	chassis.Port("my_svc", chassis.PortGRPC)  // base + 1 (gRPC)
+//	chassis.Port("my_svc", chassis.PortMetrics) // base + 2 (metrics)
+func Port(name string, offset ...int) int {
+	var h uint32 = 5381
+	for i := 0; i < len(name); i++ {
+		h = h*33 + uint32(name[i])
+	}
+	port := 5000 + int(h%43001)
+	if len(offset) > 0 {
+		port += offset[0]
+	}
+	return port
+}

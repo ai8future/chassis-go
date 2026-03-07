@@ -486,6 +486,220 @@ func TestPollOnceRestartCommand(t *testing.T) {
 	}
 }
 
+func TestPortDeclarationAppearsInPIDFile(t *testing.T) {
+	tmp := t.TempDir()
+	registry.ResetForTest(tmp)
+
+	registry.Port(0, 8080, "REST API")
+	registry.Port(1, 8081, "gRPC API")
+	registry.Port(2, 8082, "Prometheus metrics")
+
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := registry.Init(cancel, "6.0.0-test"); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	t.Cleanup(func() { registry.Shutdown("test-done") })
+
+	wd, _ := os.Getwd()
+	name := filepath.Base(wd)
+	svcDir := filepath.Join(tmp, name)
+	pid := strconv.Itoa(os.Getpid())
+	pidFile := filepath.Join(svcDir, pid+".json")
+
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("read PID file: %v", err)
+	}
+
+	var reg registry.Registration
+	if err := json.Unmarshal(data, &reg); err != nil {
+		t.Fatalf("parse PID JSON: %v", err)
+	}
+
+	if len(reg.Ports) != 3 {
+		t.Fatalf("expected 3 ports, got %d", len(reg.Ports))
+	}
+
+	expected := []struct {
+		port  int
+		role  string
+		proto string
+		label string
+	}{
+		{8080, "http", "http", "REST API"},
+		{8081, "grpc", "h2c", "gRPC API"},
+		{8082, "metrics", "http", "Prometheus metrics"},
+	}
+
+	for i, exp := range expected {
+		p := reg.Ports[i]
+		if p.Port != exp.port || p.Role != exp.role || p.Proto != exp.proto || p.Label != exp.label {
+			t.Errorf("port[%d] = %+v, want {port:%d role:%s proto:%s label:%s}",
+				i, p, exp.port, exp.role, exp.proto, exp.label)
+		}
+	}
+}
+
+func TestPortProtoOverride(t *testing.T) {
+	tmp := t.TempDir()
+	registry.ResetForTest(tmp)
+
+	registry.Port(0, 443, "HTTPS API", registry.Proto("https"))
+
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := registry.Init(cancel, "6.0.0-test"); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	t.Cleanup(func() { registry.Shutdown("test-done") })
+
+	wd, _ := os.Getwd()
+	name := filepath.Base(wd)
+	svcDir := filepath.Join(tmp, name)
+	pid := strconv.Itoa(os.Getpid())
+	pidFile := filepath.Join(svcDir, pid+".json")
+
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("read PID file: %v", err)
+	}
+
+	var reg registry.Registration
+	if err := json.Unmarshal(data, &reg); err != nil {
+		t.Fatalf("parse PID JSON: %v", err)
+	}
+
+	if len(reg.Ports) != 1 {
+		t.Fatalf("expected 1 port, got %d", len(reg.Ports))
+	}
+	if reg.Ports[0].Proto != "https" {
+		t.Errorf("Proto = %q, want %q", reg.Ports[0].Proto, "https")
+	}
+}
+
+func TestBasePortComputedFromName(t *testing.T) {
+	tmp := t.TempDir()
+	registry.ResetForTest(tmp)
+	t.Setenv("CHASSIS_SERVICE_NAME", "test_svc")
+
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := registry.Init(cancel, "6.0.0-test"); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	t.Cleanup(func() { registry.Shutdown("test-done") })
+
+	svcDir := filepath.Join(tmp, "test_svc")
+	pid := strconv.Itoa(os.Getpid())
+	pidFile := filepath.Join(svcDir, pid+".json")
+
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("read PID file: %v", err)
+	}
+
+	var reg registry.Registration
+	if err := json.Unmarshal(data, &reg); err != nil {
+		t.Fatalf("parse PID JSON: %v", err)
+	}
+
+	// Compute expected base port using djb2.
+	var h uint32 = 5381
+	for _, c := range []byte("test_svc") {
+		h = h*33 + uint32(c)
+	}
+	expected := 5000 + int(h%43001)
+
+	if reg.BasePort != expected {
+		t.Errorf("BasePort = %d, want %d", reg.BasePort, expected)
+	}
+}
+
+func TestCustomRolePort(t *testing.T) {
+	tmp := t.TempDir()
+	registry.ResetForTest(tmp)
+
+	registry.Port(3, 9000, "worker", registry.Proto("tcp"))
+
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := registry.Init(cancel, "6.0.0-test"); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	t.Cleanup(func() { registry.Shutdown("test-done") })
+
+	wd, _ := os.Getwd()
+	name := filepath.Base(wd)
+	svcDir := filepath.Join(tmp, name)
+	pid := strconv.Itoa(os.Getpid())
+	pidFile := filepath.Join(svcDir, pid+".json")
+
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("read PID file: %v", err)
+	}
+
+	var reg registry.Registration
+	if err := json.Unmarshal(data, &reg); err != nil {
+		t.Fatalf("parse PID JSON: %v", err)
+	}
+
+	if len(reg.Ports) != 1 {
+		t.Fatalf("expected 1 port, got %d", len(reg.Ports))
+	}
+	p := reg.Ports[0]
+	if p.Role != "custom-3" {
+		t.Errorf("Role = %q, want %q", p.Role, "custom-3")
+	}
+	if p.Proto != "tcp" {
+		t.Errorf("Proto = %q, want %q", p.Proto, "tcp")
+	}
+	if p.Label != "worker" {
+		t.Errorf("Label = %q, want %q", p.Label, "worker")
+	}
+}
+
+func TestNoPortsEmptySlice(t *testing.T) {
+	tmp := t.TempDir()
+	registry.ResetForTest(tmp)
+
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := registry.Init(cancel, "6.0.0-test"); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	t.Cleanup(func() { registry.Shutdown("test-done") })
+
+	wd, _ := os.Getwd()
+	name := filepath.Base(wd)
+	svcDir := filepath.Join(tmp, name)
+	pid := strconv.Itoa(os.Getpid())
+	pidFile := filepath.Join(svcDir, pid+".json")
+
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("read PID file: %v", err)
+	}
+
+	// Verify "ports" key exists in JSON (even if null/empty).
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("parse PID JSON: %v", err)
+	}
+	if _, ok := raw["ports"]; !ok {
+		t.Error("'ports' key missing from PID JSON")
+	}
+	if _, ok := raw["base_port"]; !ok {
+		t.Error("'base_port' key missing from PID JSON")
+	}
+}
+
 // --- helpers ---
 
 func readLogEvents(t *testing.T, path string) []map[string]any {

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [6.0.5] - 2026-03-07
+
+### New Features
+
+- **chassis**: Add `Port(name, offset...)` — deterministic port assignment using djb2 hash, mapping service names to stable ports in range 5000–48000
+- **chassis**: Add `PortHTTP` (0), `PortGRPC` (1), `PortMetrics` (2) standard role offset constants
+- **registry**: Add `Port(role, port, label, ...opts)` for declaring service ports in PID registration JSON
+- **registry**: Add `Proto(string)` option to override default wire protocol per port declaration
+- **registry**: Add `BasePort` and `Ports` fields to `Registration` struct; `base_port` and `ports` now appear in PID JSON for viewer/operational tooling
+
+(Claude Code:Opus 4.6)
+
 ## [6.0.4] - 2026-03-07
 
 ### Bug Fixes

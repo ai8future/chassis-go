@@ -28,15 +28,25 @@ const (
 
 // Registration is the JSON structure written to the PID file.
 type Registration struct {
-	Name           string    `json:"name"`
-	PID            int       `json:"pid"`
-	Hostname       string    `json:"hostname"`
-	StartedAt      string    `json:"started_at"`
-	Version        string    `json:"version"`
-	Language       string    `json:"language"`
-	ChassisVersion string    `json:"chassis_version"`
-	Args           []string  `json:"args"`
-	Commands       []CmdInfo `json:"commands"`
+	Name           string     `json:"name"`
+	PID            int        `json:"pid"`
+	Hostname       string     `json:"hostname"`
+	StartedAt      string     `json:"started_at"`
+	Version        string     `json:"version"`
+	Language       string     `json:"language"`
+	ChassisVersion string     `json:"chassis_version"`
+	BasePort       int        `json:"base_port"`
+	Args           []string   `json:"args"`
+	Ports          []PortInfo `json:"ports"`
+	Commands       []CmdInfo  `json:"commands"`
+}
+
+// PortInfo describes a port declared by the service.
+type PortInfo struct {
+	Port  int    `json:"port"`
+	Role  string `json:"role"`
+	Proto string `json:"proto"`
+	Label string `json:"label"`
 }
 
 // CmdInfo describes a command that can be sent to the service.
@@ -66,6 +76,7 @@ var (
 	logFilePath string
 	cmdPath     string
 	handlers    = map[string]handlerEntry{}
+	ports       []PortInfo
 	startedAt   time.Time
 	cancelFn    context.CancelFunc
 	restart     atomic.Bool
@@ -89,6 +100,45 @@ func Handle(name, description string, fn func() error) {
 	mu.Lock()
 	defer mu.Unlock()
 	handlers[name] = handlerEntry{description: description, fn: fn}
+}
+
+// roleNames maps standard role offsets to their string names for JSON output.
+var roleNames = map[int]string{0: "http", 1: "grpc", 2: "metrics"}
+
+// defaultProtos maps role names to their default wire protocol.
+var defaultProtos = map[string]string{"http": "http", "grpc": "h2c", "metrics": "http"}
+
+// PortOption configures optional parameters for Port declarations.
+type PortOption func(*PortInfo)
+
+// Proto overrides the default protocol for a port declaration.
+func Proto(proto string) PortOption {
+	return func(p *PortInfo) { p.Proto = proto }
+}
+
+// Port declares a port that this service has opened. Call before lifecycle.Run().
+// The role parameter is a standard offset (chassis.PortHTTP, chassis.PortGRPC,
+// chassis.PortMetrics) or a custom integer (3+). The label is freeform text
+// describing the port's purpose.
+func Port(role int, port int, label string, opts ...PortOption) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	roleName, ok := roleNames[role]
+	if !ok {
+		roleName = fmt.Sprintf("custom-%d", role)
+	}
+
+	proto := defaultProtos[roleName]
+	if proto == "" {
+		proto = "http"
+	}
+
+	info := PortInfo{Port: port, Role: roleName, Proto: proto, Label: label}
+	for _, opt := range opts {
+		opt(&info)
+	}
+	ports = append(ports, info)
 }
 
 // Status writes a status event to the service log.
@@ -159,7 +209,9 @@ func Init(cancel context.CancelFunc, chassisVersion string) error {
 		Version:        ver,
 		Language:        "go",
 		ChassisVersion: chassisVersion,
+		BasePort:       djb2Port(name),
 		Args:           redactArgs(os.Args),
+		Ports:          ports,
 		Commands:       cmds,
 	}
 
@@ -244,8 +296,19 @@ func ResetForTest(path string) {
 	HeartbeatInterval = DefaultHeartbeatInterval
 	CmdPollInterval = DefaultCmdPollInterval
 	handlers = map[string]handlerEntry{}
+	ports = nil
 	reg = nil
 	cancelFn = nil
+}
+
+// djb2Port computes the deterministic base port for a service name.
+// Mirrors chassis.Port() but avoids importing the root package.
+func djb2Port(name string) int {
+	var h uint32 = 5381
+	for i := 0; i < len(name); i++ {
+		h = h*33 + uint32(name[i])
+	}
+	return 5000 + int(h%43001)
 }
 
 // --- internal helpers ---
