@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -65,6 +66,10 @@ func MustLoad[T any]() T {
 
 		if err := setField(fieldVal, raw); err != nil {
 			panic(fmt.Sprintf("config: cannot set field %s from env %q: %v", field.Name, envKey, err))
+		}
+
+		if vTag := field.Tag.Get("validate"); vTag != "" {
+			validateField(field.Name, fieldVal, vTag)
 		}
 	}
 
@@ -128,4 +133,59 @@ func setField(fieldVal reflect.Value, raw string) error {
 	}
 
 	return nil
+}
+
+// validateField checks a populated field against constraints in the validate
+// struct tag. Supported keys: min, max, oneof, pattern. Multiple constraints
+// are comma-separated (e.g. validate:"min=1,max=65535").
+func validateField(name string, val reflect.Value, tag string) {
+	parts := strings.Split(tag, ",")
+	for _, part := range parts {
+		key, value, _ := strings.Cut(strings.TrimSpace(part), "=")
+		switch key {
+		case "min":
+			minVal, _ := strconv.ParseFloat(value, 64)
+			actual := fieldAsFloat(val)
+			if actual < minVal {
+				panic(fmt.Sprintf("config: field %s value %v is below minimum %s", name, val.Interface(), value))
+			}
+		case "max":
+			maxVal, _ := strconv.ParseFloat(value, 64)
+			actual := fieldAsFloat(val)
+			if actual > maxVal {
+				panic(fmt.Sprintf("config: field %s value %v exceeds maximum %s", name, val.Interface(), value))
+			}
+		case "oneof":
+			allowed := strings.Fields(value)
+			actual := fmt.Sprintf("%v", val.Interface())
+			found := false
+			for _, a := range allowed {
+				if a == actual {
+					found = true
+					break
+				}
+			}
+			if !found {
+				panic(fmt.Sprintf("config: field %s value %q not in allowed set [%s]", name, actual, value))
+			}
+		case "pattern":
+			re := regexp.MustCompile(value)
+			actual := fmt.Sprintf("%v", val.Interface())
+			if !re.MatchString(actual) {
+				panic(fmt.Sprintf("config: field %s value %q does not match pattern %s", name, actual, value))
+			}
+		}
+	}
+}
+
+// fieldAsFloat converts numeric reflect values to float64 for comparison.
+func fieldAsFloat(val reflect.Value) float64 {
+	switch val.Kind() {
+	case reflect.Int, reflect.Int64:
+		return float64(val.Int())
+	case reflect.Float64:
+		return val.Float()
+	default:
+		return 0
+	}
 }

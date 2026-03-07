@@ -245,3 +245,79 @@ func TestMustLoad_InvalidFloat(t *testing.T) {
 	_ = MustLoad[cfg]()
 }
 
+// ---------- validate tag tests ----------
+
+func TestValidateMin(t *testing.T) {
+	type Cfg struct {
+		Port int `env:"PORT" default:"0" validate:"min=1"`
+	}
+	t.Setenv("PORT", "0")
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for min validation")
+		}
+	}()
+	MustLoad[Cfg]()
+}
+
+func TestValidateMax(t *testing.T) {
+	type Cfg struct {
+		Port int `env:"PORT" validate:"max=65535"`
+	}
+	t.Setenv("PORT", "70000")
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for max validation")
+		}
+	}()
+	MustLoad[Cfg]()
+}
+
+func TestValidateOneof(t *testing.T) {
+	type Cfg struct {
+		Level string `env:"LOG_LEVEL" validate:"oneof=debug info warn error"`
+	}
+	t.Setenv("LOG_LEVEL", "verbose")
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for oneof validation")
+		}
+	}()
+	MustLoad[Cfg]()
+}
+
+func TestValidateOneofPass(t *testing.T) {
+	type Cfg struct {
+		Level string `env:"LOG_LEVEL" validate:"oneof=debug info warn error"`
+	}
+	t.Setenv("LOG_LEVEL", "info")
+	cfg := MustLoad[Cfg]()
+	if cfg.Level != "info" {
+		t.Fatalf("expected info, got %q", cfg.Level)
+	}
+}
+
+func TestValidatePattern(t *testing.T) {
+	type Cfg struct {
+		Host string `env:"HOST" validate:"pattern=^[a-z0-9\\-]+$"`
+	}
+	t.Setenv("HOST", "INVALID HOST!")
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for pattern validation")
+		}
+	}()
+	MustLoad[Cfg]()
+}
+
+func TestValidateMinMax(t *testing.T) {
+	type Cfg struct {
+		Port int `env:"PORT" validate:"min=1,max=65535"`
+	}
+	t.Setenv("PORT", "8080")
+	cfg := MustLoad[Cfg]()
+	if cfg.Port != 8080 {
+		t.Fatalf("expected 8080, got %d", cfg.Port)
+	}
+}
+
