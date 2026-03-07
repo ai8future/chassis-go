@@ -1,5 +1,42 @@
 # Changelog
 
+## [7.0.0] - 2026-03-07
+
+### Breaking Changes
+
+- **Module path migrated to v7**: All import paths changed from `chassis-go/v6` to `chassis-go/v7`. All consumer code must update imports and call `chassis.RequireMajor(7)`.
+
+### New Features
+
+- **registry**: Add CLI/batch mode support via `InitCLI(chassisVersion)` for CLI tools and batch processes that need visibility without being long-running services
+- **registry**: Add `Progress(done, total, failed)` for tracking batch progress with percentage calculation
+- **registry**: Add `StopRequested()` for cooperative stop signaling in CLI mode
+- **registry**: Add `ShutdownCLI(exitCode)` which rewrites the PID file with completion status instead of deleting it
+- **registry**: Add `ProgressSummary` struct for progress tracking state
+- **registry**: Add `parseFlags()` helper that parses CLI arguments into a `map[string]string` with sensitive flag redaction
+- **registry**: Add `Mode`, `Flags`, `Status`, `ExitedAt`, `ExitCode`, and `Summary` fields to `Registration` struct
+- **registry**: Service mode `Init()` now sets `mode: "service"` and `status: "running"` in the PID file
+- **registry**: Stale cleanup now preserves completed/failed CLI PID files for 24 hours before removing them
+- **registry**: Stop command in CLI mode sets `stopRequested` flag instead of calling cancelFn
+
+### Tests
+
+- **registry**: Add `TestInitCLI` — verify PID file has mode "cli" and parsed flags
+- **registry**: Add `TestInitServiceMode` — verify service mode sets mode and status
+- **registry**: Add `TestProgress` — verify progress events in log
+- **registry**: Add `TestShutdownCLI` — verify PID file is rewritten (not deleted) with completion status
+- **registry**: Add `TestShutdownCLIFailed` — verify failed exit code handling
+- **registry**: Add `TestStopRequested` — verify stop command sets the flag in CLI mode
+- **registry**: Add `TestParseFlags` — verify various flag formats (equals, space-separated, boolean, short, sensitive redaction)
+- **registry**: Add `TestIsSensitiveFlag` — verify sensitive flag detection
+
+### Documentation
+
+- **INTEGRATING.md**: Add CLI/batch mode section with usage example
+- **INTEGRATING.md, README.md, AGENTS.md**: Update all version references from v6 to v7
+
+(Claude Code:Opus 4.6)
+
 ## [6.0.11] - 2026-03-07
 
 ### Breaking Changes

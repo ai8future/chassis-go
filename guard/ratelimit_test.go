@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v6"
-	"github.com/ai8future/chassis-go/v6/guard"
+	chassis "github.com/ai8future/chassis-go/v7"
+	"github.com/ai8future/chassis-go/v7/guard"
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(6)
+	chassis.RequireMajor(7)
 	os.Exit(m.Run())
 }
 

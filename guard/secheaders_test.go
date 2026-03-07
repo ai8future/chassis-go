@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ai8future/chassis-go/v6/guard"
+	"github.com/ai8future/chassis-go/v7/guard"
 )
 
 func TestSecurityHeadersDefaults(t *testing.T) {

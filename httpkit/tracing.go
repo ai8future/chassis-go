@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v6"
-	"github.com/ai8future/chassis-go/v6/internal/otelutil"
-	"github.com/ai8future/chassis-go/v6/registry"
+	chassis "github.com/ai8future/chassis-go/v7"
+	"github.com/ai8future/chassis-go/v7/internal/otelutil"
+	"github.com/ai8future/chassis-go/v7/registry"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
@@ -15,7 +15,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const tracerName = "github.com/ai8future/chassis-go/v6/httpkit"
+const tracerName = "github.com/ai8future/chassis-go/v7/httpkit"
 
 var getHTTPDurationHistogram = otelutil.LazyHistogram(
 	tracerName,

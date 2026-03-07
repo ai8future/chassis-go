@@ -1,4 +1,4 @@
-module github.com/ai8future/chassis-go/v6
+module github.com/ai8future/chassis-go/v7
 
 go 1.25.5
 

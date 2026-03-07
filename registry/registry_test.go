@@ -11,9 +11,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
-	chassis "github.com/ai8future/chassis-go/v6"
-	"github.com/ai8future/chassis-go/v6/registry"
+	chassis "github.com/ai8future/chassis-go/v7"
+	"github.com/ai8future/chassis-go/v7/registry"
 )
 
 // helper: initialise registry with a temp dir and return the service dir path.
@@ -735,6 +736,266 @@ func TestNoPortsEmptySlice(t *testing.T) {
 	if string(portsJSON) == "null" {
 		t.Error("'ports' should be [] not null when no ports declared")
 	}
+}
+
+func TestInitCLI(t *testing.T) {
+	tmp := t.TempDir()
+	registry.ResetForTest(tmp)
+
+	if err := registry.InitCLI("7.0.0-test"); err != nil {
+		t.Fatalf("InitCLI failed: %v", err)
+	}
+	t.Cleanup(func() { registry.ShutdownCLI(0) })
+
+	wd, _ := os.Getwd()
+	name := filepath.Base(wd)
+	svcDir := filepath.Join(tmp, name)
+	pid := strconv.Itoa(os.Getpid())
+	pidFile := filepath.Join(svcDir, pid+".json")
+
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("read PID file: %v", err)
+	}
+
+	var reg registry.Registration
+	if err := json.Unmarshal(data, &reg); err != nil {
+		t.Fatalf("parse PID JSON: %v", err)
+	}
+
+	if reg.Mode != "cli" {
+		t.Errorf("Mode = %q, want %q", reg.Mode, "cli")
+	}
+	if reg.Status != "running" {
+		t.Errorf("Status = %q, want %q", reg.Status, "running")
+	}
+	if reg.ChassisVersion != "7.0.0-test" {
+		t.Errorf("ChassisVersion = %q, want %q", reg.ChassisVersion, "7.0.0-test")
+	}
+	if reg.Language != "go" {
+		t.Errorf("Language = %q, want %q", reg.Language, "go")
+	}
+	// Flags should be parsed from os.Args (at minimum it should be a map, possibly empty)
+	if reg.Flags == nil {
+		t.Error("Flags is nil, expected non-nil map")
+	}
+}
+
+func TestInitServiceMode(t *testing.T) {
+	svcDir := initRegistry(t)
+	pid := strconv.Itoa(os.Getpid())
+	pidFile := filepath.Join(svcDir, pid+".json")
+
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("read PID file: %v", err)
+	}
+
+	var reg registry.Registration
+	if err := json.Unmarshal(data, &reg); err != nil {
+		t.Fatalf("parse PID JSON: %v", err)
+	}
+
+	if reg.Mode != "service" {
+		t.Errorf("Mode = %q, want %q", reg.Mode, "service")
+	}
+	if reg.Status != "running" {
+		t.Errorf("Status = %q, want %q", reg.Status, "running")
+	}
+}
+
+func TestProgress(t *testing.T) {
+	tmp := t.TempDir()
+	registry.ResetForTest(tmp)
+
+	if err := registry.InitCLI("7.0.0-test"); err != nil {
+		t.Fatalf("InitCLI failed: %v", err)
+	}
+	t.Cleanup(func() { registry.ShutdownCLI(0) })
+
+	registry.Progress(50, 100, 3)
+
+	wd, _ := os.Getwd()
+	name := filepath.Base(wd)
+	svcDir := filepath.Join(tmp, name)
+	pid := strconv.Itoa(os.Getpid())
+	logFile := filepath.Join(svcDir, pid+".log.jsonl")
+
+	events := readLogEvents(t, logFile)
+	found := false
+	for _, ev := range events {
+		if ev["event"] == "progress" {
+			found = true
+			if ev["done"] != float64(50) {
+				t.Errorf("done = %v, want 50", ev["done"])
+			}
+			if ev["total"] != float64(100) {
+				t.Errorf("total = %v, want 100", ev["total"])
+			}
+			if ev["failed"] != float64(3) {
+				t.Errorf("failed = %v, want 3", ev["failed"])
+			}
+			if ev["percent"] != float64(50) {
+				t.Errorf("percent = %v, want 50", ev["percent"])
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("progress event not found in log")
+	}
+}
+
+func TestShutdownCLI(t *testing.T) {
+	tmp := t.TempDir()
+	registry.ResetForTest(tmp)
+
+	if err := registry.InitCLI("7.0.0-test"); err != nil {
+		t.Fatalf("InitCLI failed: %v", err)
+	}
+
+	// Record some progress before shutdown
+	registry.Progress(10, 20, 1)
+
+	wd, _ := os.Getwd()
+	name := filepath.Base(wd)
+	svcDir := filepath.Join(tmp, name)
+	pid := strconv.Itoa(os.Getpid())
+	pidFile := filepath.Join(svcDir, pid+".json")
+
+	// Verify PID file exists before shutdown.
+	if _, err := os.Stat(pidFile); err != nil {
+		t.Fatalf("PID file missing before ShutdownCLI: %v", err)
+	}
+
+	registry.ShutdownCLI(0)
+
+	// PID file must STILL exist after ShutdownCLI (not deleted like service mode).
+	if _, err := os.Stat(pidFile); err != nil {
+		t.Fatalf("PID file should persist after ShutdownCLI: %v", err)
+	}
+
+	// Read the PID file and verify completion status.
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("read PID file: %v", err)
+	}
+
+	var reg registry.Registration
+	if err := json.Unmarshal(data, &reg); err != nil {
+		t.Fatalf("parse PID JSON: %v", err)
+	}
+
+	if reg.Status != "completed" {
+		t.Errorf("Status = %q, want %q", reg.Status, "completed")
+	}
+	if reg.ExitedAt == "" {
+		t.Error("ExitedAt is empty")
+	}
+	if reg.ExitCode == nil {
+		t.Fatal("ExitCode is nil")
+	}
+	if *reg.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0", *reg.ExitCode)
+	}
+	if reg.Summary == nil {
+		t.Fatal("Summary is nil")
+	}
+	if reg.Summary.Done != 10 {
+		t.Errorf("Summary.Done = %d, want 10", reg.Summary.Done)
+	}
+	if reg.Summary.Total != 20 {
+		t.Errorf("Summary.Total = %d, want 20", reg.Summary.Total)
+	}
+	if reg.Summary.Failed != 1 {
+		t.Errorf("Summary.Failed = %d, want 1", reg.Summary.Failed)
+	}
+}
+
+func TestShutdownCLIFailed(t *testing.T) {
+	tmp := t.TempDir()
+	registry.ResetForTest(tmp)
+
+	if err := registry.InitCLI("7.0.0-test"); err != nil {
+		t.Fatalf("InitCLI failed: %v", err)
+	}
+
+	registry.ShutdownCLI(1)
+
+	wd, _ := os.Getwd()
+	name := filepath.Base(wd)
+	svcDir := filepath.Join(tmp, name)
+	pid := strconv.Itoa(os.Getpid())
+	pidFile := filepath.Join(svcDir, pid+".json")
+
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("read PID file: %v", err)
+	}
+
+	var reg registry.Registration
+	if err := json.Unmarshal(data, &reg); err != nil {
+		t.Fatalf("parse PID JSON: %v", err)
+	}
+
+	if reg.Status != "failed" {
+		t.Errorf("Status = %q, want %q", reg.Status, "failed")
+	}
+	if reg.ExitCode == nil || *reg.ExitCode != 1 {
+		t.Errorf("ExitCode = %v, want 1", reg.ExitCode)
+	}
+}
+
+func TestStopRequested(t *testing.T) {
+	tmp := t.TempDir()
+	registry.ResetForTest(tmp)
+
+	// StopRequested should be false initially.
+	if registry.StopRequested() {
+		t.Error("StopRequested should be false after reset")
+	}
+
+	if err := registry.InitCLI("7.0.0-test"); err != nil {
+		t.Fatalf("InitCLI failed: %v", err)
+	}
+	t.Cleanup(func() { registry.ShutdownCLI(0) })
+
+	// Write a stop command file.
+	wd, _ := os.Getwd()
+	name := filepath.Base(wd)
+	svcDir := filepath.Join(tmp, name)
+	pid := strconv.Itoa(os.Getpid())
+	cmdFile := filepath.Join(svcDir, pid+".cmd.json")
+
+	cmdJSON := fmt.Sprintf(`{"command":"stop","issued_at":"%s"}`, "2026-03-07T00:00:00Z")
+	if err := os.WriteFile(cmdFile, []byte(cmdJSON), 0o644); err != nil {
+		t.Fatalf("write cmd file: %v", err)
+	}
+
+	// In CLI mode, the background poll goroutine started by InitCLI should pick it up.
+	// Wait briefly for the poll to process the command.
+	registry.CmdPollInterval = 1 // 1 nanosecond
+	// The internal poll goroutine uses the CmdPollInterval set at InitCLI time.
+	// Since we can't easily control the internal goroutine's timing, let's just
+	// use RunCommandPoll briefly to ensure the command is processed.
+	ctx, cancel := context.WithCancel(context.Background())
+	go registry.RunCommandPoll(ctx)
+
+	// Poll until StopRequested becomes true or timeout.
+	deadline := time.After(2 * time.Second)
+	for {
+		if registry.StopRequested() {
+			break
+		}
+		select {
+		case <-deadline:
+			cancel()
+			t.Fatal("StopRequested did not become true within timeout")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	cancel()
 }
 
 // --- helpers ---

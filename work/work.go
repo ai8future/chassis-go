@@ -9,14 +9,13 @@ import (
 	"runtime"
 	"sync"
 
-	chassis "github.com/ai8future/chassis-go/v6"
-	"github.com/ai8future/chassis-go/v6/registry"
+	chassis "github.com/ai8future/chassis-go/v7"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
-const tracerName = "github.com/ai8future/chassis-go/v6/work"
+const tracerName = "github.com/ai8future/chassis-go/v7/work"
 
 // Option configures a work function.
 type Option func(*config)
@@ -69,7 +68,6 @@ func (e *Errors) Unwrap() []error {
 // in input order. If any items fail, returns *Errors with all failures.
 func Map[T, R any](ctx context.Context, items []T, fn func(context.Context, T) (R, error), opts ...Option) ([]R, error) {
 	chassis.AssertVersionChecked()
-	registry.AssertActive()
 	cfg := defaults()
 	for _, o := range opts {
 		o(&cfg)
@@ -140,7 +138,6 @@ func Map[T, R any](ctx context.Context, items []T, fn func(context.Context, T) (
 // All runs all tasks with bounded concurrency. Returns *Errors if any fail.
 func All(ctx context.Context, tasks []func(context.Context) error, opts ...Option) error {
 	chassis.AssertVersionChecked()
-	registry.AssertActive()
 	cfg := defaults()
 	for _, o := range opts {
 		o(&cfg)
@@ -209,7 +206,6 @@ func All(ctx context.Context, tasks []func(context.Context) error, opts ...Optio
 // tasks is cancelled once a winner is found.
 func Race[R any](ctx context.Context, tasks ...func(context.Context) (R, error)) (R, error) {
 	chassis.AssertVersionChecked()
-	registry.AssertActive()
 
 	tracer := otelapi.GetTracerProvider().Tracer(tracerName)
 	ctx, span := tracer.Start(ctx, "work.Race", trace.WithAttributes(
@@ -266,7 +262,6 @@ func Race[R any](ctx context.Context, tasks ...func(context.Context) (R, error))
 // when the input channel is closed and all in-flight work completes.
 func Stream[T, R any](ctx context.Context, in <-chan T, fn func(context.Context, T) (R, error), opts ...Option) <-chan Result[R] {
 	chassis.AssertVersionChecked()
-	registry.AssertActive()
 	cfg := defaults()
 	for _, o := range opts {
 		o(&cfg)

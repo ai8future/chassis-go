@@ -9,24 +9,12 @@ import (
 	"testing"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v6"
-	"github.com/ai8future/chassis-go/v6/registry"
+	chassis "github.com/ai8future/chassis-go/v7"
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(6)
-	initRegistryForTest()
+	chassis.RequireMajor(7)
 	os.Exit(m.Run())
-}
-
-func initRegistryForTest() {
-	dir, _ := os.MkdirTemp("", "chassis-test-*")
-	registry.ResetForTest(dir)
-	ctx, cancel := context.WithCancel(context.Background())
-	_ = ctx
-	if err := registry.Init(cancel, "6.0.0-test"); err != nil {
-		panic("registry init: " + err.Error())
-	}
 }
 
 // ---------------------------------------------------------------------------

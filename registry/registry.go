@@ -28,17 +28,31 @@ const (
 
 // Registration is the JSON structure written to the PID file.
 type Registration struct {
-	Name           string     `json:"name"`
-	PID            int        `json:"pid"`
-	Hostname       string     `json:"hostname"`
-	StartedAt      string     `json:"started_at"`
-	Version        string     `json:"version"`
-	Language       string     `json:"language"`
-	ChassisVersion string     `json:"chassis_version"`
-	BasePort       int        `json:"base_port"`
-	Args           []string   `json:"args"`
-	Ports          []PortInfo `json:"ports"`
-	Commands       []CmdInfo  `json:"commands"`
+	Name           string            `json:"name"`
+	PID            int               `json:"pid"`
+	Hostname       string            `json:"hostname"`
+	StartedAt      string            `json:"started_at"`
+	Version        string            `json:"version"`
+	Language       string            `json:"language"`
+	ChassisVersion string            `json:"chassis_version"`
+	BasePort       int               `json:"base_port"`
+	Args           []string          `json:"args"`
+	Ports          []PortInfo        `json:"ports"`
+	Commands       []CmdInfo         `json:"commands"`
+	Mode           string            `json:"mode"`
+	Flags          map[string]string `json:"flags,omitempty"`
+	Status         string            `json:"status"`
+	ExitedAt       string            `json:"exited_at,omitempty"`
+	ExitCode       *int              `json:"exit_code,omitempty"`
+	Summary        *ProgressSummary  `json:"summary,omitempty"`
+}
+
+// ProgressSummary holds progress tracking state for CLI/batch processes.
+type ProgressSummary struct {
+	Done    int     `json:"done"`
+	Total   int     `json:"total"`
+	Failed  int     `json:"failed"`
+	Percent float64 `json:"percent"`
 }
 
 // PortInfo describes a port declared by the service.
@@ -67,19 +81,22 @@ type handlerEntry struct {
 }
 
 var (
-	mu          sync.Mutex
-	active      atomic.Bool
-	logFile     *os.File
-	reg         *Registration
-	svcDir      string
-	pidPath     string
-	logFilePath string
-	cmdPath     string
-	handlers    = map[string]handlerEntry{}
-	ports       []PortInfo
-	startedAt   time.Time
-	cancelFn    context.CancelFunc
-	restart     atomic.Bool
+	mu           sync.Mutex
+	active       atomic.Bool
+	logFile      *os.File
+	reg          *Registration
+	svcDir       string
+	pidPath      string
+	logFilePath  string
+	cmdPath      string
+	handlers     = map[string]handlerEntry{}
+	ports        []PortInfo
+	startedAt    time.Time
+	cancelFn     context.CancelFunc
+	restart      atomic.Bool
+	stopRequested atomic.Bool
+	lastProgress *ProgressSummary
+	cliMode      bool
 
 	// BasePath is the root directory for service registrations.
 	// Set before calling lifecycle.Run; not safe for concurrent modification.
@@ -225,6 +242,8 @@ func Init(cancel context.CancelFunc, chassisVersion string) error {
 		Args:           redactArgs(os.Args),
 		Ports:          declaredPorts,
 		Commands:       cmds,
+		Mode:           "service",
+		Status:         "running",
 	}
 
 	if err := atomicWrite(pidPath, reg); err != nil {
@@ -294,12 +313,226 @@ func Shutdown(reason string) {
 	os.Remove(pidPath)
 }
 
+// InitCLI initializes the registry in CLI/batch mode.
+// It parses flags from os.Args, writes a PID file with mode "cli",
+// and starts command polling (but no heartbeat).
+func InitCLI(chassisVersion string) error {
+	mu.Lock()
+	defer mu.Unlock()
+
+	startedAt = time.Now().UTC()
+	cliMode = true
+	pid := os.Getpid()
+	name := resolveName()
+	host, _ := os.Hostname()
+	ver := readVersion()
+
+	svcDir = filepath.Join(BasePath, name)
+	if err := os.MkdirAll(svcDir, 0o700); err != nil {
+		return fmt.Errorf("registry: mkdir: %w", err)
+	}
+	if info, err := os.Stat(svcDir); err == nil {
+		if perm := info.Mode().Perm(); perm&0o077 != 0 {
+			return fmt.Errorf("registry: directory %s has unsafe permissions %o (want 0700)", svcDir, perm)
+		}
+	}
+	cleanStale(svcDir)
+
+	ps := strconv.Itoa(pid)
+	pidPath = filepath.Join(svcDir, ps+".json")
+	logFilePath = filepath.Join(svcDir, ps+".log.jsonl")
+	cmdPath = filepath.Join(svcDir, ps+".cmd.json")
+
+	cmds := []CmdInfo{
+		{Name: "stop", Description: "Graceful shutdown", Builtin: true},
+	}
+	for n, h := range handlers {
+		cmds = append(cmds, CmdInfo{Name: n, Description: h.description})
+	}
+
+	declaredPorts := ports
+	if declaredPorts == nil {
+		declaredPorts = []PortInfo{}
+	}
+
+	flags := parseFlags(os.Args)
+
+	reg = &Registration{
+		Name:           name,
+		PID:            pid,
+		Hostname:       host,
+		StartedAt:      startedAt.Format(time.RFC3339),
+		Version:        ver,
+		Language:       "go",
+		ChassisVersion: chassisVersion,
+		BasePort:       djb2Port(name),
+		Args:           redactArgs(os.Args),
+		Ports:          declaredPorts,
+		Commands:       cmds,
+		Mode:           "cli",
+		Flags:          flags,
+		Status:         "running",
+	}
+
+	if err := atomicWrite(pidPath, reg); err != nil {
+		return fmt.Errorf("registry: write registration: %w", err)
+	}
+
+	var err error
+	logFile, err = os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("registry: create log: %w", err)
+	}
+
+	active.Store(true)
+
+	appendLogLocked(map[string]any{
+		"ts": startedAt.Format(time.RFC3339), "event": "startup",
+		"name": name, "pid": pid, "hostname": host, "version": ver,
+		"mode": "cli",
+	})
+
+	// Start command polling goroutine for stop support (no heartbeat in CLI mode).
+	go func() {
+		t := time.NewTicker(CmdPollInterval)
+		defer t.Stop()
+		for {
+			if !active.Load() {
+				return
+			}
+			<-t.C
+			pollOnce()
+		}
+	}()
+
+	return nil
+}
+
+// parseFlags parses command-line arguments into a map of flag names to values.
+// It handles --flag=value, --flag value, -flag value, --flag (boolean), and -f (boolean) forms.
+// Sensitive flags are redacted.
+func parseFlags(args []string) map[string]string {
+	flags := map[string]string{}
+	if len(args) <= 1 {
+		return flags
+	}
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		if !strings.HasPrefix(arg, "-") {
+			continue
+		}
+
+		// Handle --flag=value and -flag=value
+		if idx := strings.Index(arg, "="); idx > 0 {
+			name := strings.TrimLeft(arg[:idx], "-")
+			value := arg[idx+1:]
+			if isSensitiveFlag(name) {
+				value = "REDACTED"
+			}
+			flags[name] = value
+			continue
+		}
+
+		// Strip leading dashes to get the flag name
+		name := strings.TrimLeft(arg, "-")
+		if name == "" {
+			continue
+		}
+
+		// Check if next arg is a value (not another flag) and exists
+		if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+			value := args[i+1]
+			if isSensitiveFlag(name) {
+				value = "REDACTED"
+			}
+			flags[name] = value
+			i++ // skip next arg since we consumed it as a value
+		} else {
+			// Boolean flag (no value)
+			flags[name] = "true"
+		}
+	}
+	return flags
+}
+
+// isSensitiveFlag checks if a flag name matches any sensitive flag pattern.
+func isSensitiveFlag(name string) bool {
+	lower := strings.ToLower(name)
+	for _, s := range sensitiveFlags {
+		if strings.Contains(lower, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// Progress writes a progress event to the service log.
+func Progress(done, total, failed int) {
+	AssertActive()
+	pct := 0.0
+	if total > 0 {
+		pct = float64(done) / float64(total) * 100
+	}
+	mu.Lock()
+	lastProgress = &ProgressSummary{Done: done, Total: total, Failed: failed, Percent: pct}
+	mu.Unlock()
+	appendLog(map[string]any{
+		"ts": ts(), "event": "progress",
+		"done": done, "total": total, "failed": failed, "percent": pct,
+	})
+}
+
+// StopRequested returns true if a stop command was received (CLI mode).
+func StopRequested() bool {
+	return stopRequested.Load()
+}
+
+// ShutdownCLI writes completion status and rewrites the PID file with final state.
+// Unlike service Shutdown which deletes the PID file, CLI mode keeps it for the viewer.
+func ShutdownCLI(exitCode int) {
+	mu.Lock()
+	defer mu.Unlock()
+	if !active.Load() {
+		return
+	}
+	active.Store(false)
+
+	status := "completed"
+	if exitCode != 0 {
+		status = "failed"
+	}
+
+	up := int(time.Since(startedAt).Seconds())
+	appendLogLocked(map[string]any{
+		"ts": ts(), "event": "shutdown",
+		"status": status, "exit_code": exitCode, "uptime_sec": up,
+	})
+
+	// Rewrite PID file with completion status (don't delete it).
+	if reg != nil {
+		reg.Status = status
+		reg.ExitedAt = ts()
+		ec := exitCode
+		reg.ExitCode = &ec
+		reg.Summary = lastProgress
+		atomicWrite(pidPath, reg)
+	}
+
+	if logFile != nil {
+		logFile.Close()
+		logFile = nil
+	}
+}
+
 // ResetForTest resets all module-level state. Only for use in tests.
 func ResetForTest(path string) {
 	mu.Lock()
 	defer mu.Unlock()
 	active.Store(false)
 	restart.Store(false)
+	stopRequested.Store(false)
+	lastProgress = nil
+	cliMode = false
 	if logFile != nil {
 		logFile.Close()
 		logFile = nil
@@ -437,12 +670,47 @@ func cleanStale(dir string) {
 		if processAlive(pid) {
 			continue
 		}
+
+		// For dead PIDs, check if the PID file has a terminal status (completed/failed).
+		// If so, only remove if exited_at is older than 24 hours.
+		pidFile := filepath.Join(dir, name)
+		if shouldPreservePIDFile(pidFile) {
+			continue
+		}
+
 		// Remove all files for this dead PID.
 		ps := strconv.Itoa(pid)
 		os.Remove(filepath.Join(dir, ps+".json"))
 		os.Remove(filepath.Join(dir, ps+".log.jsonl"))
 		os.Remove(filepath.Join(dir, ps+".cmd.json"))
 	}
+}
+
+// shouldPreservePIDFile returns true if the PID file has a terminal status
+// (completed or failed) with an exited_at timestamp less than 24 hours old.
+func shouldPreservePIDFile(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var info struct {
+		Status   string `json:"status"`
+		ExitedAt string `json:"exited_at"`
+	}
+	if json.Unmarshal(data, &info) != nil {
+		return false
+	}
+	if info.Status != "completed" && info.Status != "failed" {
+		return false
+	}
+	if info.ExitedAt == "" {
+		return false
+	}
+	exitedAt, err := time.Parse(time.RFC3339, info.ExitedAt)
+	if err != nil {
+		return false
+	}
+	return time.Since(exitedAt) < 24*time.Hour
 }
 
 func processAlive(pid int) bool {
@@ -473,9 +741,12 @@ func pollOnce() {
 	case "stop":
 		appendLog(map[string]any{"ts": ts(), "event": "command", "name": "stop", "result": "ok"})
 		mu.Lock()
+		cli := cliMode
 		fn := cancelFn
 		mu.Unlock()
-		if fn != nil {
+		if cli {
+			stopRequested.Store(true)
+		} else if fn != nil {
 			fn()
 		}
 	case "restart":

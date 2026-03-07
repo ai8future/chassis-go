@@ -7,10 +7,9 @@ import (
 	"net/http"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v6"
-	"github.com/ai8future/chassis-go/v6/internal/otelutil"
-	"github.com/ai8future/chassis-go/v6/registry"
-	"github.com/ai8future/chassis-go/v6/work"
+	chassis "github.com/ai8future/chassis-go/v7"
+	"github.com/ai8future/chassis-go/v7/internal/otelutil"
+	"github.com/ai8future/chassis-go/v7/work"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -19,7 +18,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const tracerName = "github.com/ai8future/chassis-go/v6/call"
+const tracerName = "github.com/ai8future/chassis-go/v7/call"
 
 var getClientDuration = otelutil.LazyHistogram(
 	tracerName,
@@ -113,7 +112,6 @@ func WithBreaker(b Breaker) Option {
 // If the request does not carry a context, one is created with the configured
 // timeout. If a context is already present its deadline is respected.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
-	registry.AssertActive()
 	start := time.Now()
 
 	// Ensure the request always has a context with a deadline.
