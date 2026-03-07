@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -77,6 +78,81 @@ func validateValue(v any, depth int) error {
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+var secretReplacements = []struct {
+	pattern *regexp.Regexp
+	repl    string
+}{
+	{regexp.MustCompile(`(?i)(authorization)\s*:\s*\S.*`), "${1}: [REDACTED]"},
+	{regexp.MustCompile(`(?i)(bearer)\s+\S+`), "${1} [REDACTED]"},
+	{regexp.MustCompile(`(?i)(password|passwd|secret|token|api_key|api-key|apikey|auth)\s*([=:])\s*[^\s&]*`), "${1}${2}[REDACTED]"},
+}
+
+// RedactSecrets replaces secret values in a string with [REDACTED].
+func RedactSecrets(s string) string {
+	for _, r := range secretReplacements {
+		s = r.pattern.ReplaceAllString(s, r.repl)
+	}
+	return s
+}
+
+var unsafeFilenameChars = regexp.MustCompile(`[^a-zA-Z0-9\-_. ]`)
+
+// SafeFilename removes path separators, null bytes, and control characters.
+func SafeFilename(s string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 {
+			return -1
+		}
+		return r
+	}, s)
+	cleaned = strings.NewReplacer("/", "", "\\", "").Replace(cleaned)
+	cleaned = unsafeFilenameChars.ReplaceAllString(cleaned, "")
+	cleaned = strings.Trim(cleaned, ". ")
+	cleaned = regexp.MustCompile(`\s+`).ReplaceAllString(cleaned, " ")
+	if cleaned == "" {
+		return "unnamed"
+	}
+	return cleaned
+}
+
+var unsafeURLChars = regexp.MustCompile(`[^a-z0-9\-.]`)
+
+// SafeFilenameURL returns a URL-safe filename.
+func SafeFilenameURL(s string) string {
+	cleaned := SafeFilename(s)
+	cleaned = strings.ToLower(cleaned)
+	cleaned = strings.ReplaceAll(cleaned, " ", "-")
+	cleaned = unsafeURLChars.ReplaceAllString(cleaned, "")
+	cleaned = strings.Trim(cleaned, "-.")
+	if cleaned == "" {
+		return "unnamed"
+	}
+	return cleaned
+}
+
+var sqlReserved = map[string]bool{
+	"SELECT": true, "DROP": true, "DELETE": true, "INSERT": true,
+	"UPDATE": true, "ALTER": true, "EXEC": true, "UNION": true,
+	"CREATE": true, "GRANT": true, "REVOKE": true, "TRUNCATE": true,
+	"MERGE": true, "REPLACE": true, "CALL": true, "EXECUTE": true,
+	"BEGIN": true, "COMMIT": true, "ROLLBACK": true, "SAVEPOINT": true,
+}
+
+var identifierPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]{0,63}$`)
+
+var ErrInvalidIdentifier = errors.New("secval: invalid SQL identifier")
+
+// ValidateIdentifier checks that s is a safe SQL identifier.
+func ValidateIdentifier(s string) error {
+	if !identifierPattern.MatchString(s) {
+		return fmt.Errorf("%w: %q does not match identifier pattern", ErrInvalidIdentifier, s)
+	}
+	if sqlReserved[strings.ToUpper(s)] {
+		return fmt.Errorf("%w: %q is a SQL reserved word", ErrInvalidIdentifier, s)
 	}
 	return nil
 }

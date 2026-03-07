@@ -115,3 +115,77 @@ func TestNestedDangerousKey(t *testing.T) {
 		t.Fatalf("expected ErrDangerousKey nested, got %v", err)
 	}
 }
+
+func TestRedactSecrets(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"password=hunter2", "password=[REDACTED]"},
+		{"token=abc123&user=bob", "token=[REDACTED]&user=bob"},
+		{"Authorization: Bearer eyJhbG...", "Authorization: [REDACTED]"},
+		{"no secrets here", "no secrets here"},
+		{"API_KEY=sk-12345 other=ok", "API_KEY=[REDACTED] other=ok"},
+		{"password=", "password=[REDACTED]"},
+	}
+	for _, tt := range tests {
+		got := RedactSecrets(tt.input)
+		if got != tt.want {
+			t.Errorf("RedactSecrets(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestSafeFilename(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"normal.txt", "normal.txt"},
+		{"../../etc/passwd", "etcpasswd"},
+		{"file\x00name.txt", "filename.txt"},
+		{"hello world.pdf", "hello world.pdf"},
+		{"...leading", "leading"},
+		{"", "unnamed"},
+		{"   ", "unnamed"},
+	}
+	for _, tt := range tests {
+		got := SafeFilename(tt.input)
+		if got != tt.want {
+			t.Errorf("SafeFilename(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestSafeFilenameURL(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"Hello World.PDF", "hello-world.pdf"},
+		{"../../bad", "bad"},
+		{"", "unnamed"},
+	}
+	for _, tt := range tests {
+		got := SafeFilenameURL(tt.input)
+		if got != tt.want {
+			t.Errorf("SafeFilenameURL(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestValidateIdentifier(t *testing.T) {
+	valid := []string{"users", "user_id", "TableName", "_private", "a"}
+	for _, s := range valid {
+		if err := ValidateIdentifier(s); err != nil {
+			t.Errorf("ValidateIdentifier(%q) unexpected error: %v", s, err)
+		}
+	}
+
+	invalid := []string{"", "123start", "has space", "DROP", "select", "has-dash"}
+	for _, s := range invalid {
+		if err := ValidateIdentifier(s); err == nil {
+			t.Errorf("ValidateIdentifier(%q) expected error", s)
+		}
+	}
+}
