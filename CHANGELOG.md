@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [6.0.8] - 2026-03-07
+
+### Documentation
+
+- **README.md**: Update version to 6.0.8, fix secval key list (only 3 prototype pollution keys), add missing `PayloadTooLargeError` to factory list, fix `guard.IPFilter` field names (`Allow`/`Deny` not `AllowCIDRs`/`DenyAction`), fix `guard.CORS` `MaxAge` type (`time.Duration` not int), add `chassis.Port()` and `registry.Port()` mentions
+
+(Claude Code:Opus 4.6)
+
 ## [6.0.7] - 2026-03-07
 
 ### Documentation

@@ -6,7 +6,7 @@ A composable Go service toolkit for building production-grade microservices. Too
 go get github.com/ai8future/chassis-go/v6
 ```
 
-**Current version:** 6.0.0 &middot; **Go:** 1.25.5+ &middot; **License:** MIT
+**Current version:** 6.0.8 &middot; **Go:** 1.25.5+ &middot; **License:** MIT
 
 ---
 
@@ -24,11 +24,11 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 
 | Package | Import | Purpose |
 |---------|--------|---------|
-| `chassis` | `github.com/ai8future/chassis-go/v6` | Version gate: `RequireMajor(6)` must be called before any other chassis API |
+| `chassis` | `github.com/ai8future/chassis-go/v6` | Version gate (`RequireMajor(6)`) and deterministic port assignment (`Port(name, offset)` via djb2) |
 | `config` | `.../v6/config` | Generic env-to-struct config loader via struct tags. Panics on missing required vars |
 | `logz` | `.../v6/logz` | Structured JSON logging wrapping `log/slog` with automatic OTel `trace_id`/`span_id` injection |
 | `lifecycle` | `.../v6/lifecycle` | Signal-aware graceful shutdown orchestration via `errgroup` |
-| `registry` | `.../v6/registry` | File-based service registration at `/tmp/chassis/`. Status reporting, custom commands, heartbeat |
+| `registry` | `.../v6/registry` | File-based service registration at `/tmp/chassis/`. Status reporting, port declarations, custom commands, heartbeat |
 | `testkit` | `.../v6/testkit` | Test helpers: `NewLogger` (writes to `t.Log`), `SetEnv` (with cleanup), `GetFreePort` |
 
 ### Tier 2: Transports and Clients
@@ -49,7 +49,7 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 | `metrics` | `.../v6/metrics` | OTel-native metrics recorder with cardinality protection (max 1000 label combos) |
 | `otel` | `.../v6/otel` | OpenTelemetry bootstrap: OTLP gRPC traces + metrics, configurable samplers |
 | `errors` | `.../v6/errors` | Unified error type with dual HTTP/gRPC codes and RFC 9457 Problem Details |
-| `secval` | `.../v6/secval` | JSON security validation: blocks dangerous keys (`__proto__`, `eval`, etc.) and deep nesting |
+| `secval` | `.../v6/secval` | JSON security validation: blocks prototype pollution keys (`__proto__`, `constructor`, `prototype`) and deep nesting |
 | `work` | `.../v6/work` | Structured concurrency: `Map`, `All`, `Race`, `Stream` — all OTel-traced |
 
 **Tier isolation**: If you only use Tier 1 packages, only `golang.org/x/sync` is pulled in — no gRPC, no OTel SDK.
@@ -250,6 +250,7 @@ errors.ValidationError(msg)    // 400 / INVALID_ARGUMENT
 errors.UnauthorizedError(msg)  // 401 / UNAUTHENTICATED
 errors.ForbiddenError(msg)     // 403 / PERMISSION_DENIED
 errors.NotFoundError(msg)      // 404 / NOT_FOUND
+errors.PayloadTooLargeError(msg) // 413 / INVALID_ARGUMENT
 errors.RateLimitError(msg)     // 429 / RESOURCE_EXHAUSTED
 errors.TimeoutError(msg)       // 504 / DEADLINE_EXCEEDED
 errors.DependencyError(msg)    // 503 / UNAVAILABLE
@@ -343,16 +344,16 @@ guard.RateLimit(guard.RateLimitConfig{
 guard.CORS(guard.CORSConfig{
     AllowOrigins: []string{"https://app.example.com"},
     AllowMethods: []string{"GET", "POST"},
-    MaxAge:       3600,
+    MaxAge:       time.Hour,
 })
 
 // Security headers (CSP, HSTS 2yr, X-Frame-Options: DENY, etc.)
 guard.SecurityHeaders(guard.DefaultSecurityHeaders)
 
-// IP allow/deny by CIDR
+// IP allow/deny by CIDR (deny takes precedence)
 guard.IPFilter(guard.IPFilterConfig{
-    AllowCIDRs: []string{"10.0.0.0/8"},
-    DenyAction:  "block",
+    Allow: []string{"10.0.0.0/8"},
+    Deny:  []string{"10.0.0.1/32"},
 })
 
 // Body size limit
@@ -438,7 +439,7 @@ if err := secval.ValidateJSON(body); err != nil {
 }
 ```
 
-Blocks: `__proto__`, `constructor`, `prototype`, `eval`, `exec`, `spawn`, `import`, `require`, `system`, `shell`, `command`, `script`, `fork`, `execute`, `include`. Max nesting depth: 20.
+Blocks prototype pollution keys: `__proto__`, `constructor`, `prototype`. Common business-domain words are intentionally excluded to avoid false positives. Max nesting depth: 20.
 
 ### `work` — Structured Concurrency
 
