@@ -10,18 +10,18 @@ Practical guide for teams adopting chassis-go into an existing Go codebase.
 
 **What this is not**: An opinionated framework. Chassis doesn't own your dependency injection, routing, or service mesh. It provides building blocks that you wire together explicitly.
 
-**Service modules vs. utility modules**: Chassis modules fall into two categories. *Service modules* (`httpkit`, `grpckit`, `lifecycle`, `registry`) require a running service with `lifecycle.Run()` and an active registry — they crash if used without it. *Utility modules* (`config`, `logz`, `errors`, `call`, `work`, `health`, `secval`, `flagz`, `metrics`, `otel`, `testkit`) work anywhere — services, libraries, CLI tools. A Go module that imports chassis utilities can be consumed by any application that calls `RequireMajor(7)`.
+**Service modules vs. utility modules**: Chassis modules fall into two categories. *Service modules* (`httpkit`, `grpckit`, `lifecycle`, `registry`) require a running service with `lifecycle.Run()` and an active registry — they crash if used without it. *Utility modules* (`config`, `logz`, `errors`, `call`, `work`, `health`, `secval`, `flagz`, `metrics`, `otel`, `testkit`) work anywhere — services, libraries, CLI tools. A Go module that imports chassis utilities can be consumed by any application that calls `RequireMajor(8)`.
 
 ## Installation
 
 ```bash
-go get github.com/ai8future/chassis-go/v7
+go get github.com/ai8future/chassis-go/v8
 ```
 
 The top-level package exports the library version for diagnostics:
 
 ```go
-import chassis "github.com/ai8future/chassis-go/v7"
+import chassis "github.com/ai8future/chassis-go/v8"
 
 logger.Info("starting", "chassis_version", chassis.Version)
 ```
@@ -32,7 +32,7 @@ Every service must declare which major version of chassis it supports. This prev
 
 ```go
 func main() {
-    chassis.RequireMajor(7) // crashes if chassis major version != 7
+    chassis.RequireMajor(8) // crashes if chassis major version != 8
     // ... rest of startup
 }
 ```
@@ -67,25 +67,25 @@ A typical service imports all packages:
 
 ```go
 import (
-    "github.com/ai8future/chassis-go/v7/call"
-    "github.com/ai8future/chassis-go/v7/config"
-    "github.com/ai8future/chassis-go/v7/errors"
-    "github.com/ai8future/chassis-go/v7/grpckit"
-    "github.com/ai8future/chassis-go/v7/health"
-    "github.com/ai8future/chassis-go/v7/httpkit"
-    "github.com/ai8future/chassis-go/v7/lifecycle"
-    "github.com/ai8future/chassis-go/v7/work"
-    "github.com/ai8future/chassis-go/v7/logz"
-    "github.com/ai8future/chassis-go/v7/metrics"
-    "github.com/ai8future/chassis-go/v7/registry"
-    "github.com/ai8future/chassis-go/v7/secval"
+    "github.com/ai8future/chassis-go/v8/call"
+    "github.com/ai8future/chassis-go/v8/config"
+    "github.com/ai8future/chassis-go/v8/errors"
+    "github.com/ai8future/chassis-go/v8/grpckit"
+    "github.com/ai8future/chassis-go/v8/health"
+    "github.com/ai8future/chassis-go/v8/httpkit"
+    "github.com/ai8future/chassis-go/v8/lifecycle"
+    "github.com/ai8future/chassis-go/v8/work"
+    "github.com/ai8future/chassis-go/v8/logz"
+    "github.com/ai8future/chassis-go/v8/metrics"
+    "github.com/ai8future/chassis-go/v8/registry"
+    "github.com/ai8future/chassis-go/v8/secval"
 )
 ```
 
 And in test files:
 
 ```go
-import "github.com/ai8future/chassis-go/v7/testkit"
+import "github.com/ai8future/chassis-go/v8/testkit"
 ```
 
 The packages are designed to work together. While you *can* import selectively (a CLI tool might only need `config` + `logz`), the standard path for any service is to use the full toolkit.
@@ -128,7 +128,7 @@ cfg := config.MustLoad[AppConfig]()
 **When to use**: You need error types that carry both HTTP and gRPC status codes for consistent error handling across transport layers.
 
 ```go
-import "github.com/ai8future/chassis-go/v7/errors"
+import "github.com/ai8future/chassis-go/v8/errors"
 
 // Factory constructors for common error categories
 err := errors.ValidationError("name is required")         // 400 / INVALID_ARGUMENT
@@ -172,7 +172,7 @@ svcErr := errors.InternalError("db failed").WithCause(originalErr)
 **When to use**: You want to reject JSON payloads containing dangerous keys (prototype pollution, injection patterns) before processing them.
 
 ```go
-import "github.com/ai8future/chassis-go/v7/secval"
+import "github.com/ai8future/chassis-go/v8/secval"
 
 // Validate JSON before unmarshalling
 if err := secval.ValidateJSON(body); err != nil {
@@ -199,7 +199,7 @@ json.Unmarshal(body, &req) // safe to unmarshal now
 **When to use**: You want structured metrics with built-in request recording and cardinality protection. Metrics flow out via OTLP push — no scrape endpoint required.
 
 ```go
-import "github.com/ai8future/chassis-go/v7/metrics"
+import "github.com/ai8future/chassis-go/v8/metrics"
 
 // Create a recorder with a metric prefix
 recorder := metrics.New("mysvc", logger)
@@ -233,7 +233,7 @@ hist.Observe(ctx, 524288, "format", "pdf")
 **When to use**: You want distributed tracing and metrics export via OTLP. This is the single SDK consumer — all other chassis modules depend only on OTel API packages.
 
 ```go
-import otelinit "github.com/ai8future/chassis-go/v7/otel"
+import otelinit "github.com/ai8future/chassis-go/v8/otel"
 
 shutdown := otelinit.Init(otelinit.Config{
     ServiceName:    "mysvc",
@@ -268,7 +268,7 @@ defer shutdown(context.Background())
 **When to use**: You need request-level protection — enforcing timeouts, rate limits, CORS, security headers, IP filtering, or body size limits as HTTP middleware.
 
 ```go
-import "github.com/ai8future/chassis-go/v7/guard"
+import "github.com/ai8future/chassis-go/v8/guard"
 
 // Timeout — returns 504 if handler doesn't complete in time
 handler = guard.Timeout(10 * time.Second)(handler)
@@ -329,7 +329,7 @@ handler = guard.IPFilter(guard.IPFilterConfig{
 **When to use**: You need feature flags with percentage rollouts, multiple sources, and OTel tracing integration.
 
 ```go
-import "github.com/ai8future/chassis-go/v7/flagz"
+import "github.com/ai8future/chassis-go/v8/flagz"
 
 // Create flags from environment variables (FLAG_NEW_UI=true → "new-ui")
 src := flagz.FromEnv("FLAG")
@@ -459,7 +459,7 @@ Registration file structure:
   "started_at": "2026-03-07T14:22:01Z",
   "version": "2.4.1",
   "language": "go",
-  "chassis_version": "6.0.0",
+  "chassis_version": "8.0.0",
   "args": ["./serp_svc"],
   "base_port": 12847,
   "ports": [
@@ -480,7 +480,7 @@ Registration file structure:
 - `args` — captures `os.Args` for restart support
 
 ```go
-import "github.com/ai8future/chassis-go/v7/registry"
+import "github.com/ai8future/chassis-go/v8/registry"
 
 // Report status events (written to the service log)
 registry.Status("batch processing started")
@@ -537,7 +537,7 @@ For CLI tools and batch processes that aren't long-running services but still ne
 
 ```go
 func main() {
-    chassis.RequireMajor(7)
+    chassis.RequireMajor(8)
     cfg := config.MustLoad[BatchConfig]()
 
     if err := registry.InitCLI(chassis.Version); err != nil {
@@ -683,7 +683,7 @@ results, err := runAll(ctx)
 **When to use**: You have fan-out/fan-in workloads — batch processing, parallel dependency checks, racing fallback strategies, or streaming pipelines — and need bounded concurrency with OTel tracing.
 
 ```go
-import "github.com/ai8future/chassis-go/v7/work"
+import "github.com/ai8future/chassis-go/v8/work"
 
 // Map: apply a function to each item with bounded concurrency
 results, err := work.Map(ctx, userIDs, func(ctx context.Context, id string) (*User, error) {
@@ -722,7 +722,7 @@ for r := range out {
 - Default worker count is `runtime.NumCPU()`. Override with `work.Workers(n)`.
 - Every function creates an OTel parent span (`work.Map`, `work.All`, `work.Race`, `work.Stream`) with per-item child spans. Span attributes include `work.total`, `work.succeeded`, `work.failed`, and `work.pattern`.
 - If no `TracerProvider` is configured, spans are no-ops — graceful degradation.
-- All functions call `chassis.AssertVersionChecked()` internally. No separate version gate is needed per call, but `RequireMajor(7)` must have been called once at startup.
+- All functions call `chassis.AssertVersionChecked()` internally. No separate version gate is needed per call, but `RequireMajor(8)` must have been called once at startup.
 - `*work.Errors` implements `Unwrap() []error` for use with `errors.Is`/`errors.As`.
 
 ---
@@ -801,7 +801,7 @@ func TestMyHandler(t *testing.T) {
 
 ```go
 func main() {
-    chassis.RequireMajor(7)
+    chassis.RequireMajor(8)
     cfg := config.MustLoad[ServiceConfig]()
     logger := logz.New(cfg.LogLevel)
 
@@ -873,6 +873,182 @@ But the goal is to get to full adoption. Each package is designed with the assum
 
 ---
 
+## XYOps integration (STRONGLY RECOMMENDED)
+
+**All services and CLI tools that use chassis SHOULD integrate with xyops.** This is not optional boilerplate — xyops provides centralized job management, monitoring, alerting, and operational visibility across the entire infrastructure. A service that uses chassis but not xyops is invisible to operations. Integrate it.
+
+There are two integration patterns: the **client** (all services and CLI tools) and the **worker** (services that execute jobs dispatched by xyops).
+
+### xyops client — Every service should have this
+
+The xyops client gives your service the ability to trigger events, check job status, acknowledge alerts, and — critically — push health and application metrics to xyops for monitoring and alerting.
+
+**Config env vars** (add to your config struct):
+
+```go
+type Config struct {
+    // ... your existing fields ...
+    Xyops xyops.Config // embedded xyops config
+}
+```
+
+Required env vars:
+- `XYOPS_BASE_URL` — xyops server URL (e.g. `https://xyops.example.com:5522`)
+- `XYOPS_API_KEY` — API key for authentication
+
+Optional env vars:
+- `XYOPS_SERVICE_NAME` — service name for monitoring (defaults to chassis service name)
+- `XYOPS_MONITOR_ENABLED` — enable the monitoring bridge (default `false`)
+- `XYOPS_MONITOR_INTERVAL` — seconds between metric pushes (default `30`)
+
+**Minimal integration** (connect to xyops, enable monitoring):
+
+```go
+import (
+    "github.com/ai8future/chassis-go/v8/xyops"
+)
+
+func main() {
+    chassis.RequireMajor(8)
+    cfg := config.MustLoad[Config]()
+    logger := logz.New(cfg.LogLevel)
+
+    ops := xyops.New(cfg.Xyops,
+        xyops.WithMonitoring(cfg.Xyops.MonitorInterval),
+    )
+
+    // Add ops.Run as a lifecycle component — it pushes metrics to xyops
+    lifecycle.Run(ctx,
+        httpServer,
+        ops.Run,
+    )
+}
+```
+
+**With bridged application metrics** (recommended):
+
+```go
+ops := xyops.New(cfg.Xyops,
+    xyops.WithMonitoring(30),
+    xyops.BridgeMetric("request_latency_p99", latencyGauge),
+    xyops.BridgeMetric("queue_depth", queueGauge),
+    xyops.BridgeMetric("error_rate", errorCounter),
+)
+```
+
+Bridged metrics become xyops custom monitors and can trigger alert expressions. This is how operations knows your service is healthy.
+
+**Using the curated API** in handlers:
+
+```go
+// Trigger an event
+jobID, err := ops.RunEvent(ctx, "deploy-prod", map[string]string{
+    "version": r.URL.Query().Get("v"),
+})
+
+// Check job status (cached — safe to poll frequently)
+status, err := ops.GetJobStatus(ctx, jobID)
+
+// Cancel a job
+err := ops.CancelJob(ctx, jobID)
+
+// List active alerts
+alerts, err := ops.ListActiveAlerts(ctx)
+
+// Acknowledge an alert
+err := ops.AckAlert(ctx, alertID)
+
+// Escape hatch for any xyops API endpoint
+resp, err := ops.Raw(ctx, "GET", "/api/custom/endpoint", nil)
+```
+
+### xyops worker — Services that execute jobs
+
+If your service receives and executes jobs from xyops (deployments, migrations, batch processing, etc.), add the worker module.
+
+**Config env vars:**
+
+```go
+type Config struct {
+    // ... your existing fields ...
+    Worker xyopsworker.Config
+}
+```
+
+Required env vars:
+- `XYOPS_WORKER_MASTER_URL` — WebSocket URL (e.g. `wss://xyops.example.com:5523`)
+- `XYOPS_WORKER_SECRET_KEY` — satellite authentication key
+
+Optional env vars:
+- `XYOPS_WORKER_HOSTNAME` — worker hostname (defaults to OS hostname)
+- `XYOPS_WORKER_GROUPS` — comma-separated xyops server groups to join
+- `XYOPS_WORKER_SHELL_ENABLED` — allow shell execution fallback (default `false`)
+
+```go
+import (
+    "github.com/ai8future/chassis-go/v8/xyopsworker"
+)
+
+func main() {
+    chassis.RequireMajor(8)
+    cfg := config.MustLoad[Config]()
+
+    worker := xyopsworker.New(cfg.Worker)
+
+    worker.Handle("deploy", func(ctx context.Context, job xyopsworker.Job) error {
+        job.Log("Starting deployment for " + job.Params["environment"])
+        job.Progress(50, "Building image...")
+        // ... do the work ...
+        job.SetOutput("deployed version 2.4.1")
+        return nil
+    })
+
+    worker.Handle("db-migrate", migrateHandler)
+
+    lifecycle.Run(ctx, worker.Run)
+}
+```
+
+### CLI tools and batch processes
+
+CLI tools and batch processes should also integrate the xyops client. Even without the monitoring bridge, having the ability to trigger events and check job status from batch tools is valuable for operational workflows.
+
+```go
+func main() {
+    chassis.RequireMajor(8)
+    cfg := config.MustLoad[BatchConfig]()
+
+    if err := registry.InitCLI(chassis.Version); err != nil {
+        log.Fatal(err)
+    }
+    defer registry.ShutdownCLI(0)
+
+    // Create xyops client (no monitoring bridge needed for CLI)
+    ops := xyops.New(cfg.Xyops)
+
+    // Trigger a job and wait for it
+    jobID, _ := ops.RunEvent(ctx, "nightly-cleanup", nil)
+    for {
+        status, _ := ops.GetJobStatus(ctx, jobID)
+        registry.Progress(status.Progress, 100, 0)
+        if status.State == "completed" || status.State == "failed" {
+            break
+        }
+        time.Sleep(5 * time.Second)
+    }
+}
+```
+
+### Integration notes
+
+- The xyops client uses `call` under the hood — you get retry, circuit breaking, and OTel tracing on all API calls automatically.
+- `GetJobStatus` results are cached (5 min TTL, 500 entries) to avoid redundant API calls when polling.
+- `FireWebhook` delegates to `webhook.Sender` — HMAC signed, retried, delivery tracked.
+- `ops.Run` is safe to include in `lifecycle.Run` even when monitoring is disabled — it blocks until context cancellation.
+- The worker's `Dispatch` method can be called directly in tests without a WebSocket connection.
+
+---
+
 ## Things to watch out for
 
 **config panics are intentional.** `MustLoad` panics on missing required config. This is by design — configuration errors should crash the process at startup, not cause mysterious failures later. If you need softer error handling, validate env vars before calling `MustLoad`, or contribute a `Load` variant that returns errors.
@@ -887,6 +1063,6 @@ But the goal is to get to full adoption. Each package is designed with the assum
 
 **secval errors are NOT ServiceError.** `secval.ValidateJSON` returns module-local errors (`ErrDangerousKey`, etc.), not `*errors.ServiceError`. Convert them at the handler boundary with `errors.ValidationError(err.Error())`.
 
-**Registry enforcement is service-level, not package-level.** The registry crashes the process if `Status()` or `Errorf()` are called before `lifecycle.Run()`. The `httpkit` and `grpckit` middleware also enforce this — handling requests means you're a running service. However, utility modules (`work`, `call`, `health`, `config`, `logz`, `errors`, `secval`, `flagz`) do NOT require registry. They work fine in libraries, CLI tools, and non-service contexts. If your Go module uses chassis utilities internally, the consuming application only needs `RequireMajor(7)` — not `lifecycle.Run()` — unless it also uses httpkit/grpckit to handle requests.
+**Registry enforcement is service-level, not package-level.** The registry crashes the process if `Status()` or `Errorf()` are called before `lifecycle.Run()`. The `httpkit` and `grpckit` middleware also enforce this — handling requests means you're a running service. However, utility modules (`work`, `call`, `health`, `config`, `logz`, `errors`, `secval`, `flagz`) do NOT require registry. They work fine in libraries, CLI tools, and non-service contexts. If your Go module uses chassis utilities internally, the consuming application only needs `RequireMajor(8)` — not `lifecycle.Run()` — unless it also uses httpkit/grpckit to handle requests.
 
-**The toolkit has three external dependencies.** `golang.org/x/sync` (for errgroup), `google.golang.org/grpc` (for grpckit and errors), and `go.opentelemetry.io/otel` (for otel, metrics, call, and work). If you only use Tier 1 packages (config, logz, lifecycle, testkit), only `x/sync` is pulled in.
+**The toolkit has four external dependencies.** `golang.org/x/sync` (for errgroup), `golang.org/x/crypto` (for seal — scrypt KDF), `google.golang.org/grpc` (for grpckit and errors), and `go.opentelemetry.io/otel` (for otel, metrics, call, and work). If you only use Tier 1 packages (config, logz, lifecycle, testkit), only `x/sync` is pulled in.
