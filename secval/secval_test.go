@@ -53,7 +53,7 @@ func TestDepth20Passes(t *testing.T) {
 }
 
 func TestArrayOfObjectsScanned(t *testing.T) {
-	err := ValidateJSON([]byte(`[{"ok": 1}, {"eval": "evil"}]`))
+	err := ValidateJSON([]byte(`[{"ok": 1}, {"__proto__": "evil"}]`))
 	if !errors.Is(err, ErrDangerousKey) {
 		t.Fatalf("expected ErrDangerousKey in array, got %v", err)
 	}
@@ -76,7 +76,7 @@ func TestInvalidJSON(t *testing.T) {
 }
 
 func TestErrorIsNotServiceError(t *testing.T) {
-	err := ValidateJSON([]byte(`{"exec": true}`))
+	err := ValidateJSON([]byte(`{"prototype": true}`))
 	// Verify the error wraps ErrDangerousKey, not any external type.
 	if !errors.Is(err, ErrDangerousKey) {
 		t.Fatalf("expected ErrDangerousKey sentinel, got %v", err)
@@ -85,9 +85,7 @@ func TestErrorIsNotServiceError(t *testing.T) {
 
 func TestAllDangerousKeysBlocked(t *testing.T) {
 	keys := []string{
-		"__proto__", "constructor", "prototype", "execute", "eval",
-		"include", "import", "require", "system", "shell",
-		"command", "script", "exec", "spawn", "fork",
+		"__proto__", "constructor", "prototype",
 	}
 	for _, key := range keys {
 		err := ValidateJSON([]byte(`{"` + key + `": true}`))
@@ -97,8 +95,22 @@ func TestAllDangerousKeysBlocked(t *testing.T) {
 	}
 }
 
+func TestCommonBusinessKeysAllowed(t *testing.T) {
+	// These were previously blocked but are common in business domain JSON.
+	keys := []string{
+		"command", "system", "import", "include", "require",
+		"exec", "execute", "shell", "script", "spawn", "fork", "eval",
+	}
+	for _, key := range keys {
+		err := ValidateJSON([]byte(`{"` + key + `": "value"}`))
+		if err != nil {
+			t.Errorf("expected %q to be allowed, got %v", key, err)
+		}
+	}
+}
+
 func TestNestedDangerousKey(t *testing.T) {
-	err := ValidateJSON([]byte(`{"data": {"inner": {"exec": true}}}`))
+	err := ValidateJSON([]byte(`{"data": {"inner": {"__proto__": true}}}`))
 	if !errors.Is(err, ErrDangerousKey) {
 		t.Fatalf("expected ErrDangerousKey nested, got %v", err)
 	}

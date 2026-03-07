@@ -19,6 +19,16 @@ import (
 // lifecycle. It must respect ctx.Done() to allow graceful shutdown.
 type Component func(ctx context.Context) error
 
+// RunComponents is the type-safe variant of Run that accepts only Component
+// values. Prefer this over Run when all components are known at compile time.
+func RunComponents(ctx context.Context, components ...Component) error {
+	args := make([]any, len(components))
+	for i, c := range components {
+		args[i] = c
+	}
+	return Run(ctx, args...)
+}
+
 // Run orchestrates one or more components. It accepts Component values
 // (or bare func(ctx context.Context) error). It creates a context cancelled
 // on SIGTERM or SIGINT, launches every component as a goroutine in an

@@ -350,7 +350,7 @@ func TestStaleCleanupRemovesDeadPIDFiles(t *testing.T) {
 	wd, _ := os.Getwd()
 	name := filepath.Base(wd)
 	svcDir := filepath.Join(tmp, name)
-	if err := os.MkdirAll(svcDir, 0o755); err != nil {
+	if err := os.MkdirAll(svcDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 

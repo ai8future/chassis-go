@@ -165,6 +165,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	var err error
 
 	if c.retrier != nil {
+		c.retrier.req = req
 		resp, err = c.retrier.Do(ctx, exec)
 	} else {
 		resp, err = exec()

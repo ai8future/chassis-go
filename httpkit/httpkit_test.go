@@ -349,7 +349,7 @@ func TestJSONError_AllStatusMappings(t *testing.T) {
 		{http.StatusTooManyRequests, 429, "https://chassis.ai8future.com/errors/rate-limit"},
 		{http.StatusServiceUnavailable, 503, "https://chassis.ai8future.com/errors/dependency"},
 		{http.StatusInternalServerError, 500, "https://chassis.ai8future.com/errors/internal"},
-		{http.StatusTeapot, 500, "https://chassis.ai8future.com/errors/internal"}, // unmapped → InternalError(500)
+		{http.StatusTeapot, 418, "https://chassis.ai8future.com/errors/unknown"}, // unmapped → preserves original status code
 	}
 
 	for _, tc := range cases {

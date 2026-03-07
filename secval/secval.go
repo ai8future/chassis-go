@@ -23,22 +23,13 @@ var (
 )
 
 // dangerousKeys is the set of normalised keys blocked in user input.
+// Only keys that indicate prototype pollution or direct code execution vectors
+// are included. Common business-domain words (command, system, import, etc.)
+// are intentionally excluded to avoid false positives.
 var dangerousKeys = map[string]bool{
 	"__proto__":   true,
 	"constructor": true,
 	"prototype":   true,
-	"execute":     true,
-	"eval":        true,
-	"include":     true,
-	"import":      true,
-	"require":     true,
-	"system":      true,
-	"shell":       true,
-	"command":     true,
-	"script":      true,
-	"exec":        true,
-	"spawn":       true,
-	"fork":        true,
 }
 
 // MaxNestingDepth is the maximum allowed depth for nested structures.

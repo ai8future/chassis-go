@@ -134,6 +134,14 @@ func (cb *CircuitBreaker) State() State {
 	return cb.state
 }
 
+// RemoveBreaker removes a named circuit breaker from the global registry,
+// allowing its memory to be reclaimed. Safe to call even if the name does
+// not exist. Use this when a downstream service is decommissioned or when
+// breaker names contain dynamic data.
+func RemoveBreaker(name string) {
+	breakers.Delete(name)
+}
+
 // resetForTest resets the breaker to its initial closed state. This is
 // exported only for testing and should not be used in production code.
 func (cb *CircuitBreaker) resetForTest() {

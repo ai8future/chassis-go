@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [6.0.3] - 2026-03-07
+
+### Bug Fixes
+
+- **call**: Rewind request body via `GetBody` before each retry attempt; previously POST/PUT retries silently sent empty bodies
+- **logz**: Fix `traceHandler` dropping `WithAttrs` attributes when groups are active and trace context is present; attrs added after `WithGroup` are now included in reconstructed records
+- **guard**: `timeoutWriter.Write` now returns `http.ErrHandlerTimeout` after the deadline fires, preventing unbounded buffer growth from slow handler goroutines
+- **work**: `Map` and `All` now use `select` with `ctx.Done()` when acquiring the semaphore, so cancelled contexts are respected immediately instead of blocking
+
+### Security Fixes
+
+- **registry**: Redact sensitive command-line arguments (passwords, tokens, keys) from PID file `args` field to prevent credential leakage
+- **registry**: Validate service directory permissions on Init; reject directories with group/world-readable permissions (must be 0700)
+- **secval**: Reduce dangerous key list to prototype-pollution vectors only (`__proto__`, `constructor`, `prototype`); remove common business-domain words that caused false positives
+
+### Improvements
+
+- **lifecycle**: Add `RunComponents()` type-safe variant of `Run()` that accepts `...Component` for compile-time type checking
+- **call**: Add `RemoveBreaker(name)` to allow cleanup of named circuit breakers, preventing memory leaks with dynamic breaker names
+- **httpkit**: `errorForStatus` now preserves the caller's original HTTP status code for unmapped values instead of silently replacing with 500
+- **config**: Remove redundant hand-rolled `contains`/`searchString` test helpers; use `strings.Contains`
+- **registry**: Document that exported config variables (`BasePath`, `HeartbeatInterval`, `CmdPollInterval`) must be set before `lifecycle.Run` and are `time.Duration` values
+- **testkit**: Document TOCTOU race inherent in `GetFreePort`
+
+(Claude Code:Opus 4.6)
+
 ## [6.0.2] - 2026-03-07
 
 ### Security Fixes

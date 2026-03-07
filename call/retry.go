@@ -16,12 +16,17 @@ import (
 type Retrier struct {
 	MaxAttempts int
 	BaseDelay   time.Duration
+	req         *http.Request // set by Client.Do so body can be rewound
 }
 
 // Do executes fn up to MaxAttempts times, retrying only when a 5xx status code
 // is returned. Between attempts it sleeps with exponential backoff plus random
 // jitter of up to 50% of the calculated delay. It respects context
 // cancellation and deadline, stopping immediately when the context is done.
+//
+// If the request has a GetBody function, it is called before each retry to
+// rewind the request body. Without GetBody, retries of requests with a body
+// will send an empty/consumed body.
 func (r *Retrier) Do(ctx context.Context, fn func() (*http.Response, error)) (*http.Response, error) {
 	var (
 		resp *http.Response
@@ -32,6 +37,14 @@ func (r *Retrier) Do(ctx context.Context, fn func() (*http.Response, error)) (*h
 		// Check context before each attempt.
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
+		}
+
+		// Rewind the request body before retry attempts (not the first).
+		if attempt > 0 && r.req != nil && r.req.GetBody != nil {
+			body, bodyErr := r.req.GetBody()
+			if bodyErr == nil {
+				r.req.Body = body
+			}
 		}
 
 		resp, err = fn()

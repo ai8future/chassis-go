@@ -71,10 +71,15 @@ var (
 	restart     atomic.Bool
 
 	// BasePath is the root directory for service registrations.
+	// Set before calling lifecycle.Run; not safe for concurrent modification.
 	BasePath = DefaultBasePath
 	// HeartbeatInterval controls how often heartbeat events are logged.
+	// Must be a time.Duration (e.g. 30*time.Second, not bare 30).
+	// Set before calling lifecycle.Run; not safe for concurrent modification.
 	HeartbeatInterval = DefaultHeartbeatInterval
 	// CmdPollInterval controls how often the command file is polled.
+	// Must be a time.Duration (e.g. 3*time.Second, not bare 3).
+	// Set before calling lifecycle.Run; not safe for concurrent modification.
 	CmdPollInterval = DefaultCmdPollInterval
 )
 
@@ -124,6 +129,13 @@ func Init(cancel context.CancelFunc, chassisVersion string) error {
 	if err := os.MkdirAll(svcDir, 0o700); err != nil {
 		return fmt.Errorf("registry: mkdir: %w", err)
 	}
+	// Verify the directory has safe permissions. On shared systems (/tmp),
+	// another user could pre-create the directory with open permissions.
+	if info, err := os.Stat(svcDir); err == nil {
+		if perm := info.Mode().Perm(); perm&0o077 != 0 {
+			return fmt.Errorf("registry: directory %s has unsafe permissions %o (want 0700)", svcDir, perm)
+		}
+	}
 	cleanStale(svcDir)
 
 	ps := strconv.Itoa(pid)
@@ -147,7 +159,7 @@ func Init(cancel context.CancelFunc, chassisVersion string) error {
 		Version:        ver,
 		Language:        "go",
 		ChassisVersion: chassisVersion,
-		Args:           os.Args,
+		Args:           redactArgs(os.Args),
 		Commands:       cmds,
 	}
 
@@ -255,6 +267,35 @@ func readVersion() string {
 		return "unknown"
 	}
 	return strings.TrimSpace(string(b))
+}
+
+// sensitiveFlags lists flag prefixes whose values should be redacted from the PID file.
+var sensitiveFlags = []string{
+	"password", "passwd", "secret", "token", "key", "credential",
+	"api-key", "api_key", "apikey", "auth",
+}
+
+// redactArgs returns a copy of args with values of sensitive-looking flags replaced.
+func redactArgs(args []string) []string {
+	out := make([]string, len(args))
+	for i, arg := range args {
+		out[i] = redactArg(arg)
+	}
+	return out
+}
+
+func redactArg(arg string) string {
+	lower := strings.ToLower(arg)
+	// Handle --flag=value and -flag=value
+	if idx := strings.Index(arg, "="); idx > 0 {
+		name := strings.TrimLeft(lower[:idx], "-")
+		for _, s := range sensitiveFlags {
+			if strings.Contains(name, s) {
+				return arg[:idx+1] + "REDACTED"
+			}
+		}
+	}
+	return arg
 }
 
 func ts() string {

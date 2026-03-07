@@ -112,6 +112,11 @@ func (tw *timeoutWriter) WriteHeader(code int) {
 func (tw *timeoutWriter) Write(b []byte) (int, error) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
+	if tw.written {
+		// Timeout already fired or response already flushed — discard writes
+		// to prevent unbounded buffer growth from a slow handler goroutine.
+		return 0, http.ErrHandlerTimeout
+	}
 	if !tw.started {
 		tw.started = true
 		tw.code = http.StatusOK

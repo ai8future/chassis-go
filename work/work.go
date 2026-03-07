@@ -87,8 +87,14 @@ func Map[T, R any](ctx context.Context, items []T, fn func(context.Context, T) (
 	var wg sync.WaitGroup
 
 	for i, item := range items {
+		// Respect context cancellation while waiting for a semaphore slot.
+		select {
+		case <-ctx.Done():
+			errs[i] = ctx.Err()
+			continue
+		case sem <- struct{}{}: // acquire
+		}
 		wg.Add(1)
-		sem <- struct{}{} // acquire
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }() // release
@@ -149,8 +155,14 @@ func All(ctx context.Context, tasks []func(context.Context) error, opts ...Optio
 	var wg sync.WaitGroup
 
 	for i, task := range tasks {
+		// Respect context cancellation while waiting for a semaphore slot.
+		select {
+		case <-ctx.Done():
+			errs[i] = ctx.Err()
+			continue
+		case sem <- struct{}{}:
+		}
 		wg.Add(1)
-		sem <- struct{}{}
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()

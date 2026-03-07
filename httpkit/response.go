@@ -26,6 +26,8 @@ func JSONProblem(w http.ResponseWriter, r *http.Request, err *errors.ServiceErro
 }
 
 // errorForStatus maps an HTTP status code to an appropriate ServiceError factory.
+// For unmapped status codes, returns an InternalError but preserves the
+// caller's original HTTP status code.
 func errorForStatus(code int, message string) *errors.ServiceError {
 	switch code {
 	case http.StatusBadRequest:
@@ -44,7 +46,12 @@ func errorForStatus(code int, message string) *errors.ServiceError {
 		return errors.RateLimitError(message)
 	case http.StatusServiceUnavailable:
 		return errors.DependencyError(message)
-	default:
+	case http.StatusInternalServerError:
 		return errors.InternalError(message)
+	default:
+		// Preserve the caller's intended status code for unmapped codes.
+		se := errors.InternalError(message)
+		se.HTTPCode = code
+		return se
 	}
 }

@@ -48,8 +48,12 @@ func SetEnv(t testing.TB, envs map[string]string) {
 }
 
 // GetFreePort asks the OS for an available TCP port by listening on :0, then
-// closes the listener and returns the assigned port.  This is useful for
+// closes the listener and returns the assigned port. This is useful for
 // parallel tests that each need their own listener.
+//
+// Note: there is an inherent TOCTOU race between closing the listener and
+// the caller binding to the port. In practice this rarely causes issues in
+// test environments, but callers should handle bind failures gracefully.
 func GetFreePort() (int, error) {
 	ln, err := net.Listen("tcp", ":0")
 	if err != nil {

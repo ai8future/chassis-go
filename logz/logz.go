@@ -47,9 +47,10 @@ func parseLevel(level string) slog.Level {
 // and the base handler (without groups) so that trace_id is always emitted at
 // the top level of the JSON output.
 type traceHandler struct {
-	inner  slog.Handler // current handler with groups and attrs applied
-	base   slog.Handler // base handler without groups, for top-level trace_id
-	groups []string     // accumulated group names for record reconstruction
+	inner      slog.Handler // current handler with groups and attrs applied
+	base       slog.Handler // base handler without groups, for top-level trace_id
+	groups     []string     // accumulated group names for record reconstruction
+	groupAttrs [][]slog.Attr // attrs added via WithAttrs while inside groups, per group depth
 }
 
 // Enabled delegates to the inner handler.
@@ -90,10 +91,23 @@ func (h *traceHandler) Handle(ctx context.Context, r slog.Record) error {
 		return true
 	})
 
+	// Build the innermost group: merge WithAttrs for this group depth + record attrs.
+	lastIdx := len(h.groups) - 1
+	var innerItems []any
+	if lastIdx < len(h.groupAttrs) {
+		innerItems = attrsToAny(h.groupAttrs[lastIdx])
+	}
+	innerItems = append(innerItems, attrsToAny(recordAttrs)...)
+
 	var grouped slog.Attr
-	grouped = slog.Group(h.groups[len(h.groups)-1], attrsToAny(recordAttrs)...)
-	for i := len(h.groups) - 2; i >= 0; i-- {
-		grouped = slog.Group(h.groups[i], grouped)
+	grouped = slog.Group(h.groups[lastIdx], innerItems...)
+	for i := lastIdx - 1; i >= 0; i-- {
+		var items []any
+		if i < len(h.groupAttrs) {
+			items = attrsToAny(h.groupAttrs[i])
+		}
+		items = append(items, grouped)
+		grouped = slog.Group(h.groups[i], items...)
 	}
 
 	newRecord := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
@@ -110,13 +124,29 @@ func (h *traceHandler) Handle(ctx context.Context, r slog.Record) error {
 func (h *traceHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	// If no groups yet, attrs are top-level and should also be applied to base.
 	base := h.base
+	groupAttrs := h.groupAttrs
 	if len(h.groups) == 0 {
 		base = h.base.WithAttrs(attrs)
+	} else {
+		// Track attrs added within groups so they can be included in the
+		// reconstructed record when trace context is present.
+		groupAttrs = make([][]slog.Attr, len(h.groupAttrs))
+		copy(groupAttrs, h.groupAttrs)
+		// Append to the current (deepest) group's attrs.
+		idx := len(h.groups) - 1
+		for idx >= len(groupAttrs) {
+			groupAttrs = append(groupAttrs, nil)
+		}
+		merged := make([]slog.Attr, len(groupAttrs[idx]), len(groupAttrs[idx])+len(attrs))
+		copy(merged, groupAttrs[idx])
+		merged = append(merged, attrs...)
+		groupAttrs[idx] = merged
 	}
 	return &traceHandler{
-		inner:  h.inner.WithAttrs(attrs),
-		base:   base,
-		groups: h.groups,
+		inner:      h.inner.WithAttrs(attrs),
+		base:       base,
+		groups:     h.groups,
+		groupAttrs: groupAttrs,
 	}
 }
 
@@ -125,10 +155,14 @@ func (h *traceHandler) WithGroup(name string) slog.Handler {
 	newGroups := make([]string, len(h.groups)+1)
 	copy(newGroups, h.groups)
 	newGroups[len(h.groups)] = name
+	// Extend groupAttrs to have a slot for the new group depth.
+	newGroupAttrs := make([][]slog.Attr, len(newGroups))
+	copy(newGroupAttrs, h.groupAttrs)
 	return &traceHandler{
-		inner:  h.inner.WithGroup(name),
-		base:   h.base,
-		groups: newGroups,
+		inner:      h.inner.WithGroup(name),
+		base:       h.base,
+		groups:     newGroups,
+		groupAttrs: newGroupAttrs,
 	}
 }
 
