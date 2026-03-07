@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [5.0.2] - 2026-03-07
+
+- New `registry` package: file-based service registration at `/tmp/chassis/` with PID tracking, JSONL logging, heartbeat, command polling (stop/restart/custom), and stale PID cleanup. Zero chassis dependencies — stdlib only. (Claude Code:Opus 4.6)
+
 ## [5.0.1] - 2026-02-17
 
 - Comprehensive README.md rewrite with full package documentation, usage examples, design principles, and observability reference (Claude Code:Opus 4.6)
