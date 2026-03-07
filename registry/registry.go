@@ -447,11 +447,15 @@ func processAlive(pid int) bool {
 }
 
 func pollOnce() {
-	data, err := os.ReadFile(cmdPath)
+	mu.Lock()
+	path := cmdPath
+	mu.Unlock()
+
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return
 	}
-	os.Remove(cmdPath)
+	os.Remove(path)
 
 	var req cmdRequest
 	if json.Unmarshal(data, &req) != nil {
