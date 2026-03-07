@@ -594,7 +594,7 @@ grpckit.RegisterHealth(srv, health.CheckFunc(checks))
 - Recovery interceptors log the panic value **and full stack trace**, then return `codes.Internal`.
 - Place recovery interceptors first in the chain so they catch panics from all downstream interceptors and handlers.
 - `grpckit.RegisterHealth` decouples gRPC from the `health` package. It accepts any `func(ctx context.Context) error` — you can wire in your own health logic without importing `health`.
-- The metrics interceptors record per-RPC OTel histograms (`grpc_server_duration_seconds`) using the configured `otel.MeterProvider`.
+- The metrics interceptors record per-RPC OTel histograms (`rpc.server.duration`) using the configured `otel.MeterProvider`.
 
 ---
 
@@ -748,7 +748,7 @@ func TestMyHandler(t *testing.T) {
 
 **Integration notes**:
 - `testkit.NewLogger` writes to `t.Log`, so output is captured per-test and only shown on failure (or with `-v`).
-- `testkit.SetEnv` calls `os.Setenv` and registers cleanup via `t.Cleanup`. For parallel tests, prefer `t.Setenv` (Go 1.17+) which is parallel-safe; `testkit.SetEnv` is for when you need to set multiple vars at once.
+- `testkit.SetEnv` calls `t.Setenv` for each key-value pair, providing automatic cleanup. It is a convenience for setting multiple vars at once.
 - `testkit.GetFreePort` asks the OS for an available port. There is a small TOCTOU window between getting the port and binding to it, but it's reliable for tests.
 
 ---

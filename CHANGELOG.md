@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [6.0.9] - 2026-03-07
+
+### Documentation
+
+- **INTEGRATING.md**: Fix grpckit metric name (`rpc.server.duration`, not `grpc_server_duration_seconds`)
+- **INTEGRATING.md**: Fix testkit.SetEnv description (uses `t.Setenv`, not `os.Setenv` + `t.Cleanup`)
+
+(Claude Code:Opus 4.6)
+
 ## [6.0.8] - 2026-03-07
 
 ### Documentation
