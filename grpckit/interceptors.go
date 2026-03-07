@@ -8,9 +8,9 @@ import (
 	"runtime/debug"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v7"
-	"github.com/ai8future/chassis-go/v7/internal/otelutil"
-	"github.com/ai8future/chassis-go/v7/registry"
+	chassis "github.com/ai8future/chassis-go/v8"
+	"github.com/ai8future/chassis-go/v8/internal/otelutil"
+	"github.com/ai8future/chassis-go/v8/registry"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -22,7 +22,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const tracerName = "github.com/ai8future/chassis-go/v7/grpckit"
+const tracerName = "github.com/ai8future/chassis-go/v8/grpckit"
 
 var getRPCDurationHistogram = otelutil.LazyHistogram(
 	tracerName,

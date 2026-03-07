@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v7"
+	chassis "github.com/ai8future/chassis-go/v8"
 )
 
 // MustLoad loads environment variables into a struct of type T based on struct

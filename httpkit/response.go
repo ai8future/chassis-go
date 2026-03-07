@@ -4,7 +4,7 @@ package httpkit
 import (
 	"net/http"
 
-	"github.com/ai8future/chassis-go/v7/errors"
+	"github.com/ai8future/chassis-go/v8/errors"
 )
 
 // JSONError writes an RFC 9457 Problem Details JSON response for the given

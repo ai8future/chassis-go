@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ai8future/chassis-go/v7/guard"
+	"github.com/ai8future/chassis-go/v8/guard"
 )
 
 func TestCORSPreflightReturns204(t *testing.T) {

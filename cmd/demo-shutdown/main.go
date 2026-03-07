@@ -25,13 +25,13 @@ import (
 	"fmt"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v7"
-	"github.com/ai8future/chassis-go/v7/lifecycle"
-	"github.com/ai8future/chassis-go/v7/logz"
+	chassis "github.com/ai8future/chassis-go/v8"
+	"github.com/ai8future/chassis-go/v8/lifecycle"
+	"github.com/ai8future/chassis-go/v8/logz"
 )
 
 func main() {
-	chassis.RequireMajor(7)
+	chassis.RequireMajor(8)
 	logger := logz.New("info")
 
 	logger.Info("demo-shutdown starting, send SIGTERM or press Ctrl+C to test graceful shutdown")

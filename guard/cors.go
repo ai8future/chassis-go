@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v7"
+	chassis "github.com/ai8future/chassis-go/v8"
 )
 
 // CORSConfig configures the CORS middleware.
