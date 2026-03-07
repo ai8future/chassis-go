@@ -6,7 +6,7 @@ A composable Go service toolkit for building production-grade microservices. Too
 go get github.com/ai8future/chassis-go/v6
 ```
 
-**Current version:** 5.0.0 &middot; **Go:** 1.25.5+ &middot; **License:** MIT
+**Current version:** 6.0.0 &middot; **Go:** 1.25.5+ &middot; **License:** MIT
 
 ---
 
@@ -24,32 +24,33 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 
 | Package | Import | Purpose |
 |---------|--------|---------|
-| `chassis` | `github.com/ai8future/chassis-go/v6` | Version gate: `RequireMajor(5)` must be called before any other chassis API |
-| `config` | `.../v5/config` | Generic env-to-struct config loader via struct tags. Panics on missing required vars |
-| `logz` | `.../v5/logz` | Structured JSON logging wrapping `log/slog` with automatic OTel `trace_id`/`span_id` injection |
-| `lifecycle` | `.../v5/lifecycle` | Signal-aware graceful shutdown orchestration via `errgroup` |
-| `testkit` | `.../v5/testkit` | Test helpers: `NewLogger` (writes to `t.Log`), `SetEnv` (with cleanup), `GetFreePort` |
+| `chassis` | `github.com/ai8future/chassis-go/v6` | Version gate: `RequireMajor(6)` must be called before any other chassis API |
+| `config` | `.../v6/config` | Generic env-to-struct config loader via struct tags. Panics on missing required vars |
+| `logz` | `.../v6/logz` | Structured JSON logging wrapping `log/slog` with automatic OTel `trace_id`/`span_id` injection |
+| `lifecycle` | `.../v6/lifecycle` | Signal-aware graceful shutdown orchestration via `errgroup` |
+| `registry` | `.../v6/registry` | File-based service registration at `/tmp/chassis/`. Status reporting, custom commands, heartbeat |
+| `testkit` | `.../v6/testkit` | Test helpers: `NewLogger` (writes to `t.Log`), `SetEnv` (with cleanup), `GetFreePort` |
 
 ### Tier 2: Transports and Clients
 
 | Package | Import | Purpose |
 |---------|--------|---------|
-| `httpkit` | `.../v5/httpkit` | HTTP middleware: RequestID, Logging, Recovery, Tracing. JSON error responses |
-| `grpckit` | `.../v5/grpckit` | gRPC interceptors: Logging, Recovery, Metrics, Tracing. Health service registration |
-| `health` | `.../v5/health` | Parallel health check aggregation with HTTP handler and gRPC adapter |
-| `call` | `.../v5/call` | Resilient outbound HTTP client: retry with exponential backoff, circuit breaker, OTel spans |
+| `httpkit` | `.../v6/httpkit` | HTTP middleware: RequestID, Logging, Recovery, Tracing. JSON error responses |
+| `grpckit` | `.../v6/grpckit` | gRPC interceptors: Logging, Recovery, Metrics, Tracing. Health service registration |
+| `health` | `.../v6/health` | Parallel health check aggregation with HTTP handler and gRPC adapter |
+| `call` | `.../v6/call` | Resilient outbound HTTP client: retry with exponential backoff, circuit breaker, OTel spans |
 
 ### Tier 3: Cross-Cutting
 
 | Package | Import | Purpose |
 |---------|--------|---------|
-| `guard` | `.../v5/guard` | HTTP guards: rate limiter (LRU), CORS, IP filter, security headers, body limits, timeouts |
-| `flagz` | `.../v5/flagz` | Feature flags with percentage rollouts (FNV-1a), pluggable sources, OTel span events |
-| `metrics` | `.../v5/metrics` | OTel-native metrics recorder with cardinality protection (max 1000 label combos) |
-| `otel` | `.../v5/otel` | OpenTelemetry bootstrap: OTLP gRPC traces + metrics, configurable samplers |
-| `errors` | `.../v5/errors` | Unified error type with dual HTTP/gRPC codes and RFC 9457 Problem Details |
-| `secval` | `.../v5/secval` | JSON security validation: blocks dangerous keys (`__proto__`, `eval`, etc.) and deep nesting |
-| `work` | `.../v5/work` | Structured concurrency: `Map`, `All`, `Race`, `Stream` — all OTel-traced |
+| `guard` | `.../v6/guard` | HTTP guards: rate limiter (LRU), CORS, IP filter, security headers, body limits, timeouts |
+| `flagz` | `.../v6/flagz` | Feature flags with percentage rollouts (FNV-1a), pluggable sources, OTel span events |
+| `metrics` | `.../v6/metrics` | OTel-native metrics recorder with cardinality protection (max 1000 label combos) |
+| `otel` | `.../v6/otel` | OpenTelemetry bootstrap: OTLP gRPC traces + metrics, configurable samplers |
+| `errors` | `.../v6/errors` | Unified error type with dual HTTP/gRPC codes and RFC 9457 Problem Details |
+| `secval` | `.../v6/secval` | JSON security validation: blocks dangerous keys (`__proto__`, `eval`, etc.) and deep nesting |
+| `work` | `.../v6/work` | Structured concurrency: `Map`, `All`, `Race`, `Stream` — all OTel-traced |
 
 **Tier isolation**: If you only use Tier 1 packages, only `golang.org/x/sync` is pulled in — no gRPC, no OTel SDK.
 
@@ -83,7 +84,7 @@ type AppConfig struct {
 
 func main() {
     // Version gate — must be first
-    chassis.RequireMajor(5)
+    chassis.RequireMajor(6)
 
     cfg := config.MustLoad[AppConfig]()
     logger := logz.New(cfg.LogLevel)
@@ -168,7 +169,7 @@ Output:
 
 ### `lifecycle` — Graceful Shutdown
 
-Signal-aware orchestrator using `errgroup`. Catches SIGTERM/SIGINT, cancels the shared context, and waits for all components to drain.
+Signal-aware orchestrator using `errgroup`. Catches SIGTERM/SIGINT, cancels the shared context, and waits for all components to drain. Automatically initializes the `registry` on startup — every service is registered at `/tmp/chassis/` with heartbeat and command polling.
 
 ```go
 lifecycle.Run(ctx,
@@ -179,6 +180,44 @@ lifecycle.Run(ctx,
 ```
 
 Each component receives a context that cancels on signal or when any peer returns an error.
+
+### `registry` — File-Based Service Registration
+
+Every service automatically registers itself at `/tmp/chassis/<service-name>/` when `lifecycle.Run()` is called. The registry writes a JSON PID file, maintains a structured log, and provides a command interface for external tooling.
+
+**What gets created:**
+```
+/tmp/chassis/<service-name>/
+  <pid>.json        # Registration: name, PID, hostname, version, available commands
+  <pid>.log.jsonl   # Structured event log: startup, heartbeat, status, errors, shutdown
+  <pid>.cmd.json    # Command file (written by external tools, consumed by the service)
+```
+
+**Automatic behavior** (managed by `lifecycle.Run()`):
+- Heartbeat event logged every 30 seconds
+- Command file polled every 3 seconds
+- Built-in `stop` command triggers graceful shutdown
+- Built-in `restart` command sets the restart flag and triggers shutdown
+- Stale PID files from dead processes are cleaned up on startup
+
+**Module-level API** — no object to pass around:
+```go
+import "github.com/ai8future/chassis-go/v6/registry"
+
+// Report status (written to the service log)
+registry.Status("processing batch 42")
+
+// Report errors
+registry.Errorf("failed to connect to %s: %v", host, err)
+
+// Register custom commands (must be called before lifecycle.Run)
+registry.Handle("flush-cache", "Clear all cached data", func() error {
+    cache.Flush()
+    return nil
+})
+```
+
+The service name is resolved from `CHASSIS_SERVICE_NAME` env var, falling back to the working directory name. The service version is read from a `VERSION` file in the working directory.
 
 ### `call` — Resilient HTTP Client
 
@@ -443,7 +482,7 @@ chassis-go enforces a mandatory version compatibility contract. Every service mu
 
 ```go
 func main() {
-    chassis.RequireMajor(5)  // must be the first chassis call
+    chassis.RequireMajor(6)  // must be the first chassis call
     // ...
 }
 ```

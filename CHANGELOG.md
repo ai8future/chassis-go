@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [6.0.1] - 2026-03-07
+
+- Update README.md and INTEGRATING.md for v6: change all v5 references to v6, update RequireMajor(5) to RequireMajor(6), add `registry` module to package tables and import lists, add registry documentation sections covering Status/Errorf/Handle API, file layout, built-in commands, and automatic lifecycle integration. (Claude Code:Opus 4.6)
+
 ## [6.0.0] - 2026-03-07
 
 ### Breaking Changes

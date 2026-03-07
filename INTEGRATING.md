@@ -30,7 +30,7 @@ Every service must declare which major version of chassis it supports. This prev
 
 ```go
 func main() {
-    chassis.RequireMajor(5) // crashes if chassis major version != 5
+    chassis.RequireMajor(6) // crashes if chassis major version != 6
     // ... rest of startup
 }
 ```
@@ -51,6 +51,7 @@ import (
     "github.com/ai8future/chassis-go/v6/work"
     "github.com/ai8future/chassis-go/v6/logz"
     "github.com/ai8future/chassis-go/v6/metrics"
+    "github.com/ai8future/chassis-go/v6/registry"
     "github.com/ai8future/chassis-go/v6/secval"
 )
 ```
@@ -371,6 +372,8 @@ logger.InfoContext(ctx, "handling request", "path", "/api/users")
 
 **When to use**: Your service runs multiple long-lived components (HTTP server, gRPC server, background workers) that need coordinated startup and shutdown.
 
+`lifecycle.Run()` automatically initializes the `registry` module — every service is registered at `/tmp/chassis/` on startup, with automatic heartbeat every 30s and command polling every 3s. Register custom commands via `registry.Handle()` before calling `Run`.
+
 ```go
 err := lifecycle.Run(context.Background(),
     func(ctx context.Context) error {
@@ -408,6 +411,59 @@ err := lifecycle.Run(context.Background(),
 - Every component function **must** watch `ctx.Done()`. A component that ignores the context will block shutdown indefinitely.
 - `http.Server.ListenAndServe()` does not respect context cancellation — you need the goroutine + select pattern shown above. `grpc.Server.Serve()` is the same; use `GracefulStop()` on context cancellation.
 - If you already have a shutdown manager, `lifecycle.Run` is just a convenience. You can use the other chassis packages without it.
+
+---
+
+### registry — File-based service registration
+
+**When to use**: Automatically — `lifecycle.Run()` initializes the registry for you. Use the module-level API to report status, log errors, and register custom commands.
+
+The registry creates a directory per service under `/tmp/chassis/<service-name>/` containing:
+- `<pid>.json` — Registration file with service metadata (name, PID, hostname, version, available commands)
+- `<pid>.log.jsonl` — Structured event log (startup, heartbeat, status, error, shutdown events)
+- `<pid>.cmd.json` — Command file consumed by the service (written by external tools)
+
+```go
+import "github.com/ai8future/chassis-go/v6/registry"
+
+// Report status events (written to the service log)
+registry.Status("batch processing started")
+
+// Report errors
+registry.Errorf("connection to %s failed: %v", host, err)
+
+// Register custom commands (call before lifecycle.Run)
+registry.Handle("flush-cache", "Clear all cached data", func() error {
+    return cache.Flush()
+})
+
+// Check if a restart was requested (useful after lifecycle.Run returns)
+if registry.RestartRequested() {
+    // re-exec the process
+}
+```
+
+**Built-in commands** (always available):
+- `stop` — triggers graceful shutdown via context cancellation
+- `restart` — sets the restart flag and triggers shutdown
+
+To send a command to a running service, write a JSON file to `<pid>.cmd.json`:
+```json
+{"command": "flush-cache", "issued_at": "2026-03-07T12:00:00Z"}
+```
+
+**Automatic behavior** (managed by `lifecycle.Run()`):
+- Heartbeat event logged every 30 seconds (`DefaultHeartbeatInterval`)
+- Command file polled every 3 seconds (`DefaultCmdPollInterval`)
+- Stale PID files from dead processes cleaned up on startup
+- Shutdown event logged with uptime when the service exits
+
+**Integration notes**:
+- The registry uses only the stdlib — zero chassis dependencies. It is safe to import anywhere.
+- The service name comes from `CHASSIS_SERVICE_NAME` env var, falling back to `filepath.Base(os.Getwd())`.
+- The service version is read from a `VERSION` file in the working directory.
+- `Status()` and `Errorf()` are no-ops before `Init()` is called (i.e., before `lifecycle.Run()`).
+- Custom command handlers registered via `Handle()` must be registered before `lifecycle.Run()` is called.
 
 ---
 
@@ -562,7 +618,7 @@ for r := range out {
 - Default worker count is `runtime.NumCPU()`. Override with `work.Workers(n)`.
 - Every function creates an OTel parent span (`work.Map`, `work.All`, `work.Race`, `work.Stream`) with per-item child spans. Span attributes include `work.total`, `work.succeeded`, `work.failed`, and `work.pattern`.
 - If no `TracerProvider` is configured, spans are no-ops — graceful degradation.
-- All functions call `chassis.AssertVersionChecked()` internally. No separate version gate is needed per call, but `RequireMajor(5)` must have been called once at startup.
+- All functions call `chassis.AssertVersionChecked()` internally. No separate version gate is needed per call, but `RequireMajor(6)` must have been called once at startup.
 - `*work.Errors` implements `Unwrap() []error` for use with `errors.Is`/`errors.As`.
 
 ---
@@ -641,7 +697,7 @@ func TestMyHandler(t *testing.T) {
 
 ```go
 func main() {
-    chassis.RequireMajor(5)
+    chassis.RequireMajor(6)
     cfg := config.MustLoad[ServiceConfig]()
     logger := logz.New(cfg.LogLevel)
 
