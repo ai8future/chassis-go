@@ -201,6 +201,11 @@ func Init(cancel context.CancelFunc, chassisVersion string) error {
 		cmds = append(cmds, CmdInfo{Name: n, Description: h.description})
 	}
 
+	declaredPorts := ports
+	if declaredPorts == nil {
+		declaredPorts = []PortInfo{}
+	}
+
 	reg = &Registration{
 		Name:           name,
 		PID:            pid,
@@ -211,7 +216,7 @@ func Init(cancel context.CancelFunc, chassisVersion string) error {
 		ChassisVersion: chassisVersion,
 		BasePort:       djb2Port(name),
 		Args:           redactArgs(os.Args),
-		Ports:          ports,
+		Ports:          declaredPorts,
 		Commands:       cmds,
 	}
 

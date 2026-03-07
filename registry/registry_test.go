@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	chassis "github.com/ai8future/chassis-go/v6"
 	"github.com/ai8future/chassis-go/v6/registry"
 )
 
@@ -607,15 +608,10 @@ func TestBasePortComputedFromName(t *testing.T) {
 		t.Fatalf("parse PID JSON: %v", err)
 	}
 
-	// Compute expected base port using djb2.
-	var h uint32 = 5381
-	for _, c := range []byte("test_svc") {
-		h = h*33 + uint32(c)
-	}
-	expected := 5000 + int(h%43001)
-
+	// BasePort must match chassis.Port() for the same name.
+	expected := chassis.Port("test_svc")
 	if reg.BasePort != expected {
-		t.Errorf("BasePort = %d, want %d", reg.BasePort, expected)
+		t.Errorf("BasePort = %d, want %d (from chassis.Port)", reg.BasePort, expected)
 	}
 }
 
@@ -687,16 +683,20 @@ func TestNoPortsEmptySlice(t *testing.T) {
 		t.Fatalf("read PID file: %v", err)
 	}
 
-	// Verify "ports" key exists in JSON (even if null/empty).
+	// Verify "ports" serializes as [] (empty array), not null.
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		t.Fatalf("parse PID JSON: %v", err)
 	}
-	if _, ok := raw["ports"]; !ok {
-		t.Error("'ports' key missing from PID JSON")
-	}
 	if _, ok := raw["base_port"]; !ok {
 		t.Error("'base_port' key missing from PID JSON")
+	}
+	portsJSON, ok := raw["ports"]
+	if !ok {
+		t.Fatal("'ports' key missing from PID JSON")
+	}
+	if string(portsJSON) == "null" {
+		t.Error("'ports' should be [] not null when no ports declared")
 	}
 }
 
