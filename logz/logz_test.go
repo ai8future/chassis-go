@@ -211,6 +211,46 @@ func TestWithGroupPreservesTraceHandler(t *testing.T) {
 	}
 }
 
+func TestWithGroupAndAttrsPreservesAttrsWithTrace(t *testing.T) {
+	// Regression test for BUG-2: attrs added via With() after WithGroup()
+	// were dropped when trace context was present.
+	var buf bytes.Buffer
+	logger := newTestLogger(&buf, "info")
+	logger = logger.WithGroup("app").With("version", "1.0")
+
+	traceIDHex, _ := trace.TraceIDFromHex("0af7651916cd43dd8448eb211c80319c")
+	spanIDHex, _ := trace.SpanIDFromHex("b7ad6b7169203331")
+	sc := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    traceIDHex,
+		SpanID:     spanIDHex,
+		TraceFlags: trace.FlagsSampled,
+	})
+	ctx := trace.ContextWithSpanContext(context.Background(), sc)
+	logger.InfoContext(ctx, "test", "k", "v")
+
+	var entry map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nraw: %s", err, buf.String())
+	}
+
+	// trace_id must be at top level.
+	if v, _ := entry["trace_id"].(string); v != "0af7651916cd43dd8448eb211c80319c" {
+		t.Errorf("expected trace_id, got %v", entry["trace_id"])
+	}
+
+	// "version" and "k" must be nested under "app".
+	app, ok := entry["app"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected 'app' group in output, got: %v", entry)
+	}
+	if v, _ := app["version"].(string); v != "1.0" {
+		t.Errorf("expected app.version=%q, got %v (WithAttrs attr was dropped)", "1.0", app["version"])
+	}
+	if v, _ := app["k"].(string); v != "v" {
+		t.Errorf("expected app.k=%q, got %v", "v", app["k"])
+	}
+}
+
 func TestTraceHandlerReadsOTelSpanContext(t *testing.T) {
 	var buf bytes.Buffer
 	inner := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})

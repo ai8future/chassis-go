@@ -156,8 +156,18 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		}
 	}
 
-	// The core execution function.
+	// The core execution function. When retries are configured, the closure
+	// rewinds the request body via GetBody before each retry attempt. The
+	// attempt counter is local to this Do call, avoiding shared state on the
+	// Retrier struct which would race under concurrent use.
+	var attempt int
 	exec := func() (*http.Response, error) {
+		if attempt > 0 && req.GetBody != nil {
+			if body, err := req.GetBody(); err == nil {
+				req.Body = body
+			}
+		}
+		attempt++
 		return c.httpClient.Do(req)
 	}
 
@@ -165,7 +175,6 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	var err error
 
 	if c.retrier != nil {
-		c.retrier.req = req
 		resp, err = c.retrier.Do(ctx, exec)
 	} else {
 		resp, err = exec()

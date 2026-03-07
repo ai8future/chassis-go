@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [6.0.4] - 2026-03-07
+
+### Bug Fixes
+
+- **call**: Fix data race in retry body rewind — move `GetBody` call from shared `Retrier.req` field into per-call closure with local attempt counter, preventing races under concurrent `Client.Do` use
+- **logz**: Add regression test for `WithGroup` + `WithAttrs` + trace context interaction
+
+(Claude Code:Opus 4.6)
+
 ## [6.0.3] - 2026-03-07
 
 ### Bug Fixes
