@@ -3,6 +3,7 @@ package tick
 
 import (
 	"context"
+	"math/rand/v2"
 	"time"
 
 	chassis "github.com/ai8future/chassis-go/v8"
@@ -64,6 +65,14 @@ func Every(interval time.Duration, fn func(context.Context) error, opts ...Optio
 			case <-ctx.Done():
 				return nil
 			case <-ticker.C:
+				if cfg.jitter > 0 {
+					jitterDelay := time.Duration(rand.Int64N(int64(cfg.jitter)))
+					select {
+					case <-ctx.Done():
+						return nil
+					case <-time.After(jitterDelay):
+					}
+				}
 				if err := fn(ctx); err != nil {
 					if cfg.onError == Stop {
 						return err

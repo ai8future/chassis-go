@@ -92,7 +92,7 @@ func (d *Deploy) LoadEnv() {
 	}
 
 	for k, v := range merged {
-		if os.Getenv(k) == "" {
+		if _, exists := os.LookupEnv(k); !exists {
 			os.Setenv(k, v)
 		}
 	}
@@ -155,7 +155,11 @@ func (d *Deploy) RunHook(name string) {
 	if !d.found {
 		return
 	}
-	hookPath := filepath.Join(d.dir, "hooks", name)
+	hooksDir := filepath.Join(d.dir, "hooks")
+	hookPath := filepath.Join(hooksDir, name)
+	if !strings.HasPrefix(hookPath, hooksDir+string(os.PathSeparator)) {
+		return // path traversal attempt
+	}
 	if _, err := os.Stat(hookPath); err != nil {
 		return
 	}
@@ -180,7 +184,12 @@ func parseEnvFile(path string) map[string]string {
 		if !ok {
 			continue
 		}
-		result[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		v = strings.TrimSpace(v)
+		// Strip surrounding quotes (single or double).
+		if len(v) >= 2 && ((v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'')) {
+			v = v[1 : len(v)-1]
+		}
+		result[strings.TrimSpace(k)] = v
 	}
 	return result
 }

@@ -187,3 +187,38 @@ func TestEnvComments(t *testing.T) {
 		t.Fatalf("expected KEY=val, got %q", os.Getenv("KEY"))
 	}
 }
+
+func TestEnvQuoteStripping(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "config.env"), []byte("DQ=\"double quoted\"\nSQ='single quoted'\nNQ=no quotes\n"), 0600)
+
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+
+	d := deploy.Discover("test-svc")
+	d.LoadEnv()
+
+	if os.Getenv("DQ") != "double quoted" {
+		t.Fatalf("expected stripped double quotes, got %q", os.Getenv("DQ"))
+	}
+	if os.Getenv("SQ") != "single quoted" {
+		t.Fatalf("expected stripped single quotes, got %q", os.Getenv("SQ"))
+	}
+	if os.Getenv("NQ") != "no quotes" {
+		t.Fatalf("expected unquoted value, got %q", os.Getenv("NQ"))
+	}
+}
+
+func TestLoadEnvNoOverrideEmpty(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "config.env"), []byte("EMPTY_VAR=from-file\n"), 0600)
+
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	t.Setenv("EMPTY_VAR", "")
+
+	d := deploy.Discover("test-svc")
+	d.LoadEnv()
+
+	if os.Getenv("EMPTY_VAR") != "" {
+		t.Fatal("LoadEnv should not override env var set to empty string")
+	}
+}

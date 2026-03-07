@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.0.2] - 2026-03-07
+
+### Bug Fixes
+
+- **deploy**: Use `os.LookupEnv` instead of `os.Getenv` to correctly distinguish empty env vars from unset ones in `LoadEnv`
+- **deploy**: Strip surrounding quotes (single/double) from `.env` file values for Docker/dotenv compatibility
+- **deploy**: Add path confinement check in `RunHook` to prevent path traversal outside hooks directory
+- **tick**: Implement `Jitter` option — previously accepted but silently ignored; now applies random delay before each tick
+- **config**: Panic on malformed `min`/`max` values in validate tag instead of silently defaulting to 0
+- **config**: Extend `fieldAsFloat` to handle all integer, unsigned integer, and float types for validation
+- **secval**: Hoist `\s+` regex to package-level var in `SafeFilename` to avoid recompilation on every call
+
+(Claude Code:Opus 4.6)
+
 ## [8.0.1] - 2026-03-07
 
 ### New Features

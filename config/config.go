@@ -144,13 +144,19 @@ func validateField(name string, val reflect.Value, tag string) {
 		key, value, _ := strings.Cut(strings.TrimSpace(part), "=")
 		switch key {
 		case "min":
-			minVal, _ := strconv.ParseFloat(value, 64)
+			minVal, err := strconv.ParseFloat(value, 64)
+			if err != nil {
+				panic(fmt.Sprintf("config: field %s has invalid min value %q in validate tag", name, value))
+			}
 			actual := fieldAsFloat(val)
 			if actual < minVal {
 				panic(fmt.Sprintf("config: field %s value %v is below minimum %s", name, val.Interface(), value))
 			}
 		case "max":
-			maxVal, _ := strconv.ParseFloat(value, 64)
+			maxVal, err := strconv.ParseFloat(value, 64)
+			if err != nil {
+				panic(fmt.Sprintf("config: field %s has invalid max value %q in validate tag", name, value))
+			}
 			actual := fieldAsFloat(val)
 			if actual > maxVal {
 				panic(fmt.Sprintf("config: field %s value %v exceeds maximum %s", name, val.Interface(), value))
@@ -181,9 +187,11 @@ func validateField(name string, val reflect.Value, tag string) {
 // fieldAsFloat converts numeric reflect values to float64 for comparison.
 func fieldAsFloat(val reflect.Value) float64 {
 	switch val.Kind() {
-	case reflect.Int, reflect.Int64:
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		return float64(val.Int())
-	case reflect.Float64:
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return float64(val.Uint())
+	case reflect.Float32, reflect.Float64:
 		return val.Float()
 	default:
 		return 0

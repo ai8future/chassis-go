@@ -112,13 +112,14 @@ func SafeFilename(s string) string {
 	cleaned = strings.NewReplacer("/", "", "\\", "").Replace(cleaned)
 	cleaned = unsafeFilenameChars.ReplaceAllString(cleaned, "")
 	cleaned = strings.Trim(cleaned, ". ")
-	cleaned = regexp.MustCompile(`\s+`).ReplaceAllString(cleaned, " ")
+	cleaned = collapseWhitespace.ReplaceAllString(cleaned, " ")
 	if cleaned == "" {
 		return "unnamed"
 	}
 	return cleaned
 }
 
+var collapseWhitespace = regexp.MustCompile(`\s+`)
 var unsafeURLChars = regexp.MustCompile(`[^a-z0-9\-.]`)
 
 // SafeFilenameURL returns a URL-safe filename.
