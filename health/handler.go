@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	chassis "github.com/ai8future/chassis-go/v6"
+	"github.com/ai8future/chassis-go/v6/registry"
 )
 
 // response is the JSON envelope returned by the health handler.
@@ -20,6 +21,7 @@ type response struct {
 // The response body is JSON: {"status":"healthy"/"unhealthy","checks":[...]}.
 func Handler(checks map[string]Check) http.Handler {
 	chassis.AssertVersionChecked()
+	registry.AssertActive()
 	run := All(checks)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

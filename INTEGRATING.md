@@ -441,7 +441,7 @@ err := lifecycle.Run(context.Background(),
 
 ### registry — File-based service registration
 
-**When to use**: Automatically — `lifecycle.Run()` initializes the registry for you. Use the module-level API to report status, log errors, and register custom commands.
+**When to use**: Automatically — `lifecycle.Run()` initializes the registry for you. Use the module-level API to report status, log errors, and register custom commands. Registry initialization is mandatory. Calling `Status()`, `Errorf()`, or any post-lifecycle chassis module without an active registry will crash the process.
 
 The registry creates a directory per service under `/tmp/chassis/<service-name>/` containing:
 - `<pid>.json` — Registration file (written atomically on startup, removed on clean shutdown)
@@ -524,7 +524,7 @@ To send a command to a running service, write a JSON file to `<pid>.cmd.json`:
 - The registry uses only the stdlib — zero chassis dependencies. It is safe to import anywhere.
 - The service name comes from `CHASSIS_SERVICE_NAME` env var, falling back to `filepath.Base(os.Getwd())`.
 - The service version is read from a `VERSION` file in the working directory.
-- `Status()` and `Errorf()` are no-ops before `Init()` is called (i.e., before `lifecycle.Run()`).
+- `Status()` and `Errorf()` crash the process if called before `Init()` (i.e., before `lifecycle.Run()`). Registry is mandatory for all chassis services.
 - Custom command handlers registered via `Handle()` must be registered before `lifecycle.Run()` is called.
 
 ---

@@ -10,6 +10,7 @@ import (
 
 	chassis "github.com/ai8future/chassis-go/v6"
 	"github.com/ai8future/chassis-go/v6/internal/otelutil"
+	"github.com/ai8future/chassis-go/v6/registry"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -40,6 +41,7 @@ func UnaryLogging(logger *slog.Logger) grpc.UnaryServerInterceptor {
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (any, error) {
+		registry.AssertActive()
 		start := time.Now()
 		resp, err := handler(ctx, req)
 		duration := time.Since(start)
@@ -67,6 +69,7 @@ func UnaryRecovery(logger *slog.Logger) grpc.UnaryServerInterceptor {
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (resp any, err error) {
+		registry.AssertActive()
 		defer func() {
 			if r := recover(); r != nil {
 				logger.LogAttrs(ctx, slog.LevelError, "panic recovered",
@@ -91,6 +94,7 @@ func StreamLogging(logger *slog.Logger) grpc.StreamServerInterceptor {
 		info *grpc.StreamServerInfo,
 		handler grpc.StreamHandler,
 	) error {
+		registry.AssertActive()
 		start := time.Now()
 		err := handler(srv, ss)
 		duration := time.Since(start)
@@ -118,6 +122,7 @@ func StreamRecovery(logger *slog.Logger) grpc.StreamServerInterceptor {
 		info *grpc.StreamServerInfo,
 		handler grpc.StreamHandler,
 	) (err error) {
+		registry.AssertActive()
 		defer func() {
 			if r := recover(); r != nil {
 				logger.LogAttrs(ctx(ss), slog.LevelError, "panic recovered",
@@ -159,6 +164,7 @@ func UnaryMetrics() grpc.UnaryServerInterceptor {
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (any, error) {
+		registry.AssertActive()
 		start := time.Now()
 		resp, err := handler(ctx, req)
 		duration := time.Since(start).Seconds()
@@ -187,6 +193,7 @@ func StreamMetrics() grpc.StreamServerInterceptor {
 		info *grpc.StreamServerInfo,
 		handler grpc.StreamHandler,
 	) error {
+		registry.AssertActive()
 		start := time.Now()
 		err := handler(srv, ss)
 		duration := time.Since(start).Seconds()
@@ -248,6 +255,7 @@ func extractTraceContext(ctx context.Context) context.Context {
 func UnaryTracing() grpc.UnaryServerInterceptor {
 	chassis.AssertVersionChecked()
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		registry.AssertActive()
 		ctx = extractTraceContext(ctx)
 		tracer := otelapi.GetTracerProvider().Tracer(tracerName)
 		ctx, span := tracer.Start(ctx, info.FullMethod,
@@ -278,6 +286,7 @@ func UnaryTracing() grpc.UnaryServerInterceptor {
 func StreamTracing() grpc.StreamServerInterceptor {
 	chassis.AssertVersionChecked()
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		registry.AssertActive()
 		sctx := extractTraceContext(ss.Context())
 		tracer := otelapi.GetTracerProvider().Tracer(tracerName)
 		sctx, span := tracer.Start(sctx, info.FullMethod,

@@ -1,5 +1,27 @@
 # Changelog
 
+## [6.0.11] - 2026-03-07
+
+### Breaking Changes
+
+- **registry**: `Status()` and `Errorf()` now crash the process (via `os.Exit(1)`) if called before `Init()` / `lifecycle.Run()`. Previously they were silent no-ops.
+- **registry**: New `AssertActive()` function crashes the process if the registry is not initialized. All post-lifecycle chassis modules (`httpkit`, `grpckit`, `call`, `work`, `health`) now call `AssertActive()` at runtime, enforcing that `lifecycle.Run()` must be called before any chassis service module is used.
+
+### Improvements
+
+- **httpkit**: `RequestID`, `Logging`, `Recovery`, and `Tracing` middleware handlers call `registry.AssertActive()` on first request
+- **grpckit**: `UnaryLogging`, `UnaryRecovery`, `UnaryTracing`, `UnaryMetrics`, `StreamLogging`, `StreamRecovery`, `StreamTracing`, and `StreamMetrics` interceptors call `registry.AssertActive()` on each RPC
+- **call**: `Client.Do()` calls `registry.AssertActive()` before executing requests
+- **work**: `Map`, `All`, `Race`, and `Stream` call `registry.AssertActive()` alongside `chassis.AssertVersionChecked()`
+- **health**: `Handler()`, `All()`, and `CheckFunc()` call `registry.AssertActive()` at construction time
+
+### Tests
+
+- **registry**: Replace `TestStatusNoOpBeforeInit` with `TestStatusCrashesBeforeInit`, `TestErrorfCrashesBeforeInit`, and `TestAssertActiveCrashesBeforeInit` using subprocess crash detection
+- **call, grpckit, health, httpkit, work**: Add registry initialization to `TestMain` so tests pass with mandatory registry enforcement
+
+(Claude Code:Opus 4.6)
+
 ## [6.0.10] - 2026-03-07
 - Sync uncommitted changes
 

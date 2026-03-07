@@ -6,6 +6,7 @@ import (
 
 	chassis "github.com/ai8future/chassis-go/v6"
 	"github.com/ai8future/chassis-go/v6/internal/otelutil"
+	"github.com/ai8future/chassis-go/v6/registry"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
@@ -33,6 +34,7 @@ func Tracing() func(http.Handler) http.Handler {
 	chassis.AssertVersionChecked()
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			registry.AssertActive()
 			propagator := otelapi.GetTextMapPropagator()
 			ctx := propagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 

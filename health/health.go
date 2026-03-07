@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	chassis "github.com/ai8future/chassis-go/v6"
+	"github.com/ai8future/chassis-go/v6/registry"
 	"github.com/ai8future/chassis-go/v6/work"
 )
 
@@ -40,6 +41,7 @@ type checkResult struct {
 // discards the individual results, returning only the aggregate error.
 func CheckFunc(checks map[string]Check) func(ctx context.Context) error {
 	chassis.AssertVersionChecked()
+	registry.AssertActive()
 	run := All(checks)
 	return func(ctx context.Context) error {
 		_, err := run(ctx)
@@ -54,6 +56,7 @@ func CheckFunc(checks map[string]Check) func(ctx context.Context) error {
 // errors.Is chains are preserved.
 func All(checks map[string]Check) func(ctx context.Context) ([]Result, error) {
 	chassis.AssertVersionChecked()
+	registry.AssertActive()
 	return func(ctx context.Context) ([]Result, error) {
 		names := make([]string, 0, len(checks))
 		for name := range checks {

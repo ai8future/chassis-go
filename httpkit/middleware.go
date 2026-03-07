@@ -11,6 +11,7 @@ import (
 	"time"
 
 	chassis "github.com/ai8future/chassis-go/v6"
+	"github.com/ai8future/chassis-go/v6/registry"
 )
 
 // idCounter is a fallback counter used when crypto/rand fails.
@@ -48,6 +49,7 @@ func generateID() string {
 func RequestID(next http.Handler) http.Handler {
 	chassis.AssertVersionChecked()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		registry.AssertActive()
 		id := generateID()
 		ctx := context.WithValue(r.Context(), requestIDKey{}, id)
 		w.Header().Set("X-Request-ID", id)
@@ -99,6 +101,7 @@ func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
 	chassis.AssertVersionChecked()
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			registry.AssertActive()
 			start := time.Now()
 			rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
@@ -127,6 +130,7 @@ func Recovery(logger *slog.Logger) func(http.Handler) http.Handler {
 	chassis.AssertVersionChecked()
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			registry.AssertActive()
 			// Ensure we have a responseWriter to track headerWritten state,
 			// whether or not Logging/Tracing middleware has already wrapped w.
 			rw, ok := w.(*responseWriter)

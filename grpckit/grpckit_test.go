@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	chassis "github.com/ai8future/chassis-go/v6"
+	"github.com/ai8future/chassis-go/v6/registry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -16,7 +17,18 @@ import (
 
 func TestMain(m *testing.M) {
 	chassis.RequireMajor(6)
+	initRegistryForTest()
 	os.Exit(m.Run())
+}
+
+func initRegistryForTest() {
+	dir, _ := os.MkdirTemp("", "chassis-test-*")
+	registry.ResetForTest(dir)
+	ctx, cancel := context.WithCancel(context.Background())
+	_ = ctx
+	if err := registry.Init(cancel, "6.0.0-test"); err != nil {
+		panic("registry init: " + err.Error())
+	}
 }
 
 // newTestLogger returns a logger that writes JSON to the provided buffer.

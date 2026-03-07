@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -381,13 +382,49 @@ func TestStaleCleanupRemovesDeadPIDFiles(t *testing.T) {
 	}
 }
 
-func TestStatusNoOpBeforeInit(t *testing.T) {
-	registry.ResetForTest(t.TempDir())
+func TestStatusCrashesBeforeInit(t *testing.T) {
+	if os.Getenv("TEST_CRASH_STATUS") == "1" {
+		registry.ResetForTest(t.TempDir())
+		registry.Status("should crash")
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestStatusCrashesBeforeInit")
+	cmd.Env = append(os.Environ(), "TEST_CRASH_STATUS=1")
+	err := cmd.Run()
+	if e, ok := err.(*exec.ExitError); ok && !e.Success() {
+		return // expected crash
+	}
+	t.Fatal("expected Status() to crash before Init, but it did not")
+}
 
-	// These must not panic or write anything — no Init has been called.
-	registry.Status("should be ignored")
-	registry.Errorf("should also be %s", "ignored")
-	// If we reach here without panic, the test passes.
+func TestErrorfCrashesBeforeInit(t *testing.T) {
+	if os.Getenv("TEST_CRASH_ERRORF") == "1" {
+		registry.ResetForTest(t.TempDir())
+		registry.Errorf("should also %s", "crash")
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestErrorfCrashesBeforeInit")
+	cmd.Env = append(os.Environ(), "TEST_CRASH_ERRORF=1")
+	err := cmd.Run()
+	if e, ok := err.(*exec.ExitError); ok && !e.Success() {
+		return // expected crash
+	}
+	t.Fatal("expected Errorf() to crash before Init, but it did not")
+}
+
+func TestAssertActiveCrashesBeforeInit(t *testing.T) {
+	if os.Getenv("TEST_CRASH_ASSERT") == "1" {
+		registry.ResetForTest(t.TempDir())
+		registry.AssertActive()
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestAssertActiveCrashesBeforeInit")
+	cmd.Env = append(os.Environ(), "TEST_CRASH_ASSERT=1")
+	err := cmd.Run()
+	if e, ok := err.(*exec.ExitError); ok && !e.Success() {
+		return // expected crash
+	}
+	t.Fatal("expected AssertActive() to crash before Init, but it did not")
 }
 
 func TestDoubleShutdownIsIdempotent(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 
 	chassis "github.com/ai8future/chassis-go/v6"
 	"github.com/ai8future/chassis-go/v6/internal/otelutil"
+	"github.com/ai8future/chassis-go/v6/registry"
 	"github.com/ai8future/chassis-go/v6/work"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -112,6 +113,7 @@ func WithBreaker(b Breaker) Option {
 // If the request does not carry a context, one is created with the configured
 // timeout. If a context is already present its deadline is respected.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
+	registry.AssertActive()
 	start := time.Now()
 
 	// Ensure the request always has a context with a deadline.

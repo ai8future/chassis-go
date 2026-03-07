@@ -141,19 +141,26 @@ func Port(role int, port int, label string, opts ...PortOption) {
 	ports = append(ports, info)
 }
 
+// AssertActive crashes the process if the registry has not been initialized.
+// Post-lifecycle chassis modules call this to enforce mandatory registration.
+func AssertActive() {
+	if !active.Load() {
+		fmt.Fprintf(os.Stderr,
+			"FATAL: Registry not initialized. lifecycle.Run() must be called before using chassis service modules.\n"+
+				"Every chassis service must use lifecycle.Run() — registry is mandatory, not optional.\n")
+		os.Exit(1)
+	}
+}
+
 // Status writes a status event to the service log.
 func Status(msg string) {
-	if !active.Load() {
-		return
-	}
+	AssertActive()
 	appendLog(map[string]any{"ts": ts(), "event": "status", "msg": msg})
 }
 
 // Errorf writes an error event to the service log.
 func Errorf(format string, args ...any) {
-	if !active.Load() {
-		return
-	}
+	AssertActive()
 	appendLog(map[string]any{"ts": ts(), "event": "error", "msg": fmt.Sprintf(format, args...)})
 }
 
