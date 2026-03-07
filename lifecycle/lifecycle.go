@@ -6,10 +6,13 @@ package lifecycle
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 
 	chassis "github.com/ai8future/chassis-go/v5"
+	"github.com/ai8future/chassis-go/v5/registry"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -42,13 +45,61 @@ func Run(ctx context.Context, args ...any) error {
 	signalCtx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	g, gCtx := errgroup.WithContext(signalCtx)
+	// Track whether shutdown was triggered by an OS signal (as opposed to
+	// user components finishing or the parent context being cancelled).
+	var gotSignal atomic.Bool
+	signalCh := make(chan os.Signal, 1)
+	signal.Notify(signalCh, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		select {
+		case <-signalCh:
+			gotSignal.Store(true)
+		case <-signalCtx.Done():
+		}
+		signal.Stop(signalCh)
+	}()
 
-	for _, c := range components {
-		g.Go(func() error {
-			return c(gCtx)
-		})
+	if err := registry.Init(stop, chassis.Version); err != nil {
+		return fmt.Errorf("lifecycle: registry: %w", err)
 	}
 
-	return g.Wait()
+	// infraCtx is cancelled when all user components finish, which tells
+	// the heartbeat and command-poll goroutines to exit.
+	infraCtx, infraCancel := context.WithCancel(signalCtx)
+	defer infraCancel()
+
+	g, gCtx := errgroup.WithContext(signalCtx)
+
+	g.Go(func() error { return registry.RunHeartbeat(infraCtx) })
+	g.Go(func() error { return registry.RunCommandPoll(infraCtx) })
+
+	// Run user components in a nested errgroup so we can detect when they
+	// all finish and stop infrastructure goroutines.
+	userG, userCtx := errgroup.WithContext(gCtx)
+	for _, c := range components {
+		userG.Go(func() error { return c(userCtx) })
+	}
+
+	g.Go(func() error {
+		err := userG.Wait()
+		infraCancel()
+		return err
+	})
+
+	err := g.Wait()
+
+	reason := "clean"
+	if err != nil {
+		reason = err.Error()
+	}
+	if gotSignal.Load() {
+		reason = "signal"
+	}
+	registry.Shutdown(reason)
+
+	if registry.RestartRequested() {
+		syscall.Exec(os.Args[0], os.Args, os.Environ())
+	}
+
+	return err
 }

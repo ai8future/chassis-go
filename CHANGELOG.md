@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [5.0.3] - 2026-03-07
+
+- Integrate `registry` module into `lifecycle.Run()`: auto-initializes registry on startup, runs heartbeat and command-poll goroutines, determines shutdown reason (clean/error/signal), calls `registry.Shutdown()`, and supports `syscall.Exec` restart on restart command. Added integration tests verifying PID file creation during Run and cleanup after shutdown. (Claude Code:Opus 4.6)
+
 ## [5.0.2] - 2026-03-07
 
 - New `registry` package: file-based service registration at `/tmp/chassis/` with PID tracking, JSONL logging, heartbeat, command polling (stop/restart/custom), and stale PID cleanup. Zero chassis dependencies — stdlib only. (Claude Code:Opus 4.6)
