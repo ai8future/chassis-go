@@ -165,7 +165,9 @@ func (c *Client) RunEvent(ctx context.Context, eventID string, params map[string
 	var result struct {
 		JobID string `json:"job_id"`
 	}
-	json.Unmarshal(resp, &result)
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return "", fmt.Errorf("xyops: unmarshal RunEvent response: %w", err)
+	}
 	return result.JobID, nil
 }
 
@@ -174,7 +176,9 @@ func (c *Client) RunEvent(ctx context.Context, eventID string, params map[string
 func (c *Client) GetJobStatus(ctx context.Context, jobID string) (*JobStatus, error) {
 	if cached, ok := c.cache.Get("job:" + jobID); ok {
 		var status JobStatus
-		json.Unmarshal(cached, &status)
+		if err := json.Unmarshal(cached, &status); err != nil {
+			return nil, fmt.Errorf("xyops: unmarshal cached job status: %w", err)
+		}
 		return &status, nil
 	}
 	resp, err := c.apiRequest(ctx, "GET", "/api/jobs/"+jobID, nil)
@@ -183,7 +187,9 @@ func (c *Client) GetJobStatus(ctx context.Context, jobID string) (*JobStatus, er
 	}
 	c.cache.Set("job:"+jobID, resp)
 	var status JobStatus
-	json.Unmarshal(resp, &status)
+	if err := json.Unmarshal(resp, &status); err != nil {
+		return nil, fmt.Errorf("xyops: unmarshal job status: %w", err)
+	}
 	return &status, nil
 }
 
@@ -201,7 +207,9 @@ func (c *Client) SearchJobs(ctx context.Context, query string) ([]JobStatus, err
 		return nil, err
 	}
 	var jobs []JobStatus
-	json.Unmarshal(resp, &jobs)
+	if err := json.Unmarshal(resp, &jobs); err != nil {
+		return nil, fmt.Errorf("xyops: unmarshal SearchJobs response: %w", err)
+	}
 	return jobs, nil
 }
 
@@ -212,7 +220,9 @@ func (c *Client) ListEvents(ctx context.Context) ([]Event, error) {
 		return nil, err
 	}
 	var events []Event
-	json.Unmarshal(resp, &events)
+	if err := json.Unmarshal(resp, &events); err != nil {
+		return nil, fmt.Errorf("xyops: unmarshal ListEvents response: %w", err)
+	}
 	return events, nil
 }
 
@@ -223,7 +233,9 @@ func (c *Client) GetEvent(ctx context.Context, eventID string) (*Event, error) {
 		return nil, err
 	}
 	var event Event
-	json.Unmarshal(resp, &event)
+	if err := json.Unmarshal(resp, &event); err != nil {
+		return nil, fmt.Errorf("xyops: unmarshal GetEvent response: %w", err)
+	}
 	return &event, nil
 }
 
@@ -234,7 +246,9 @@ func (c *Client) ListActiveAlerts(ctx context.Context) ([]Alert, error) {
 		return nil, err
 	}
 	var alerts []Alert
-	json.Unmarshal(resp, &alerts)
+	if err := json.Unmarshal(resp, &alerts); err != nil {
+		return nil, fmt.Errorf("xyops: unmarshal ListActiveAlerts response: %w", err)
+	}
 	return alerts, nil
 }
 

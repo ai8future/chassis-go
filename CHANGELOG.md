@@ -1,5 +1,21 @@
 # Changelog
 
+## [8.0.3] - 2026-03-07
+
+### Bug Fixes
+
+- **registry**: Fix CLI command polling goroutine to use channel-based shutdown instead of polling active flag before first tick
+- **registry**: Stop flag parsing after `--` separator in `parseFlags`
+- **registry**: Properly close `cliDone` channel in `ShutdownCLI` and `ResetForTest`
+- **xyops**: Check all `json.Unmarshal` return errors instead of silently ignoring them (RunEvent, GetJobStatus, SearchJobs, ListEvents, GetEvent, ListActiveAlerts)
+
+### Docs
+
+- **AGENTS.md**: Update module path reference from v7 to v8, add XYOps integration guidance
+- **XYOPS.md**: Add full XYOps integration guide with code examples
+
+(Claude Code:Opus 4.6)
+
 ## [8.0.2] - 2026-03-07
 
 ### Bug Fixes

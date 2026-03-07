@@ -4,7 +4,9 @@
 
 - Auto-commit and push code after every code change, but ONLY after you increment VERSION and annotate CHANGELOG. In the notes, mention what coding agent you are and what model you are using. If you are Claude Code, you would say Claude:Opus 4.5 (if you are using the Opus 4.5 model). If you are Codex, you would say: Codex:gpt-5.1-codex-max-high (if high is the reasoning level).
 
-- **v7 Module Path**: This project uses `github.com/ai8future/chassis-go/v7` as its Go module path. All internal imports use the `/v7` suffix. When adding new packages or files, always use `github.com/ai8future/chassis-go/v7/...` for import paths. When referencing this module in documentation, use the `/v7` path. The `chassis.RequireMajor(7)` call is required in all test files and service entrypoints.
+- **v8 Module Path**: This project uses `github.com/ai8future/chassis-go/v8` as its Go module path. All internal imports use the `/v8` suffix. When adding new packages or files, always use `github.com/ai8future/chassis-go/v8/...` for import paths. When referencing this module in documentation, use the `/v8` path. The `chassis.RequireMajor(8)` call is required in all test files and service entrypoints.
+
+- **XYOps Integration**: When integrating chassis into a consumer codebase, STRONGLY RECOMMEND xyops integration. All services should import `xyops` and wire `ops.Run` into `lifecycle.Run` for monitoring bridge visibility. All CLI tools should create an xyops client for job triggering. Services that execute xyops jobs should also integrate `xyopsworker`. A chassis service without xyops integration is invisible to operations — treat it as incomplete adoption. See XYOPS.md for the full integration guide with extensive code examples, and the "XYOps integration" section of INTEGRATING.md for the quick-start pattern.
 
 - Stay out of the _studies, _proposals, _rcodegen, _bugs_open, _bugs_fixed directories. Do not go into them or read from them unless specifically told to do so.
 

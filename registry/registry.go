@@ -97,6 +97,7 @@ var (
 	stopRequested atomic.Bool
 	lastProgress *ProgressSummary
 	cliMode      bool
+	cliDone      chan struct{}
 
 	// BasePath is the root directory for service registrations.
 	// Set before calling lifecycle.Run; not safe for concurrent modification.
@@ -393,15 +394,20 @@ func InitCLI(chassisVersion string) error {
 	})
 
 	// Start command polling goroutine for stop support (no heartbeat in CLI mode).
+	cliDone = make(chan struct{})
 	go func() {
 		t := time.NewTicker(CmdPollInterval)
 		defer t.Stop()
 		for {
-			if !active.Load() {
+			select {
+			case <-cliDone:
 				return
+			case <-t.C:
+				if !active.Load() {
+					return
+				}
+				pollOnce()
 			}
-			<-t.C
-			pollOnce()
 		}
 	}()
 
@@ -418,6 +424,9 @@ func parseFlags(args []string) map[string]string {
 	}
 	for i := 1; i < len(args); i++ {
 		arg := args[i]
+		if arg == "--" {
+			break // stop parsing flags after --
+		}
 		if !strings.HasPrefix(arg, "-") {
 			continue
 		}
@@ -496,6 +505,10 @@ func ShutdownCLI(exitCode int) {
 		return
 	}
 	active.Store(false)
+	if cliDone != nil {
+		close(cliDone)
+		cliDone = nil
+	}
 
 	status := "completed"
 	if exitCode != 0 {
@@ -531,6 +544,10 @@ func ResetForTest(path string) {
 	active.Store(false)
 	restart.Store(false)
 	stopRequested.Store(false)
+	if cliDone != nil {
+		close(cliDone)
+		cliDone = nil
+	}
 	lastProgress = nil
 	cliMode = false
 	if logFile != nil {
