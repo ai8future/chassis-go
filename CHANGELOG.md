@@ -1,5 +1,17 @@
 # Changelog
 
+## [8.0.1] - 2026-03-07
+
+### New Features
+
+- **xyops**: Add xyops client module — curated API methods (RunEvent, GetJobStatus, CancelJob, SearchJobs, ListEvents, GetEvent, ListActiveAlerts, AckAlert, Ping, FireWebhook), Raw escape hatch, monitoring bridge with metric push via tick.Every, response caching via cache, webhook dispatch via webhook.Sender
+
+### Tests
+
+- **xyops**: Add TestPing, TestRunEvent, TestGetJobStatusWithCaching, TestFireWebhook, TestClientConstruction, TestMonitoringBridgeDisabled, TestMonitoringBridgeEnabled, TestListEvents, TestListActiveAlerts, TestRawEscapeHatch
+
+(Claude Code:Opus 4.6)
+
 ## [7.0.0] - 2026-03-07
 
 ### Breaking Changes
