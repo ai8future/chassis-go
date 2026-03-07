@@ -45,10 +45,11 @@ func (b *cancelBody) Close() error {
 // optional retry, circuit breaker, and timeout middleware. Construct one using
 // New with functional options.
 type Client struct {
-	httpClient *http.Client
-	timeout    time.Duration
-	retrier    *Retrier
-	breaker    Breaker
+	httpClient  *http.Client
+	timeout     time.Duration
+	retrier     *Retrier
+	breaker     Breaker
+	tokenSource TokenSource
 }
 
 // Option configures a Client.
@@ -106,6 +107,14 @@ func WithBreaker(b Breaker) Option {
 	}
 }
 
+// WithTokenSource configures a TokenSource that provides a Bearer token
+// injected into the Authorization header of every outbound request.
+func WithTokenSource(source TokenSource) Option {
+	return func(c *Client) {
+		c.tokenSource = source
+	}
+}
+
 // Do executes an HTTP request with all configured middleware applied. The
 // middleware order is: circuit breaker check, retry loop, execute.
 //
@@ -134,6 +143,21 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	)
 	req = req.WithContext(ctx)
 	otelapi.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+
+	// Token injection — fetch a Bearer token and set the Authorization header.
+	if c.tokenSource != nil {
+		token, err := c.tokenSource.Token(req.Context())
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			span.End()
+			if cancel != nil {
+				cancel()
+			}
+			return nil, fmt.Errorf("call: token source: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 
 	// Circuit breaker gate — reject early if open.
 	if c.breaker != nil {
