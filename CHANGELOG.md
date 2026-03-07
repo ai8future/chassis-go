@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [6.0.7] - 2026-03-07
+
+### Documentation
+
+- **INTEGRATING.md**: Fix `EnabledFor` example — restore missing `ctx` first argument to match actual function signature
+
+(Claude Code:Opus 4.6)
+
 ## [6.0.6] - 2026-03-07
 
 ### Documentation

@@ -349,7 +349,7 @@ if flags.Enabled("new-ui") {
 }
 
 // Percentage rollout with consistent bucketing
-if flags.EnabledFor("experiment", flagz.Context{
+if flags.EnabledFor(ctx, "experiment", flagz.Context{
     UserID:  userID,
     Percent: 25, // 25% of users
 }) {
