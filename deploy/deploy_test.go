@@ -1,0 +1,189 @@
+package deploy_test
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	chassis "github.com/ai8future/chassis-go/v8"
+	"github.com/ai8future/chassis-go/v8/deploy"
+)
+
+func init() { chassis.RequireMajor(8) }
+
+func TestDiscoverNotFound(t *testing.T) {
+	t.Setenv("CHASSIS_DEPLOY_DIR", "/tmp/nonexistent-deploy-dir-test")
+	t.Setenv("HOME", "/tmp/nonexistent-home-test")
+
+	d := deploy.Discover("test-svc")
+	if d.Found() {
+		t.Fatal("expected not found")
+	}
+	if d.Dir() != "" {
+		t.Fatalf("expected empty dir, got %q", d.Dir())
+	}
+}
+
+func TestDiscoverFromEnvVar(t *testing.T) {
+	dir := t.TempDir()
+	svcDir := filepath.Join(dir, "test-svc")
+	os.MkdirAll(svcDir, 0700)
+
+	t.Setenv("CHASSIS_DEPLOY_DIR", svcDir)
+
+	d := deploy.Discover("test-svc")
+	if !d.Found() {
+		t.Fatal("expected found")
+	}
+	if d.Dir() != svcDir {
+		t.Fatalf("expected %q, got %q", svcDir, d.Dir())
+	}
+}
+
+func TestLoadEnv(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "config.env"), []byte("MY_PORT=9090\nMY_HOST=localhost\n"), 0600)
+	os.WriteFile(filepath.Join(dir, "secrets.env"), []byte("MY_SECRET=hunter2\n"), 0600)
+
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+
+	d := deploy.Discover("test-svc")
+	d.LoadEnv()
+
+	if os.Getenv("MY_PORT") != "9090" {
+		t.Fatalf("expected MY_PORT=9090, got %q", os.Getenv("MY_PORT"))
+	}
+	if os.Getenv("MY_HOST") != "localhost" {
+		t.Fatalf("expected MY_HOST=localhost, got %q", os.Getenv("MY_HOST"))
+	}
+	if os.Getenv("MY_SECRET") != "hunter2" {
+		t.Fatalf("expected MY_SECRET=hunter2, got %q", os.Getenv("MY_SECRET"))
+	}
+}
+
+func TestLoadEnvNoOverrideExisting(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "config.env"), []byte("EXISTING=from-file\n"), 0600)
+
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	t.Setenv("EXISTING", "from-env")
+
+	d := deploy.Discover("test-svc")
+	d.LoadEnv()
+
+	if os.Getenv("EXISTING") != "from-env" {
+		t.Fatal("LoadEnv should not override existing env vars")
+	}
+}
+
+func TestLoadEnvSecretsOverrideConfig(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "config.env"), []byte("DB_PASS=config-val\n"), 0600)
+	os.WriteFile(filepath.Join(dir, "secrets.env"), []byte("DB_PASS=secret-val\n"), 0600)
+
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+
+	d := deploy.Discover("test-svc")
+	d.LoadEnv()
+
+	if os.Getenv("DB_PASS") != "secret-val" {
+		t.Fatal("secrets.env should override config.env")
+	}
+}
+
+func TestTLS(t *testing.T) {
+	dir := t.TempDir()
+	tlsDir := filepath.Join(dir, "tls")
+	os.MkdirAll(tlsDir, 0700)
+	os.WriteFile(filepath.Join(tlsDir, "cert.pem"), []byte("cert"), 0600)
+	os.WriteFile(filepath.Join(tlsDir, "key.pem"), []byte("key"), 0600)
+
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+
+	d := deploy.Discover("test-svc")
+	tls, ok := d.TLS()
+	if !ok {
+		t.Fatal("expected TLS found")
+	}
+	if tls.Cert != filepath.Join(tlsDir, "cert.pem") {
+		t.Fatalf("wrong cert path: %q", tls.Cert)
+	}
+	if tls.Key != filepath.Join(tlsDir, "key.pem") {
+		t.Fatalf("wrong key path: %q", tls.Key)
+	}
+}
+
+func TestTLSNotPresent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+
+	d := deploy.Discover("test-svc")
+	_, ok := d.TLS()
+	if ok {
+		t.Fatal("expected TLS not found")
+	}
+}
+
+func TestMeta(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "deploy.json"), []byte(`{"version":"1.2.3","notes":"prod"}`), 0600)
+
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+
+	d := deploy.Discover("test-svc")
+	meta := d.Meta()
+	if meta == nil {
+		t.Fatal("expected meta")
+	}
+	if meta.Version != "1.2.3" {
+		t.Fatalf("expected version 1.2.3, got %q", meta.Version)
+	}
+	if meta.Notes != "prod" {
+		t.Fatalf("expected notes=prod, got %q", meta.Notes)
+	}
+}
+
+func TestPath(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+
+	d := deploy.Discover("test-svc")
+	got := d.Path("tls/cert.pem")
+	expected := filepath.Join(dir, "tls/cert.pem")
+	if got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestFlagSource(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "flags.json"), []byte(`{"new-ui":"true","beta":"false"}`), 0600)
+
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+
+	d := deploy.Discover("test-svc")
+	src := d.FlagSource()
+
+	val, ok := src.Lookup("new-ui")
+	if !ok || val != "true" {
+		t.Fatalf("expected new-ui=true, got (%q, %v)", val, ok)
+	}
+	_, ok = src.Lookup("missing")
+	if ok {
+		t.Fatal("expected miss for unknown flag")
+	}
+}
+
+func TestEnvComments(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "config.env"), []byte("# comment\nKEY=val\n\n  \n"), 0600)
+
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+
+	d := deploy.Discover("test-svc")
+	d.LoadEnv()
+
+	if os.Getenv("KEY") != "val" {
+		t.Fatalf("expected KEY=val, got %q", os.Getenv("KEY"))
+	}
+}
