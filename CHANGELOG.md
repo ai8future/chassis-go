@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [6.0.6] - 2026-03-07
+
+### Documentation
+
+- **INTEGRATING.md**: Fix secval dangerous keys list to match implementation (only `__proto__`, `constructor`, `prototype` — business-domain words intentionally excluded)
+- **INTEGRATING.md**: Fix lifecycle.Run docs — unsupported argument types panic at startup, not silently ignored
+
+(Claude Code:Opus 4.6)
+
 ## [6.0.5] - 2026-03-07
 
 ### New Features

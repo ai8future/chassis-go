@@ -37,6 +37,30 @@ func main() {
 
 If the version doesn't match, the process exits with a clear message telling you exactly what to do. If `RequireMajor` is not called before using any chassis module, those modules will also crash at startup.
 
+### Deterministic ports
+
+The root package also provides `chassis.Port()` for deriving stable, deterministic ports from a service name using djb2 hashing. The result is in the range 5000–48000, safely below the OS ephemeral range.
+
+```go
+// Derive ports from service name (same name always gives the same ports)
+httpPort := chassis.Port("serp_svc", chassis.PortHTTP)       // base port (offset 0)
+grpcPort := chassis.Port("serp_svc", chassis.PortGRPC)       // base + 1
+metricsPort := chassis.Port("serp_svc", chassis.PortMetrics) // base + 2
+
+// Zero-arg defaults to offset 0 (HTTP)
+httpPort := chassis.Port("serp_svc") // equivalent to chassis.Port("serp_svc", chassis.PortHTTP)
+```
+
+Standard offset constants:
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `chassis.PortHTTP` | 0 | Primary HTTP/REST API |
+| `chassis.PortGRPC` | 1 | gRPC transport |
+| `chassis.PortMetrics` | 2 | Admin, Prometheus metrics, health |
+
+Services that need additional ports use raw offsets (3, 4, ...). For test isolation, continue using `testkit.GetFreePort()` — it serves a different purpose (random OS-assigned port).
+
 A typical service imports all packages:
 
 ```go
@@ -109,6 +133,7 @@ err := errors.ValidationError("name is required")         // 400 / INVALID_ARGUM
 err := errors.NotFoundError("user not found")              // 404 / NOT_FOUND
 err := errors.UnauthorizedError("invalid token")           // 401 / UNAUTHENTICATED
 err := errors.ForbiddenError("access denied")              // 403 / PERMISSION_DENIED
+err := errors.PayloadTooLargeError("body exceeds limit")   // 413 / INVALID_ARGUMENT
 err := errors.TimeoutError("request timed out")            // 504 / DEADLINE_EXCEEDED
 err := errors.RateLimitError("too many requests")          // 429 / RESOURCE_EXHAUSTED
 err := errors.DependencyError("database unavailable")      // 503 / UNAVAILABLE
@@ -157,7 +182,7 @@ json.Unmarshal(body, &req) // safe to unmarshal now
 ```
 
 **What it checks**:
-- **Dangerous keys**: `__proto__`, `constructor`, `prototype`, `execute`, `eval`, `include`, `import`, `require`, `system`, `shell`, `command`, `script`, `exec`, `spawn`, `fork`. Keys are normalized (lowercased, hyphens replaced with underscores) before checking.
+- **Dangerous keys**: `__proto__`, `constructor`, `prototype`. Only keys that indicate prototype pollution or direct code execution vectors are blocked. Common business-domain words (command, system, import, etc.) are intentionally excluded to avoid false positives. Keys are normalized (lowercased, hyphens replaced with underscores) before checking.
 - **Nesting depth**: Maximum 20 levels. Prevents stack overflow attacks from deeply nested JSON.
 
 **Integration notes**:
@@ -324,7 +349,7 @@ if flags.Enabled("new-ui") {
 }
 
 // Percentage rollout with consistent bucketing
-if flags.EnabledFor(ctx, "experiment", flagz.Context{
+if flags.EnabledFor("experiment", flagz.Context{
     UserID:  userID,
     Percent: 25, // 25% of users
 }) {
@@ -405,7 +430,7 @@ err := lifecycle.Run(context.Background(),
 - Catches SIGTERM and SIGINT, cancels the shared context.
 - If any component returns an error, all others are signalled to stop.
 - Uses `errgroup` under the hood — returns the first non-nil error.
-- `Run` accepts `Component` values or bare `func(ctx context.Context) error` functions. Non-component arguments are silently ignored.
+- `Run` accepts `Component` values or bare `func(ctx context.Context) error` functions. Unsupported argument types cause a panic at startup.
 
 **Integration notes**:
 - Every component function **must** watch `ctx.Done()`. A component that ignores the context will block shutdown indefinitely.
@@ -419,9 +444,38 @@ err := lifecycle.Run(context.Background(),
 **When to use**: Automatically — `lifecycle.Run()` initializes the registry for you. Use the module-level API to report status, log errors, and register custom commands.
 
 The registry creates a directory per service under `/tmp/chassis/<service-name>/` containing:
-- `<pid>.json` — Registration file with service metadata (name, PID, hostname, version, available commands)
-- `<pid>.log.jsonl` — Structured event log (startup, heartbeat, status, error, shutdown events)
+- `<pid>.json` — Registration file (written atomically on startup, removed on clean shutdown)
+- `<pid>.log.jsonl` — Structured event log (startup, heartbeat, status, error, command, shutdown events)
 - `<pid>.cmd.json` — Command file consumed by the service (written by external tools)
+
+Registration file structure:
+```json
+{
+  "name": "serp_svc",
+  "pid": 48231,
+  "hostname": "z1",
+  "started_at": "2026-03-07T14:22:01Z",
+  "version": "2.4.1",
+  "language": "go",
+  "chassis_version": "6.0.0",
+  "args": ["./serp_svc"],
+  "base_port": 12847,
+  "ports": [
+    {"port": 12847, "role": "http", "proto": "http", "label": "REST API"},
+    {"port": 12848, "role": "grpc", "proto": "h2c", "label": "gRPC API"},
+    {"port": 12849, "role": "metrics", "proto": "http", "label": "Prometheus metrics"}
+  ],
+  "commands": [
+    {"name": "stop", "description": "Graceful shutdown", "builtin": true},
+    {"name": "restart", "description": "Restart with same arguments", "builtin": true},
+    {"name": "flush-cache", "description": "Clear all cached data"}
+  ]
+}
+```
+
+- `base_port` — the djb2-derived deterministic port for this service name (always present)
+- `ports` — declared via `registry.Port()` before `lifecycle.Run()`
+- `args` — captures `os.Args` for restart support
 
 ```go
 import "github.com/ai8future/chassis-go/v6/registry"
@@ -431,6 +485,14 @@ registry.Status("batch processing started")
 
 // Report errors
 registry.Errorf("connection to %s failed: %v", host, err)
+
+// Declare open ports for operational visibility (call before lifecycle.Run)
+registry.Port(chassis.PortHTTP, httpPort, "REST API")
+registry.Port(chassis.PortGRPC, grpcPort, "gRPC API")
+registry.Port(chassis.PortMetrics, metricsPort, "Prometheus metrics")
+
+// Override protocol if needed (defaults: http→"http", grpc→"h2c", metrics→"http")
+registry.Port(chassis.PortGRPC, grpcPort, "gRPC API", registry.Proto("h2"))
 
 // Register custom commands (call before lifecycle.Run)
 registry.Handle("flush-cache", "Clear all cached data", func() error {
