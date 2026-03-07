@@ -58,7 +58,7 @@ type handlerEntry struct {
 
 var (
 	mu          sync.Mutex
-	active      bool
+	active      atomic.Bool
 	logFile     *os.File
 	reg         *Registration
 	svcDir      string
@@ -88,7 +88,7 @@ func Handle(name, description string, fn func() error) {
 
 // Status writes a status event to the service log.
 func Status(msg string) {
-	if !active {
+	if !active.Load() {
 		return
 	}
 	appendLog(map[string]any{"ts": ts(), "event": "status", "msg": msg})
@@ -96,7 +96,7 @@ func Status(msg string) {
 
 // Errorf writes an error event to the service log.
 func Errorf(format string, args ...any) {
-	if !active {
+	if !active.Load() {
 		return
 	}
 	appendLog(map[string]any{"ts": ts(), "event": "error", "msg": fmt.Sprintf(format, args...)})
@@ -121,7 +121,7 @@ func Init(cancel context.CancelFunc, chassisVersion string) error {
 	ver := readVersion()
 
 	svcDir = filepath.Join(BasePath, name)
-	if err := os.MkdirAll(svcDir, 0o755); err != nil {
+	if err := os.MkdirAll(svcDir, 0o700); err != nil {
 		return fmt.Errorf("registry: mkdir: %w", err)
 	}
 	cleanStale(svcDir)
@@ -156,12 +156,12 @@ func Init(cancel context.CancelFunc, chassisVersion string) error {
 	}
 
 	var err error
-	logFile, err = os.Create(logFilePath)
+	logFile, err = os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("registry: create log: %w", err)
 	}
 
-	active = true
+	active.Store(true)
 
 	appendLogLocked(map[string]any{
 		"ts": startedAt.Format(time.RFC3339), "event": "startup",
@@ -203,10 +203,10 @@ func RunCommandPoll(ctx context.Context) error {
 func Shutdown(reason string) {
 	mu.Lock()
 	defer mu.Unlock()
-	if !active {
+	if !active.Load() {
 		return
 	}
-	active = false
+	active.Store(false)
 	up := int(time.Since(startedAt).Seconds())
 	appendLogLocked(map[string]any{
 		"ts": ts(), "event": "shutdown", "reason": reason, "uptime_sec": up,
@@ -222,7 +222,7 @@ func Shutdown(reason string) {
 func ResetForTest(path string) {
 	mu.Lock()
 	defer mu.Unlock()
-	active = false
+	active.Store(false)
 	restart.Store(false)
 	if logFile != nil {
 		logFile.Close()
@@ -262,12 +262,22 @@ func ts() string {
 }
 
 func atomicWrite(path string, v any) error {
-	tmp := path + ".tmp"
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	dir := filepath.Dir(path)
+	f, err := os.CreateTemp(dir, ".chassis-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp) // clean up on error; no-op after successful Rename
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
@@ -311,7 +321,11 @@ func cleanStale(dir string) {
 		if processAlive(pid) {
 			continue
 		}
-		os.Remove(filepath.Join(dir, name))
+		// Remove all files for this dead PID.
+		ps := strconv.Itoa(pid)
+		os.Remove(filepath.Join(dir, ps+".json"))
+		os.Remove(filepath.Join(dir, ps+".log.jsonl"))
+		os.Remove(filepath.Join(dir, ps+".cmd.json"))
 	}
 }
 
@@ -338,14 +352,20 @@ func pollOnce() {
 	switch req.Command {
 	case "stop":
 		appendLog(map[string]any{"ts": ts(), "event": "command", "name": "stop", "result": "ok"})
-		if cancelFn != nil {
-			cancelFn()
+		mu.Lock()
+		fn := cancelFn
+		mu.Unlock()
+		if fn != nil {
+			fn()
 		}
 	case "restart":
 		appendLog(map[string]any{"ts": ts(), "event": "command", "name": "restart", "result": "ok"})
 		restart.Store(true)
-		if cancelFn != nil {
-			cancelFn()
+		mu.Lock()
+		fn := cancelFn
+		mu.Unlock()
+		if fn != nil {
+			fn()
 		}
 	default:
 		mu.Lock()

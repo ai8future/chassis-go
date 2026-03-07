@@ -75,6 +75,16 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
+// Write delegates to the underlying writer and tracks that headers have been
+// sent. This ensures headerWritten is accurate even when Write is called
+// without an explicit WriteHeader (which triggers an implicit 200 in net/http).
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	if !rw.headerWritten {
+		rw.headerWritten = true
+	}
+	return rw.ResponseWriter.Write(b)
+}
+
 // Unwrap returns the underlying http.ResponseWriter so that
 // http.NewResponseController can access optional interfaces like
 // http.Flusher and http.Hijacker.

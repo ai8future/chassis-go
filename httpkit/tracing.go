@@ -1,7 +1,6 @@
 package httpkit
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 
@@ -38,7 +37,7 @@ func Tracing() func(http.Handler) http.Handler {
 			ctx := propagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 
 			tracer := otelapi.GetTracerProvider().Tracer(tracerName)
-			spanName := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+			spanName := r.Method
 
 			ctx, span := tracer.Start(ctx, spanName,
 				trace.WithSpanKind(trace.SpanKindServer),

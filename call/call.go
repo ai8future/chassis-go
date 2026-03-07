@@ -65,7 +65,6 @@ func New(opts ...Option) *Client {
 	for _, o := range opts {
 		o(c)
 	}
-	c.httpClient.Timeout = c.timeout
 	return c
 }
 
@@ -129,7 +128,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
 			attribute.String("http.method", req.Method),
-			attribute.String("http.url", req.URL.String()),
+			attribute.String("url.path", req.URL.Path),
 			attribute.String("server.address", req.URL.Host),
 		),
 	)

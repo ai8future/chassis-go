@@ -83,6 +83,13 @@ type timeoutWriter struct {
 	started bool // true once handler called WriteHeader or Write
 }
 
+// Unwrap returns the underlying http.ResponseWriter so that
+// http.NewResponseController can access optional interfaces like
+// http.Flusher and http.Hijacker through the timeout middleware.
+func (tw *timeoutWriter) Unwrap() http.ResponseWriter {
+	return tw.w
+}
+
 func (tw *timeoutWriter) Header() http.Header {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"sync/atomic"
 	"syscall"
 
 	chassis "github.com/ai8future/chassis-go/v6"
@@ -45,20 +44,6 @@ func Run(ctx context.Context, args ...any) error {
 	signalCtx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	// Track whether shutdown was triggered by an OS signal (as opposed to
-	// user components finishing or the parent context being cancelled).
-	var gotSignal atomic.Bool
-	signalCh := make(chan os.Signal, 1)
-	signal.Notify(signalCh, syscall.SIGTERM, syscall.SIGINT)
-	go func() {
-		select {
-		case <-signalCh:
-			gotSignal.Store(true)
-		case <-signalCtx.Done():
-		}
-		signal.Stop(signalCh)
-	}()
-
 	if err := registry.Init(stop, chassis.Version); err != nil {
 		return fmt.Errorf("lifecycle: registry: %w", err)
 	}
@@ -92,13 +77,15 @@ func Run(ctx context.Context, args ...any) error {
 	if err != nil {
 		reason = err.Error()
 	}
-	if gotSignal.Load() {
+	if signalCtx.Err() != nil && ctx.Err() == nil {
 		reason = "signal"
 	}
 	registry.Shutdown(reason)
 
 	if registry.RestartRequested() {
-		syscall.Exec(os.Args[0], os.Args, os.Environ())
+		if execErr := syscall.Exec(os.Args[0], os.Args, os.Environ()); execErr != nil {
+			return fmt.Errorf("lifecycle: restart exec: %w", execErr)
+		}
 	}
 
 	return err

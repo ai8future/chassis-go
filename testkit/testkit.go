@@ -6,7 +6,6 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"os"
 	"testing"
 )
 
@@ -44,13 +43,8 @@ func NewLogger(t testing.TB) *slog.Logger {
 func SetEnv(t testing.TB, envs map[string]string) {
 	t.Helper()
 	for k, v := range envs {
-		os.Setenv(k, v)
+		t.Setenv(k, v)
 	}
-	t.Cleanup(func() {
-		for k := range envs {
-			os.Unsetenv(k)
-		}
-	})
 }
 
 // GetFreePort asks the OS for an available TCP port by listening on :0, then

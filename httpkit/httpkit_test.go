@@ -255,8 +255,8 @@ func TestTracingMiddlewareCreatesSpan(t *testing.T) {
 	if len(spans) != 1 {
 		t.Fatalf("expected 1 span, got %d", len(spans))
 	}
-	if spans[0].Name != "GET /hello" {
-		t.Fatalf("expected span name %q, got %q", "GET /hello", spans[0].Name)
+	if spans[0].Name != "GET" {
+		t.Fatalf("expected span name %q, got %q", "GET", spans[0].Name)
 	}
 }
 

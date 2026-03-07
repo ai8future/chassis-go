@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [6.0.2] - 2026-03-07
+
+### Security Fixes
+
+- **registry**: Restrict directory permissions from 0755 to 0700 and file permissions from 0644 to 0600, preventing local users from enumerating/controlling services
+- **registry**: Replace predictable `.tmp` path in atomicWrite with `os.CreateTemp` to prevent symlink attacks
+- **call**: Remove full URL (including query params) from OTel span attributes; log only `url.path` to prevent leaking secrets
+- **httpkit**: Use HTTP method only as OTel span name instead of `method + path` to prevent high-cardinality span explosion
+
+### Bug Fixes
+
+- **httpkit**: Add `Write()` override to `responseWriter` so `headerWritten` is tracked correctly; fixes garbled output when panic occurs after partial response write
+- **registry**: Change `active` from plain `bool` to `atomic.Bool` to eliminate data race in `Status()` and `Errorf()`
+- **registry**: Read `cancelFn` under mutex lock in `pollOnce()` to eliminate data race on stop/restart commands
+- **registry**: Clean up orphaned `.log.jsonl` and `.cmd.json` files for dead processes in `cleanStale()`
+- **lifecycle**: Handle `syscall.Exec` error on restart; previously the error was silently discarded
+- **lifecycle**: Fix unreliable signal detection by removing redundant `signal.Notify` registration; use `signalCtx.Err()` check instead, which is deterministic
+- **guard**: Add `Unwrap()` to `timeoutWriter` so `http.NewResponseController` can access `http.Flusher`/`http.Hijacker` through timeout middleware
+
+### Improvements
+
+- **testkit**: Delegate `SetEnv` to `t.Setenv` for automatic parallel-test safety and cleanup
+- **work**: Use `select` with `ctx.Done()` when sending `Stream` results to prevent goroutine leaks if consumer stops reading
+- **call**: Remove redundant `http.Client.Timeout` assignment; context-based timeout in `Do()` is sufficient
+
+(Claude Code:Opus 4.6)
+
 ## [6.0.1] - 2026-03-07
 
 - Update README.md and INTEGRATING.md for v6: change all v5 references to v6, update RequireMajor(5) to RequireMajor(6), add `registry` module to package tables and import lists, add registry documentation sections covering Status/Errorf/Handle API, file layout, built-in commands, and automatic lifecycle integration. (Claude Code:Opus 4.6)

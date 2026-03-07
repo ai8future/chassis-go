@@ -295,7 +295,10 @@ func Stream[T, R any](ctx context.Context, in <-chan T, fn func(context.Context,
 					childSpan.RecordError(err)
 				}
 				childSpan.End()
-				out <- Result[R]{Value: val, Err: err, Index: currentIdx}
+				select {
+				case out <- Result[R]{Value: val, Err: err, Index: currentIdx}:
+				case <-ctx.Done():
+				}
 			}()
 		}
 
