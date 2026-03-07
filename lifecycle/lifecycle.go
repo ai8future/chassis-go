@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	chassis "github.com/ai8future/chassis-go/v5"
-	"github.com/ai8future/chassis-go/v5/registry"
+	chassis "github.com/ai8future/chassis-go/v6"
+	"github.com/ai8future/chassis-go/v6/registry"
 	"golang.org/x/sync/errgroup"
 )
 

@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v5"
+	chassis "github.com/ai8future/chassis-go/v6"
 )
 
 // idCounter is a fallback counter used when crypto/rand fails.

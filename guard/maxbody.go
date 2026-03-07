@@ -3,8 +3,8 @@ package guard
 import (
 	"net/http"
 
-	chassis "github.com/ai8future/chassis-go/v5"
-	"github.com/ai8future/chassis-go/v5/errors"
+	chassis "github.com/ai8future/chassis-go/v6"
+	"github.com/ai8future/chassis-go/v6/errors"
 )
 
 // MaxBody returns middleware that rejects requests with a body exceeding

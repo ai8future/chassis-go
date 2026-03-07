@@ -3,7 +3,7 @@
 A composable Go service toolkit for building production-grade microservices. Toolkit, not framework — chassis never owns `main()`, never hides wiring behind magic, and every package is independently importable.
 
 ```
-go get github.com/ai8future/chassis-go/v5
+go get github.com/ai8future/chassis-go/v6
 ```
 
 **Current version:** 5.0.0 &middot; **Go:** 1.25.5+ &middot; **License:** MIT
@@ -24,7 +24,7 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 
 | Package | Import | Purpose |
 |---------|--------|---------|
-| `chassis` | `github.com/ai8future/chassis-go/v5` | Version gate: `RequireMajor(5)` must be called before any other chassis API |
+| `chassis` | `github.com/ai8future/chassis-go/v6` | Version gate: `RequireMajor(5)` must be called before any other chassis API |
 | `config` | `.../v5/config` | Generic env-to-struct config loader via struct tags. Panics on missing required vars |
 | `logz` | `.../v5/logz` | Structured JSON logging wrapping `log/slog` with automatic OTel `trace_id`/`span_id` injection |
 | `lifecycle` | `.../v5/lifecycle` | Signal-aware graceful shutdown orchestration via `errgroup` |
@@ -67,13 +67,13 @@ import (
     "net/http"
     "time"
 
-    chassis "github.com/ai8future/chassis-go/v5"
-    "github.com/ai8future/chassis-go/v5/config"
-    "github.com/ai8future/chassis-go/v5/guard"
-    "github.com/ai8future/chassis-go/v5/health"
-    "github.com/ai8future/chassis-go/v5/httpkit"
-    "github.com/ai8future/chassis-go/v5/lifecycle"
-    "github.com/ai8future/chassis-go/v5/logz"
+    chassis "github.com/ai8future/chassis-go/v6"
+    "github.com/ai8future/chassis-go/v6/config"
+    "github.com/ai8future/chassis-go/v6/guard"
+    "github.com/ai8future/chassis-go/v6/health"
+    "github.com/ai8future/chassis-go/v6/httpkit"
+    "github.com/ai8future/chassis-go/v6/lifecycle"
+    "github.com/ai8future/chassis-go/v6/logz"
 )
 
 type AppConfig struct {

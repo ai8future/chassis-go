@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ai8future/chassis-go/v5/guard"
+	"github.com/ai8future/chassis-go/v6/guard"
 )
 
 func TestTimeoutSetsDeadline(t *testing.T) {

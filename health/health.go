@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"sort"
 
-	chassis "github.com/ai8future/chassis-go/v5"
-	"github.com/ai8future/chassis-go/v5/work"
+	chassis "github.com/ai8future/chassis-go/v6"
+	"github.com/ai8future/chassis-go/v6/work"
 )
 
 // Check is the standard health check signature. A nil return indicates a

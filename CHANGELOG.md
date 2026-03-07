@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [6.0.0] - 2026-03-07
+
+### Breaking Changes
+
+- **Module path migrated to v6**: All import paths changed from `chassis-go/v5` to `chassis-go/v6`
+- **`lifecycle.Run()` now auto-initializes registry**: Every service is automatically registered at `/tmp/chassis/` on startup. This is mandatory and cannot be disabled.
+
+### New Features
+
+- **`registry` module**: File-based service self-registration with heartbeat, status logging, error reporting, and bidirectional command system
+  - `registry.Status(msg)`: Write progress/status updates
+  - `registry.Errorf(fmt, args...)`: Write error events
+  - `registry.Handle(name, desc, fn)`: Register custom commands
+  - Built-in `stop` and `restart` commands
+  - Automatic heartbeat every 30s, command polling every 3s
+  - Stale PID cleanup on startup
+  - Atomic file writes for crash safety
+
+(Claude Code:Opus 4.6)
+
 ## [5.0.3] - 2026-03-07
 
 - Integrate `registry` module into `lifecycle.Run()`: auto-initializes registry on startup, runs heartbeat and command-poll goroutines, determines shutdown reason (clean/error/signal), calls `registry.Shutdown()`, and supports `syscall.Exec` restart on restart command. Added integration tests verifying PID file creation during Run and cleanup after shutdown. (Claude Code:Opus 4.6)
@@ -18,7 +38,7 @@ All notable changes to this project will be documented in this file.
 
 ### Breaking Changes
 
-- **Module path migrated to v5**: All import paths changed from `chassis-go/v4` to `chassis-go/v5`. All consumer code must update imports and call `chassis.RequireMajor(5)`.
+- **Module path migrated to v5**: All import paths changed from `chassis-go/v4` to `chassis-go/v6`. All consumer code must update imports and call `chassis.RequireMajor(5)`.
 - **OTLP defaults to TLS**: `otel.Init()` now uses TLS for OTLP gRPC connections by default. Set `Insecure: true` in `otel.Config` to use plaintext (dev/test environments).
 - **Rate limiter requires MaxKeys**: `guard.RateLimitConfig` now requires a `MaxKeys int` field for LRU capacity. Rate limiter internals rewritten from O(n) sweep to O(1) LRU eviction using `container/list`.
 - **Guard config validation panics**: `guard.RateLimit`, `guard.MaxBody`, and `guard.Timeout` now panic at construction on invalid config (zero rate, zero window, nil KeyFunc, zero MaxKeys, non-positive maxBytes, non-positive duration).

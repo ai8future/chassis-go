@@ -16,10 +16,10 @@ import (
 	"net/http"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v5"
-	"github.com/ai8future/chassis-go/v5/call"
-	"github.com/ai8future/chassis-go/v5/config"
-	"github.com/ai8future/chassis-go/v5/logz"
+	chassis "github.com/ai8future/chassis-go/v6"
+	"github.com/ai8future/chassis-go/v6/call"
+	"github.com/ai8future/chassis-go/v6/config"
+	"github.com/ai8future/chassis-go/v6/logz"
 )
 
 type ClientConfig struct {
@@ -28,7 +28,7 @@ type ClientConfig struct {
 }
 
 func main() {
-	chassis.RequireMajor(5)
+	chassis.RequireMajor(6)
 	cfg := config.MustLoad[ClientConfig]()
 	logger := logz.New(cfg.LogLevel)
 

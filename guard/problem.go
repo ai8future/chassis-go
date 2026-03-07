@@ -3,7 +3,7 @@ package guard
 import (
 	"net/http"
 
-	"github.com/ai8future/chassis-go/v5/errors"
+	"github.com/ai8future/chassis-go/v6/errors"
 )
 
 // writeProblem writes an RFC 9457 Problem Details JSON response for the given

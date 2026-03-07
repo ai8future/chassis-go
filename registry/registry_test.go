@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ai8future/chassis-go/v5/registry"
+	"github.com/ai8future/chassis-go/v6/registry"
 )
 
 // helper: initialise registry with a temp dir and return the service dir path.

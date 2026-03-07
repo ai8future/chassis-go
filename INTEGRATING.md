@@ -13,13 +13,13 @@ Practical guide for teams adopting chassis-go into an existing Go codebase.
 ## Installation
 
 ```bash
-go get github.com/ai8future/chassis-go/v5
+go get github.com/ai8future/chassis-go/v6
 ```
 
 The top-level package exports the library version for diagnostics:
 
 ```go
-import chassis "github.com/ai8future/chassis-go/v5"
+import chassis "github.com/ai8future/chassis-go/v6"
 
 logger.Info("starting", "chassis_version", chassis.Version)
 ```
@@ -41,24 +41,24 @@ A typical service imports all packages:
 
 ```go
 import (
-    "github.com/ai8future/chassis-go/v5/call"
-    "github.com/ai8future/chassis-go/v5/config"
-    "github.com/ai8future/chassis-go/v5/errors"
-    "github.com/ai8future/chassis-go/v5/grpckit"
-    "github.com/ai8future/chassis-go/v5/health"
-    "github.com/ai8future/chassis-go/v5/httpkit"
-    "github.com/ai8future/chassis-go/v5/lifecycle"
-    "github.com/ai8future/chassis-go/v5/work"
-    "github.com/ai8future/chassis-go/v5/logz"
-    "github.com/ai8future/chassis-go/v5/metrics"
-    "github.com/ai8future/chassis-go/v5/secval"
+    "github.com/ai8future/chassis-go/v6/call"
+    "github.com/ai8future/chassis-go/v6/config"
+    "github.com/ai8future/chassis-go/v6/errors"
+    "github.com/ai8future/chassis-go/v6/grpckit"
+    "github.com/ai8future/chassis-go/v6/health"
+    "github.com/ai8future/chassis-go/v6/httpkit"
+    "github.com/ai8future/chassis-go/v6/lifecycle"
+    "github.com/ai8future/chassis-go/v6/work"
+    "github.com/ai8future/chassis-go/v6/logz"
+    "github.com/ai8future/chassis-go/v6/metrics"
+    "github.com/ai8future/chassis-go/v6/secval"
 )
 ```
 
 And in test files:
 
 ```go
-import "github.com/ai8future/chassis-go/v5/testkit"
+import "github.com/ai8future/chassis-go/v6/testkit"
 ```
 
 The packages are designed to work together. While you *can* import selectively (a CLI tool might only need `config` + `logz`), the standard path for any service is to use the full toolkit.
@@ -101,7 +101,7 @@ cfg := config.MustLoad[AppConfig]()
 **When to use**: You need error types that carry both HTTP and gRPC status codes for consistent error handling across transport layers.
 
 ```go
-import "github.com/ai8future/chassis-go/v5/errors"
+import "github.com/ai8future/chassis-go/v6/errors"
 
 // Factory constructors for common error categories
 err := errors.ValidationError("name is required")         // 400 / INVALID_ARGUMENT
@@ -144,7 +144,7 @@ svcErr := errors.InternalError("db failed").WithCause(originalErr)
 **When to use**: You want to reject JSON payloads containing dangerous keys (prototype pollution, injection patterns) before processing them.
 
 ```go
-import "github.com/ai8future/chassis-go/v5/secval"
+import "github.com/ai8future/chassis-go/v6/secval"
 
 // Validate JSON before unmarshalling
 if err := secval.ValidateJSON(body); err != nil {
@@ -171,7 +171,7 @@ json.Unmarshal(body, &req) // safe to unmarshal now
 **When to use**: You want structured metrics with built-in request recording and cardinality protection. Metrics flow out via OTLP push — no scrape endpoint required.
 
 ```go
-import "github.com/ai8future/chassis-go/v5/metrics"
+import "github.com/ai8future/chassis-go/v6/metrics"
 
 // Create a recorder with a metric prefix
 recorder := metrics.New("mysvc", logger)
@@ -205,7 +205,7 @@ hist.Observe(ctx, 524288, "format", "pdf")
 **When to use**: You want distributed tracing and metrics export via OTLP. This is the single SDK consumer — all other chassis modules depend only on OTel API packages.
 
 ```go
-import otelinit "github.com/ai8future/chassis-go/v5/otel"
+import otelinit "github.com/ai8future/chassis-go/v6/otel"
 
 shutdown := otelinit.Init(otelinit.Config{
     ServiceName:    "mysvc",
@@ -240,7 +240,7 @@ defer shutdown(context.Background())
 **When to use**: You need request-level protection — enforcing timeouts, rate limits, CORS, security headers, IP filtering, or body size limits as HTTP middleware.
 
 ```go
-import "github.com/ai8future/chassis-go/v5/guard"
+import "github.com/ai8future/chassis-go/v6/guard"
 
 // Timeout — returns 504 if handler doesn't complete in time
 handler = guard.Timeout(10 * time.Second)(handler)
@@ -301,7 +301,7 @@ handler = guard.IPFilter(guard.IPFilterConfig{
 **When to use**: You need feature flags with percentage rollouts, multiple sources, and OTel tracing integration.
 
 ```go
-import "github.com/ai8future/chassis-go/v5/flagz"
+import "github.com/ai8future/chassis-go/v6/flagz"
 
 // Create flags from environment variables (FLAG_NEW_UI=true → "new-ui")
 src := flagz.FromEnv("FLAG")
@@ -523,7 +523,7 @@ results, err := runAll(ctx)
 **When to use**: You have fan-out/fan-in workloads — batch processing, parallel dependency checks, racing fallback strategies, or streaming pipelines — and need bounded concurrency with OTel tracing.
 
 ```go
-import "github.com/ai8future/chassis-go/v5/work"
+import "github.com/ai8future/chassis-go/v6/work"
 
 // Map: apply a function to each item with bounded concurrency
 results, err := work.Map(ctx, userIDs, func(ctx context.Context, id string) (*User, error) {
