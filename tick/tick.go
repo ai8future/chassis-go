@@ -1,0 +1,75 @@
+// Package tick provides periodic task components for use with lifecycle.Run.
+package tick
+
+import (
+	"context"
+	"time"
+
+	chassis "github.com/ai8future/chassis-go/v8"
+)
+
+type ErrorBehavior int
+
+const (
+	Skip ErrorBehavior = iota
+	Stop
+)
+
+type Option func(*config)
+
+type config struct {
+	immediate bool
+	jitter    time.Duration
+	onError   ErrorBehavior
+	label     string
+}
+
+func Immediate() Option {
+	return func(c *config) { c.immediate = true }
+}
+
+func Jitter(d time.Duration) Option {
+	return func(c *config) { c.jitter = d }
+}
+
+func OnError(b ErrorBehavior) Option {
+	return func(c *config) { c.onError = b }
+}
+
+func Label(s string) Option {
+	return func(c *config) { c.label = s }
+}
+
+func Every(interval time.Duration, fn func(context.Context) error, opts ...Option) func(context.Context) error {
+	chassis.AssertVersionChecked()
+	cfg := &config{onError: Skip}
+	for _, o := range opts {
+		o(cfg)
+	}
+
+	return func(ctx context.Context) error {
+		if cfg.immediate {
+			if err := fn(ctx); err != nil {
+				if cfg.onError == Stop {
+					return err
+				}
+			}
+		}
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-ticker.C:
+				if err := fn(ctx); err != nil {
+					if cfg.onError == Stop {
+						return err
+					}
+				}
+			}
+		}
+	}
+}
