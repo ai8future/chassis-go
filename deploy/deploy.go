@@ -15,8 +15,10 @@ import (
 )
 
 type Deploy struct {
-	dir   string
-	found bool
+	dir     string
+	found   bool
+	name    string
+	created time.Time
 }
 
 type TLSPaths struct {
@@ -44,29 +46,57 @@ func (f *FlagLookup) Lookup(name string) (string, bool) {
 func Discover(name string) *Deploy {
 	chassis.AssertVersionChecked()
 
+	now := time.Now()
+
 	if dir := os.Getenv("CHASSIS_DEPLOY_DIR"); dir != "" {
 		if info, err := os.Stat(dir); err == nil && info.IsDir() {
-			return &Deploy{dir: dir, found: true}
+			return &Deploy{dir: dir, found: true, name: name, created: now}
 		}
+	}
+
+	dir := filepath.Join("/app/deploy", name)
+	if info, err := os.Stat(dir); err == nil && info.IsDir() {
+		return &Deploy{dir: dir, found: true, name: name, created: now}
 	}
 
 	if home, err := os.UserHomeDir(); err == nil {
 		dir := filepath.Join(home, "deploy", name)
 		if info, err := os.Stat(dir); err == nil && info.IsDir() {
-			return &Deploy{dir: dir, found: true}
+			return &Deploy{dir: dir, found: true, name: name, created: now}
 		}
 	}
 
-	dir := filepath.Join("/deploy", name)
+	dir = filepath.Join("/deploy", name)
 	if info, err := os.Stat(dir); err == nil && info.IsDir() {
-		return &Deploy{dir: dir, found: true}
+		return &Deploy{dir: dir, found: true, name: name, created: now}
 	}
 
-	return &Deploy{}
+	return &Deploy{name: name, created: now}
 }
 
 func (d *Deploy) Found() bool { return d.found }
-func (d *Deploy) Dir() string { return d.dir }
+func (d *Deploy) Dir() string  { return d.dir }
+func (d *Deploy) Name() string { return d.name }
+
+func (d *Deploy) Spec() string {
+	if !d.found {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(d.dir, "deploy.json"))
+	if err != nil {
+		return ""
+	}
+	var raw struct {
+		Chassis string `json:"chassis"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return ""
+	}
+	if raw.Chassis == "" {
+		return "8.0"
+	}
+	return raw.Chassis
+}
 
 func (d *Deploy) Path(rel string) string {
 	if !d.found {

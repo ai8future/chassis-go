@@ -222,3 +222,50 @@ func TestLoadEnvNoOverrideEmpty(t *testing.T) {
 		t.Fatal("LoadEnv should not override env var set to empty string")
 	}
 }
+
+func TestSpec(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "deploy.json"), []byte(`{"chassis":"9.0","version":"1.0.0"}`), 0600)
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+	if d.Spec() != "9.0" {
+		t.Fatalf("expected spec 9.0, got %s", d.Spec())
+	}
+}
+
+func TestSpecDefaultV8(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "deploy.json"), []byte(`{"version":"1.0.0"}`), 0600)
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+	if d.Spec() != "8.0" {
+		t.Fatalf("expected spec 8.0, got %s", d.Spec())
+	}
+}
+
+func TestSpecNoDeployJson(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+	if d.Spec() != "" {
+		t.Fatalf("expected empty spec, got %s", d.Spec())
+	}
+}
+
+func TestDiscoverName(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("my-service")
+	if d.Name() != "my-service" {
+		t.Fatalf("expected name my-service, got %s", d.Name())
+	}
+}
+
+func TestDiscoverNameNotFound(t *testing.T) {
+	t.Setenv("CHASSIS_DEPLOY_DIR", "/tmp/nonexistent-deploy-dir-test")
+	t.Setenv("HOME", "/tmp/nonexistent-home-test")
+	d := deploy.Discover("my-service")
+	if d.Name() != "my-service" {
+		t.Fatalf("expected name my-service even when not found, got %s", d.Name())
+	}
+}
