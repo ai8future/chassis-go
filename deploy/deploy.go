@@ -200,7 +200,7 @@ type HealthStatus struct {
 	Version     string              `json:"version,omitempty"`
 	ChassisSpec string              `json:"chassis_spec,omitempty"`
 	Runtime     string              `json:"runtime"`
-	Uptime      time.Duration       `json:"uptime"`
+	Uptime      float64             `json:"uptime"`
 	Environment string              `json:"environment,omitempty"`
 	Endpoints   map[string]Endpoint `json:"endpoints,omitempty"`
 	Components  map[string]string   `json:"components,omitempty"`
@@ -260,10 +260,10 @@ func (d *Deploy) Dependencies() []Dependency {
 	if raw.Dependencies == nil {
 		return nil
 	}
-	trueVal := true
 	for i := range raw.Dependencies {
 		if raw.Dependencies[i].Required == nil {
-			raw.Dependencies[i].Required = &trueVal
+			v := true
+			raw.Dependencies[i].Required = &v
 		}
 	}
 	return raw.Dependencies
@@ -274,7 +274,7 @@ func (d *Deploy) Health(components map[string]string) HealthStatus {
 	status := HealthStatus{
 		Service:    d.name,
 		Runtime:    d.Environment().Runtime,
-		Uptime:     time.Since(d.created),
+		Uptime:     time.Since(d.created).Seconds(),
 		Endpoints:  d.Endpoints(),
 		Components: components,
 	}
