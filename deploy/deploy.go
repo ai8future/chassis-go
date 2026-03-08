@@ -178,6 +178,121 @@ func (d *Deploy) Meta() *DeployMeta {
 	return &meta
 }
 
+// Endpoint describes a named network endpoint for a service.
+type Endpoint struct {
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol"`
+	Path     string `json:"path,omitempty"`
+}
+
+// Dependency describes a service dependency.
+type Dependency struct {
+	Service  string `json:"service"`
+	Endpoint string `json:"endpoint,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
+	Port     int    `json:"port,omitempty"`
+	Required *bool  `json:"required,omitempty"`
+}
+
+// HealthStatus is the standard health payload for a service.
+type HealthStatus struct {
+	Service     string              `json:"service"`
+	Version     string              `json:"version,omitempty"`
+	ChassisSpec string              `json:"chassis_spec,omitempty"`
+	Runtime     string              `json:"runtime"`
+	Uptime      time.Duration       `json:"uptime"`
+	Environment string              `json:"environment,omitempty"`
+	Endpoints   map[string]Endpoint `json:"endpoints,omitempty"`
+	Components  map[string]string   `json:"components,omitempty"`
+}
+
+// Endpoints returns all named endpoints from deploy.json.
+// Protocol defaults to "http" when omitted.
+func (d *Deploy) Endpoints() map[string]Endpoint {
+	if !d.found {
+		return map[string]Endpoint{}
+	}
+	data, err := os.ReadFile(filepath.Join(d.dir, "deploy.json"))
+	if err != nil {
+		return map[string]Endpoint{}
+	}
+	var raw struct {
+		Endpoints map[string]Endpoint `json:"endpoints"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return map[string]Endpoint{}
+	}
+	if raw.Endpoints == nil {
+		return map[string]Endpoint{}
+	}
+	for name, ep := range raw.Endpoints {
+		if ep.Protocol == "" {
+			ep.Protocol = "http"
+			raw.Endpoints[name] = ep
+		}
+	}
+	return raw.Endpoints
+}
+
+// Endpoint returns a single named endpoint and whether it was found.
+func (d *Deploy) Endpoint(name string) (Endpoint, bool) {
+	eps := d.Endpoints()
+	ep, ok := eps[name]
+	return ep, ok
+}
+
+// Dependencies returns the list of service dependencies from deploy.json.
+// Required defaults to true when omitted.
+func (d *Deploy) Dependencies() []Dependency {
+	if !d.found {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join(d.dir, "deploy.json"))
+	if err != nil {
+		return nil
+	}
+	var raw struct {
+		Dependencies []Dependency `json:"dependencies"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	if raw.Dependencies == nil {
+		return nil
+	}
+	trueVal := true
+	for i := range raw.Dependencies {
+		if raw.Dependencies[i].Required == nil {
+			raw.Dependencies[i].Required = &trueVal
+		}
+	}
+	return raw.Dependencies
+}
+
+// Health returns a standard health status payload for the service.
+func (d *Deploy) Health(components map[string]string) HealthStatus {
+	status := HealthStatus{
+		Service:    d.name,
+		Runtime:    d.Environment().Runtime,
+		Uptime:     time.Since(d.created),
+		Endpoints:  d.Endpoints(),
+		Components: components,
+	}
+
+	if meta := d.Meta(); meta != nil {
+		status.Version = meta.Version
+	}
+	status.ChassisSpec = d.Spec()
+	status.Environment = d.Environment().Env
+
+	// Clean up empty maps/nil for consistent output
+	if len(status.Endpoints) == 0 {
+		status.Endpoints = nil
+	}
+
+	return status
+}
+
 func (d *Deploy) FlagSource() *FlagLookup {
 	flags := make(map[string]string)
 	if !d.found {

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	chassis "github.com/ai8future/chassis-go/v8"
 	"github.com/ai8future/chassis-go/v8/deploy"
@@ -343,5 +344,162 @@ func TestEnvironmentNotFound(t *testing.T) {
 	}
 	if env.Hostname == "" {
 		t.Fatal("expected hostname")
+	}
+}
+
+// --- Endpoints tests ---
+
+func TestEndpoints(t *testing.T) {
+	dir := t.TempDir()
+	meta := `{"chassis":"9.0","endpoints":{"api":{"port":50051,"protocol":"grpc"},"metrics":{"port":9090,"protocol":"http","path":"/metrics"},"health":{"port":8080,"protocol":"http","path":"/health"}}}`
+	os.WriteFile(filepath.Join(dir, "deploy.json"), []byte(meta), 0600)
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+	eps := d.Endpoints()
+	if len(eps) != 3 {
+		t.Fatalf("expected 3 endpoints, got %d", len(eps))
+	}
+	api := eps["api"]
+	if api.Port != 50051 {
+		t.Fatalf("expected 50051, got %d", api.Port)
+	}
+	if api.Protocol != "grpc" {
+		t.Fatalf("expected grpc, got %s", api.Protocol)
+	}
+}
+
+func TestEndpointLookup(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "deploy.json"), []byte(`{"chassis":"9.0","endpoints":{"api":{"port":8080,"protocol":"http"}}}`), 0600)
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+	ep, ok := d.Endpoint("api")
+	if !ok {
+		t.Fatal("expected found")
+	}
+	if ep.Port != 8080 {
+		t.Fatalf("expected 8080, got %d", ep.Port)
+	}
+	_, ok = d.Endpoint("nonexistent")
+	if ok {
+		t.Fatal("expected not found")
+	}
+}
+
+func TestEndpointsDefaultProtocol(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "deploy.json"), []byte(`{"chassis":"9.0","endpoints":{"web":{"port":3000}}}`), 0600)
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+	ep, _ := d.Endpoint("web")
+	if ep.Protocol != "http" {
+		t.Fatalf("expected http default, got %s", ep.Protocol)
+	}
+}
+
+func TestEndpointsNotFound(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+	if len(d.Endpoints()) != 0 {
+		t.Fatal("expected empty")
+	}
+}
+
+// --- Dependencies tests ---
+
+func TestDependencies(t *testing.T) {
+	dir := t.TempDir()
+	meta := `{"chassis":"9.0","dependencies":[{"service":"airborne","endpoint":"api","protocol":"grpc","port":50051,"required":true},{"service":"redis","protocol":"tcp","port":6379,"required":false}]}`
+	os.WriteFile(filepath.Join(dir, "deploy.json"), []byte(meta), 0600)
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+	deps := d.Dependencies()
+	if len(deps) != 2 {
+		t.Fatalf("expected 2, got %d", len(deps))
+	}
+	if deps[0].Service != "airborne" {
+		t.Fatalf("expected airborne, got %s", deps[0].Service)
+	}
+	if deps[0].Protocol != "grpc" {
+		t.Fatalf("expected grpc, got %s", deps[0].Protocol)
+	}
+	if deps[0].Port != 50051 {
+		t.Fatalf("expected 50051, got %d", deps[0].Port)
+	}
+	if deps[0].Required == nil || !*deps[0].Required {
+		t.Fatal("expected required true")
+	}
+	if deps[1].Required == nil || *deps[1].Required {
+		t.Fatal("expected required false")
+	}
+}
+
+func TestDependenciesDefaultRequired(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "deploy.json"), []byte(`{"chassis":"9.0","dependencies":[{"service":"db"}]}`), 0600)
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+	deps := d.Dependencies()
+	if len(deps) != 1 {
+		t.Fatalf("expected 1, got %d", len(deps))
+	}
+	if deps[0].Required == nil || !*deps[0].Required {
+		t.Fatal("expected default required=true")
+	}
+}
+
+func TestDependenciesEmpty(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+	if len(d.Dependencies()) != 0 {
+		t.Fatal("expected empty")
+	}
+}
+
+// --- Health tests ---
+
+func TestHealth(t *testing.T) {
+	dir := t.TempDir()
+	meta := `{"chassis":"9.0","version":"2.1.0","environment":{"env":"prod"},"endpoints":{"api":{"port":8080,"protocol":"http"}}}`
+	os.WriteFile(filepath.Join(dir, "deploy.json"), []byte(meta), 0600)
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+	time.Sleep(5 * time.Millisecond)
+	status := d.Health(map[string]string{"db": "ok", "cache": "degraded"})
+	if status.Service != "test-svc" {
+		t.Fatalf("expected test-svc, got %s", status.Service)
+	}
+	if status.Version != "2.1.0" {
+		t.Fatalf("expected 2.1.0, got %s", status.Version)
+	}
+	if status.ChassisSpec != "9.0" {
+		t.Fatalf("expected 9.0, got %s", status.ChassisSpec)
+	}
+	if status.Environment != "prod" {
+		t.Fatalf("expected prod, got %s", status.Environment)
+	}
+	if status.Uptime <= 0 {
+		t.Fatal("expected positive uptime")
+	}
+	if status.Components["db"] != "ok" {
+		t.Fatal("expected db ok")
+	}
+	if len(status.Endpoints) != 1 {
+		t.Fatalf("expected 1 endpoint, got %d", len(status.Endpoints))
+	}
+}
+
+func TestHealthNoDeployJSON(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+	status := d.Health(nil)
+	if status.Service != "test-svc" {
+		t.Fatalf("expected test-svc, got %s", status.Service)
+	}
+	if status.Uptime < 0 {
+		t.Fatal("expected non-negative uptime")
 	}
 }
