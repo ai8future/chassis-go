@@ -74,6 +74,19 @@ func Discover(name string) *Deploy {
 	return &Deploy{name: name, created: now}
 }
 
+// Environment holds auto-detected and operator-declared runtime info.
+type Environment struct {
+	Runtime   string `json:"runtime"`
+	Hostname  string `json:"hostname"`
+	Service   string `json:"service"`
+	Env       string `json:"env,omitempty"`
+	Provider  string `json:"provider,omitempty"`
+	Region    string `json:"region,omitempty"`
+	Cluster   string `json:"cluster,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	PodName   string `json:"pod_name,omitempty"`
+}
+
 func (d *Deploy) Found() bool { return d.found }
 func (d *Deploy) Dir() string  { return d.dir }
 func (d *Deploy) Name() string { return d.name }
@@ -236,4 +249,109 @@ func runHookExec(path string) {
 	if err != nil {
 		_ = err
 	}
+}
+
+// detectRuntime returns the detected runtime environment.
+// Detection order (first match wins):
+// 1. KUBERNETES_SERVICE_HOST env var → "kubernetes"
+// 2. /.dockerenv exists → "container"
+// 3. /proc/1/cgroup contains docker/containerd/podman → "container"
+// 4. /sys/class/dmi/id/product_name contains vm indicators → "vm"
+// 5. /sys/hypervisor/type exists → "vm"
+// 6. fallback → "bare-metal"
+func detectRuntime() string {
+	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+		return "kubernetes"
+	}
+
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return "container"
+	}
+
+	if data, err := os.ReadFile("/proc/1/cgroup"); err == nil {
+		content := strings.ToLower(string(data))
+		if strings.Contains(content, "docker") ||
+			strings.Contains(content, "containerd") ||
+			strings.Contains(content, "podman") {
+			return "container"
+		}
+	}
+
+	if data, err := os.ReadFile("/sys/class/dmi/id/product_name"); err == nil {
+		product := strings.ToLower(strings.TrimSpace(string(data)))
+		vmIndicators := []string{"virtualbox", "vmware", "qemu", "kvm", "xen", "hyper-v"}
+		for _, indicator := range vmIndicators {
+			if strings.Contains(product, indicator) {
+				return "vm"
+			}
+		}
+	}
+
+	if _, err := os.Stat("/sys/hypervisor/type"); err == nil {
+		return "vm"
+	}
+
+	return "bare-metal"
+}
+
+// Environment returns auto-detected and operator-declared runtime info.
+// It reads the "environment" block from deploy.json (if present), then
+// applies env var overrides (CHASSIS_ENV, CHASSIS_PROVIDER, CHASSIS_REGION,
+// CHASSIS_CLUSTER). For Kubernetes, it also reads namespace and pod name.
+func (d *Deploy) Environment() Environment {
+	env := Environment{
+		Runtime: detectRuntime(),
+		Service: d.name,
+	}
+
+	if h, err := os.Hostname(); err == nil {
+		env.Hostname = h
+	}
+
+	// Read environment block from deploy.json if deploy dir was found.
+	if d.found {
+		data, err := os.ReadFile(filepath.Join(d.dir, "deploy.json"))
+		if err == nil {
+			var raw struct {
+				Environment struct {
+					Env      string `json:"env"`
+					Provider string `json:"provider"`
+					Region   string `json:"region"`
+					Cluster  string `json:"cluster"`
+				} `json:"environment"`
+			}
+			if json.Unmarshal(data, &raw) == nil {
+				env.Env = raw.Environment.Env
+				env.Provider = raw.Environment.Provider
+				env.Region = raw.Environment.Region
+				env.Cluster = raw.Environment.Cluster
+			}
+		}
+	}
+
+	// Env var overrides (highest priority).
+	if v := os.Getenv("CHASSIS_ENV"); v != "" {
+		env.Env = v
+	}
+	if v := os.Getenv("CHASSIS_PROVIDER"); v != "" {
+		env.Provider = v
+	}
+	if v := os.Getenv("CHASSIS_REGION"); v != "" {
+		env.Region = v
+	}
+	if v := os.Getenv("CHASSIS_CLUSTER"); v != "" {
+		env.Cluster = v
+	}
+
+	// Kubernetes-specific fields.
+	if env.Runtime == "kubernetes" {
+		if nsData, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); err == nil {
+			env.Namespace = strings.TrimSpace(string(nsData))
+		}
+		if podName := os.Getenv("HOSTNAME"); podName != "" {
+			env.PodName = podName
+		}
+	}
+
+	return env
 }

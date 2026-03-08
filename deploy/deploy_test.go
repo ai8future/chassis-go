@@ -269,3 +269,79 @@ func TestDiscoverNameNotFound(t *testing.T) {
 		t.Fatalf("expected name my-service even when not found, got %s", d.Name())
 	}
 }
+
+func TestEnvironmentFromDeployJSON(t *testing.T) {
+	dir := t.TempDir()
+	meta := `{"chassis":"9.0","environment":{"env":"prod","provider":"aws","region":"us-east-1","cluster":"main"}}`
+	os.WriteFile(filepath.Join(dir, "deploy.json"), []byte(meta), 0600)
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+	env := d.Environment()
+	if env.Env != "prod" {
+		t.Fatalf("expected prod, got %s", env.Env)
+	}
+	if env.Provider != "aws" {
+		t.Fatalf("expected aws, got %s", env.Provider)
+	}
+	if env.Region != "us-east-1" {
+		t.Fatalf("expected us-east-1, got %s", env.Region)
+	}
+	if env.Cluster != "main" {
+		t.Fatalf("expected main, got %s", env.Cluster)
+	}
+	if env.Service != "test-svc" {
+		t.Fatalf("expected test-svc, got %s", env.Service)
+	}
+	if env.Hostname == "" {
+		t.Fatal("expected hostname")
+	}
+}
+
+func TestEnvironmentEnvVarOverride(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "deploy.json"), []byte(`{"chassis":"9.0","environment":{"env":"staging"}}`), 0600)
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	t.Setenv("CHASSIS_ENV", "prod")
+	d := deploy.Discover("test-svc")
+	env := d.Environment()
+	if env.Env != "prod" {
+		t.Fatalf("expected prod override, got %s", env.Env)
+	}
+}
+
+func TestEnvironmentK8sDetection(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "deploy.json"), []byte(`{"chassis":"9.0"}`), 0600)
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+	d := deploy.Discover("test-svc")
+	env := d.Environment()
+	if env.Runtime != "kubernetes" {
+		t.Fatalf("expected kubernetes, got %s", env.Runtime)
+	}
+}
+
+func TestEnvironmentRuntimeDetection(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "deploy.json"), []byte(`{"chassis":"9.0"}`), 0600)
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+	env := d.Environment()
+	valid := map[string]bool{"kubernetes": true, "container": true, "vm": true, "bare-metal": true}
+	if !valid[env.Runtime] {
+		t.Fatalf("unexpected runtime: %s", env.Runtime)
+	}
+}
+
+func TestEnvironmentNotFound(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+	env := d.Environment()
+	if env.Service != "test-svc" {
+		t.Fatalf("expected test-svc, got %s", env.Service)
+	}
+	if env.Hostname == "" {
+		t.Fatal("expected hostname")
+	}
+}
