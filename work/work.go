@@ -9,13 +9,13 @@ import (
 	"runtime"
 	"sync"
 
-	chassis "github.com/ai8future/chassis-go/v8"
+	chassis "github.com/ai8future/chassis-go/v9"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
-const tracerName = "github.com/ai8future/chassis-go/v8/work"
+const tracerName = "github.com/ai8future/chassis-go/v9/work"
 
 // Option configures a work function.
 type Option func(*config)

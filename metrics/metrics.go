@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	chassis "github.com/ai8future/chassis-go/v8"
+	chassis "github.com/ai8future/chassis-go/v9"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"

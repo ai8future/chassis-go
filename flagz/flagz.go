@@ -7,7 +7,7 @@ import (
 	"context"
 	"hash/fnv"
 
-	chassis "github.com/ai8future/chassis-go/v8"
+	chassis "github.com/ai8future/chassis-go/v9"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )

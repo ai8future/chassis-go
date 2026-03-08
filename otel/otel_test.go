@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v8"
-	"github.com/ai8future/chassis-go/v8/otel"
+	chassis "github.com/ai8future/chassis-go/v9"
+	"github.com/ai8future/chassis-go/v9/otel"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -35,7 +35,7 @@ func isCollectorUnavailable(err error) bool {
 
 func TestInitReturnsShutdownFunc(t *testing.T) {
 	chassis.ResetVersionCheck()
-	chassis.RequireMajor(8)
+	chassis.RequireMajor(9)
 
 	shutdown := otel.Init(otel.Config{
 		ServiceName:    "test-svc",
@@ -52,7 +52,7 @@ func TestInitReturnsShutdownFunc(t *testing.T) {
 
 func TestDetachContextPreservesSpanContext(t *testing.T) {
 	chassis.ResetVersionCheck()
-	chassis.RequireMajor(8)
+	chassis.RequireMajor(9)
 
 	// Create a span context with a known trace ID.
 	traceID, _ := trace.TraceIDFromHex("4bf92f3577b34da6a3ce929d0e0e4736")
@@ -91,7 +91,7 @@ func TestDetachContextPreservesSpanContext(t *testing.T) {
 
 func TestInit_InsecureExplicitlySet(t *testing.T) {
 	chassis.ResetVersionCheck()
-	chassis.RequireMajor(8)
+	chassis.RequireMajor(9)
 
 	// With Insecure=true, Init should use plaintext gRPC.
 	shutdown := otel.Init(otel.Config{
@@ -109,7 +109,7 @@ func TestInit_InsecureExplicitlySet(t *testing.T) {
 
 func TestInit_DefaultTLS(t *testing.T) {
 	chassis.ResetVersionCheck()
-	chassis.RequireMajor(8)
+	chassis.RequireMajor(9)
 
 	// Default (Insecure=false) should attempt TLS connection.
 	// Without a TLS endpoint, Init still succeeds (lazy connection) but
@@ -150,7 +150,7 @@ func TestRatioSampleReturnsNonNil(t *testing.T) {
 
 func TestInitWithCustomSampler(t *testing.T) {
 	chassis.ResetVersionCheck()
-	chassis.RequireMajor(8)
+	chassis.RequireMajor(9)
 
 	shutdown := otel.Init(otel.Config{
 		ServiceName:    "test-custom-sampler",

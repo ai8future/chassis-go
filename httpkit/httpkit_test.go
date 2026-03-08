@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	chassis "github.com/ai8future/chassis-go/v8"
-	"github.com/ai8future/chassis-go/v8/errors"
-	"github.com/ai8future/chassis-go/v8/registry"
+	chassis "github.com/ai8future/chassis-go/v9"
+	"github.com/ai8future/chassis-go/v9/errors"
+	"github.com/ai8future/chassis-go/v9/registry"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -21,7 +21,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(8)
+	chassis.RequireMajor(9)
 	initRegistryForTest()
 	os.Exit(m.Run())
 }

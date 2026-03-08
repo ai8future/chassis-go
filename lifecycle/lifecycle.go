@@ -10,8 +10,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	chassis "github.com/ai8future/chassis-go/v8"
-	"github.com/ai8future/chassis-go/v8/registry"
+	chassis "github.com/ai8future/chassis-go/v9"
+	"github.com/ai8future/chassis-go/v9/registry"
 	"golang.org/x/sync/errgroup"
 )
 

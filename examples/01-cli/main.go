@@ -10,9 +10,9 @@
 package main
 
 import (
-	chassis "github.com/ai8future/chassis-go/v8"
-	"github.com/ai8future/chassis-go/v8/config"
-	"github.com/ai8future/chassis-go/v8/logz"
+	chassis "github.com/ai8future/chassis-go/v9"
+	"github.com/ai8future/chassis-go/v9/config"
+	"github.com/ai8future/chassis-go/v9/logz"
 )
 
 type AppConfig struct {
@@ -22,7 +22,7 @@ type AppConfig struct {
 }
 
 func main() {
-	chassis.RequireMajor(8)
+	chassis.RequireMajor(9)
 	cfg := config.MustLoad[AppConfig]()
 	logger := logz.New(cfg.LogLevel)
 

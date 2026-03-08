@@ -8,11 +8,11 @@ How to get the most out of xyops from a chassis-go service. This guide covers ev
 
 ```go
 import (
-    chassis "github.com/ai8future/chassis-go/v8"
-    "github.com/ai8future/chassis-go/v8/config"
-    "github.com/ai8future/chassis-go/v8/lifecycle"
-    "github.com/ai8future/chassis-go/v8/logz"
-    "github.com/ai8future/chassis-go/v8/xyops"
+    chassis "github.com/ai8future/chassis-go/v9"
+    "github.com/ai8future/chassis-go/v9/config"
+    "github.com/ai8future/chassis-go/v9/lifecycle"
+    "github.com/ai8future/chassis-go/v9/logz"
+    "github.com/ai8future/chassis-go/v9/xyops"
 )
 
 type Config struct {
@@ -22,7 +22,7 @@ type Config struct {
 }
 
 func main() {
-    chassis.RequireMajor(8)
+    chassis.RequireMajor(9)
     cfg := config.MustLoad[Config]()
     log := logz.New(cfg.LogLevel)
 
@@ -340,7 +340,7 @@ If your service executes jobs dispatched by xyops (deployments, migrations, batc
 ### Basic worker setup
 
 ```go
-import "github.com/ai8future/chassis-go/v8/xyopsworker"
+import "github.com/ai8future/chassis-go/v9/xyopsworker"
 
 type Config struct {
     LogLevel string              `env:"LOG_LEVEL" default:"info"`
@@ -348,7 +348,7 @@ type Config struct {
 }
 
 func main() {
-    chassis.RequireMajor(8)
+    chassis.RequireMajor(9)
     cfg := config.MustLoad[Config]()
 
     worker := xyopsworker.New(cfg.Worker)
@@ -506,7 +506,7 @@ Use `Dispatch` to test without a WebSocket connection:
 
 ```go
 func TestDeployHandler(t *testing.T) {
-    chassis.RequireMajor(8)
+    chassis.RequireMajor(9)
 
     worker := xyopsworker.New(xyopsworker.Config{
         MasterURL: "wss://unused",
@@ -542,7 +542,7 @@ type Config struct {
 }
 
 func main() {
-    chassis.RequireMajor(8)
+    chassis.RequireMajor(9)
 
     d := deploy.Discover("my-service")
     d.LoadEnv() // loads XYOPS_API_KEY, XYOPS_WORKER_SECRET_KEY from deploy dir
@@ -615,7 +615,7 @@ CLI tools and batch processes should use xyops for job orchestration and operati
 
 ```go
 func main() {
-    chassis.RequireMajor(8)
+    chassis.RequireMajor(9)
     cfg := config.MustLoad[CLIConfig]()
 
     registry.InitCLI(chassis.Version)
@@ -661,7 +661,7 @@ func main() {
 
 ```go
 func main() {
-    chassis.RequireMajor(8)
+    chassis.RequireMajor(9)
     cfg := config.MustLoad[CLIConfig]()
 
     registry.InitCLI(chassis.Version)
@@ -715,7 +715,7 @@ func waitForJob(ctx context.Context, ops *xyops.Client, jobID string) error {
 
 ```go
 func main() {
-    chassis.RequireMajor(8)
+    chassis.RequireMajor(9)
     cfg := config.MustLoad[CLIConfig]()
 
     ops := xyops.New(cfg.Xyops)

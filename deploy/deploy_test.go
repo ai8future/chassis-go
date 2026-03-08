@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v8"
-	"github.com/ai8future/chassis-go/v8/deploy"
+	chassis "github.com/ai8future/chassis-go/v9"
+	"github.com/ai8future/chassis-go/v9/deploy"
 )
 
-func init() { chassis.RequireMajor(8) }
+func init() { chassis.RequireMajor(9) }
 
 func TestDiscoverNotFound(t *testing.T) {
 	t.Setenv("CHASSIS_DEPLOY_DIR", "/tmp/nonexistent-deploy-dir-test")

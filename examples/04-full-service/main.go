@@ -23,17 +23,17 @@ import (
 	"net/http"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v8"
-	"github.com/ai8future/chassis-go/v8/config"
-	chassiserrors "github.com/ai8future/chassis-go/v8/errors"
-	"github.com/ai8future/chassis-go/v8/guard"
-	"github.com/ai8future/chassis-go/v8/health"
-	"github.com/ai8future/chassis-go/v8/httpkit"
-	"github.com/ai8future/chassis-go/v8/lifecycle"
-	"github.com/ai8future/chassis-go/v8/logz"
-	"github.com/ai8future/chassis-go/v8/metrics"
-	otelinit "github.com/ai8future/chassis-go/v8/otel"
-	"github.com/ai8future/chassis-go/v8/secval"
+	chassis "github.com/ai8future/chassis-go/v9"
+	"github.com/ai8future/chassis-go/v9/config"
+	chassiserrors "github.com/ai8future/chassis-go/v9/errors"
+	"github.com/ai8future/chassis-go/v9/guard"
+	"github.com/ai8future/chassis-go/v9/health"
+	"github.com/ai8future/chassis-go/v9/httpkit"
+	"github.com/ai8future/chassis-go/v9/lifecycle"
+	"github.com/ai8future/chassis-go/v9/logz"
+	"github.com/ai8future/chassis-go/v9/metrics"
+	otelinit "github.com/ai8future/chassis-go/v9/otel"
+	"github.com/ai8future/chassis-go/v9/secval"
 )
 
 type AppConfig struct {
@@ -43,7 +43,7 @@ type AppConfig struct {
 }
 
 func main() {
-	chassis.RequireMajor(8)
+	chassis.RequireMajor(9)
 
 	cfg := config.MustLoad[AppConfig]()
 	logger := logz.New(cfg.LogLevel)

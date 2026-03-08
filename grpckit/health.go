@@ -3,7 +3,7 @@ package grpckit
 import (
 	"context"
 
-	chassis "github.com/ai8future/chassis-go/v8"
+	chassis "github.com/ai8future/chassis-go/v9"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )

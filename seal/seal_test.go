@@ -3,11 +3,11 @@ package seal_test
 import (
 	"testing"
 
-	chassis "github.com/ai8future/chassis-go/v8"
-	"github.com/ai8future/chassis-go/v8/seal"
+	chassis "github.com/ai8future/chassis-go/v9"
+	"github.com/ai8future/chassis-go/v9/seal"
 )
 
-func init() { chassis.RequireMajor(8) }
+func init() { chassis.RequireMajor(9) }
 
 func TestEncryptDecrypt(t *testing.T) {
 	plaintext := []byte("hello, world")

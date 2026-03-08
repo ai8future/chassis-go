@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ai8future/chassis-go/v8/guard"
+	"github.com/ai8future/chassis-go/v9/guard"
 )
 
 func TestMaxBodyRejectsOversizedRequest(t *testing.T) {
