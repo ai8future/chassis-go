@@ -10,7 +10,7 @@ Practical guide for teams adopting chassis-go into an existing Go codebase.
 
 **What this is not**: An opinionated framework. Chassis doesn't own your dependency injection, routing, or service mesh. It provides building blocks that you wire together explicitly.
 
-**Service modules vs. utility modules**: Chassis modules fall into two categories. *Service modules* (`httpkit`, `grpckit`, `lifecycle`, `registry`) require a running service with `lifecycle.Run()` and an active registry — they crash if used without it. *Utility modules* (`config`, `logz`, `errors`, `call`, `work`, `health`, `secval`, `flagz`, `metrics`, `otel`, `testkit`) work anywhere — services, libraries, CLI tools. A Go module that imports chassis utilities can be consumed by any application that calls `RequireMajor(9)`.
+**Service modules vs. utility modules**: Chassis modules fall into two categories. *Service modules* (`httpkit`, `grpckit`, `lifecycle`, `registry`) require a running service with `lifecycle.Run()` and an active registry — they crash if used without it. *Utility modules* (`config`, `logz`, `errors`, `call`, `work`, `health`, `secval`, `flagz`, `metrics`, `otel`, `testkit`, `cache`, `seal`, `tick`, `webhook`, `deploy`) work anywhere — services, libraries, CLI tools. A Go module that imports chassis utilities can be consumed by any application that calls `RequireMajor(9)`.
 
 ## Installation
 
@@ -32,7 +32,7 @@ Every service must declare which major version of chassis it supports. This prev
 
 ```go
 func main() {
-    chassis.RequireMajor(9) // crashes if chassis major version != 8
+    chassis.RequireMajor(9) // crashes if chassis major version != 9
     // ... rest of startup
 }
 ```
@@ -792,6 +792,116 @@ func TestMyHandler(t *testing.T) {
 - `testkit.NewLogger` writes to `t.Log`, so output is captured per-test and only shown on failure (or with `-v`).
 - `testkit.SetEnv` calls `t.Setenv` for each key-value pair, providing automatic cleanup. It is a convenience for setting multiple vars at once.
 - `testkit.GetFreePort` asks the OS for an available port. There is a small TOCTOU window between getting the port and binding to it, but it's reliable for tests.
+
+---
+
+### deploy — Convention-based deploy directory
+
+**When to use**: Your service needs to discover deploy-time configuration, environment files, TLS certificates, or feature flags from a convention-based directory layout. Also provides runtime environment detection, endpoint declarations, dependency topology, and structured health payloads.
+
+**Discovery**:
+
+```go
+import "github.com/ai8future/chassis-go/v9/deploy"
+
+d := deploy.Discover("my-service")
+if d.Found() {
+    fmt.Println("deploy dir:", d.Dir())
+}
+```
+
+Search order (first match wins):
+1. `$CHASSIS_DEPLOY_DIR` (env var override)
+2. `/app/deploy/<name>/` (K8s convention)
+3. `~/deploy/<name>/` (developer workstation)
+4. `/deploy/<name>/` (system-level)
+
+**deploy.json format** (with chassis spec version):
+
+```json
+{
+  "chassis": "9.0",
+  "version": "2.4.1",
+  "environment": {
+    "env": "production",
+    "provider": "aws",
+    "region": "us-east-1",
+    "cluster": "prod-01"
+  },
+  "endpoints": {
+    "api": {"port": 8080, "protocol": "http", "path": "/v1"},
+    "grpc": {"port": 9090, "protocol": "h2c"}
+  },
+  "dependencies": [
+    {"service": "postgres", "port": 5432, "protocol": "tcp"},
+    {"service": "redis", "port": 6379, "required": false}
+  ]
+}
+```
+
+**Key methods**:
+
+```go
+// Spec version from deploy.json ("chassis" field, defaults to "8.0" for pre-v9 files)
+spec := d.Spec() // "9.0"
+
+// Runtime environment detection + deploy.json env block + env var overrides
+env := d.Environment()
+// env.Runtime: "kubernetes", "container", "vm", or "bare-metal"
+// env.Env, env.Provider, env.Region, env.Cluster (overridden by CHASSIS_ENV, etc.)
+// env.Namespace, env.PodName (auto-detected in Kubernetes)
+
+// Typed endpoint objects from deploy.json
+endpoints := d.Endpoints()          // map[string]Endpoint
+api, ok := d.Endpoint("api")       // single lookup
+// api.Port, api.Protocol (default "http"), api.Path
+
+// Service dependency topology
+deps := d.Dependencies()
+// deps[i].Service, deps[i].Required (*bool, defaults to true)
+
+// Structured health payload
+status := d.Health(map[string]string{
+    "database": "ok",
+    "cache":    "ok",
+})
+// status.Service, status.Version, status.ChassisSpec, status.Runtime,
+// status.Uptime (float64 seconds), status.Endpoints, status.Components
+```
+
+**Typical usage**:
+
+```go
+func main() {
+    chassis.RequireMajor(9)
+
+    d := deploy.Discover("my-service")
+    d.LoadEnv() // load config.env and secrets.env into os env
+
+    cfg := config.MustLoad[AppConfig]()
+    logger := logz.New(cfg.LogLevel)
+
+    env := d.Environment()
+    logger.Info("starting", "runtime", env.Runtime, "env", env.Env)
+
+    // Use endpoints for service registration
+    endpoints := d.Endpoints()
+    logger.Info("endpoints", "count", len(endpoints))
+
+    // Health endpoint returns structured payload
+    mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+        status := d.Health(map[string]string{"self": "ok"})
+        json.NewEncoder(w).Encode(status)
+    })
+}
+```
+
+**Integration notes**:
+- `deploy` is a utility module — it works without `lifecycle.Run()` or the registry.
+- No deploy.json caching — each method re-reads the file. This keeps behavior simple and consistent.
+- `LoadEnv()` never overwrites existing env vars — explicit env vars always take precedence.
+- Environment variable overrides (`CHASSIS_ENV`, `CHASSIS_PROVIDER`, `CHASSIS_REGION`, `CHASSIS_CLUSTER`) always take highest priority, above deploy.json values.
+- `Dependency.Required` uses `*bool` in Go — `nil` defaults to `true`. Set explicitly to `false` for optional dependencies.
 
 ---
 

@@ -3,10 +3,10 @@
 A composable Go service toolkit for building production-grade microservices. Toolkit, not framework — chassis never owns `main()`, never hides wiring behind magic, and every package is independently importable.
 
 ```
-go get github.com/ai8future/chassis-go/v7
+go get github.com/ai8future/chassis-go/v9
 ```
 
-**Current version:** 7.0.0 &middot; **Go:** 1.25.5+ &middot; **License:** MIT
+**Current version:** 9.0.0 &middot; **Go:** 1.25.5+ &middot; **License:** MIT
 
 ---
 
@@ -24,33 +24,43 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 
 | Package | Import | Purpose |
 |---------|--------|---------|
-| `chassis` | `github.com/ai8future/chassis-go/v7` | Version gate (`RequireMajor(7)`) and deterministic port assignment (`Port(name, offset)` via djb2) |
-| `config` | `.../v6/config` | Generic env-to-struct config loader via struct tags. Panics on missing required vars |
-| `logz` | `.../v6/logz` | Structured JSON logging wrapping `log/slog` with automatic OTel `trace_id`/`span_id` injection |
-| `lifecycle` | `.../v6/lifecycle` | Signal-aware graceful shutdown orchestration via `errgroup` |
-| `registry` | `.../v6/registry` | File-based service registration at `/tmp/chassis/`. Status reporting, port declarations, custom commands, heartbeat |
-| `testkit` | `.../v6/testkit` | Test helpers: `NewLogger` (writes to `t.Log`), `SetEnv` (with cleanup), `GetFreePort` |
+| `chassis` | `github.com/ai8future/chassis-go/v9` | Version gate (`RequireMajor(9)`) and deterministic port assignment (`Port(name, offset)` via djb2) |
+| `config` | `.../v9/config` | Generic env-to-struct config loader via struct tags. Panics on missing required vars |
+| `logz` | `.../v9/logz` | Structured JSON logging wrapping `log/slog` with automatic OTel `trace_id`/`span_id` injection |
+| `lifecycle` | `.../v9/lifecycle` | Signal-aware graceful shutdown orchestration via `errgroup` |
+| `registry` | `.../v9/registry` | File-based service registration at `/tmp/chassis/`. Status reporting, port declarations, custom commands, heartbeat |
+| `testkit` | `.../v9/testkit` | Test helpers: `NewLogger` (writes to `t.Log`), `SetEnv` (with cleanup), `GetFreePort` |
 
 ### Tier 2: Transports and Clients
 
 | Package | Import | Purpose |
 |---------|--------|---------|
-| `httpkit` | `.../v6/httpkit` | HTTP middleware: RequestID, Logging, Recovery, Tracing. JSON error responses |
-| `grpckit` | `.../v6/grpckit` | gRPC interceptors: Logging, Recovery, Metrics, Tracing. Health service registration |
-| `health` | `.../v6/health` | Parallel health check aggregation with HTTP handler and gRPC adapter |
-| `call` | `.../v6/call` | Resilient outbound HTTP client: retry with exponential backoff, circuit breaker, OTel spans |
+| `httpkit` | `.../v9/httpkit` | HTTP middleware: RequestID, Logging, Recovery, Tracing. JSON error responses |
+| `grpckit` | `.../v9/grpckit` | gRPC interceptors: Logging, Recovery, Metrics, Tracing. Health service registration |
+| `health` | `.../v9/health` | Parallel health check aggregation with HTTP handler and gRPC adapter |
+| `call` | `.../v9/call` | Resilient outbound HTTP client: retry with exponential backoff, circuit breaker, OTel spans |
 
 ### Tier 3: Cross-Cutting
 
 | Package | Import | Purpose |
 |---------|--------|---------|
-| `guard` | `.../v6/guard` | HTTP guards: rate limiter (LRU), CORS, IP filter, security headers, body limits, timeouts |
-| `flagz` | `.../v6/flagz` | Feature flags with percentage rollouts (FNV-1a), pluggable sources, OTel span events |
-| `metrics` | `.../v6/metrics` | OTel-native metrics recorder with cardinality protection (max 1000 label combos) |
-| `otel` | `.../v6/otel` | OpenTelemetry bootstrap: OTLP gRPC traces + metrics, configurable samplers |
-| `errors` | `.../v6/errors` | Unified error type with dual HTTP/gRPC codes and RFC 9457 Problem Details |
-| `secval` | `.../v6/secval` | JSON security validation: blocks prototype pollution keys (`__proto__`, `constructor`, `prototype`) and deep nesting |
-| `work` | `.../v6/work` | Structured concurrency: `Map`, `All`, `Race`, `Stream` — all OTel-traced |
+| `guard` | `.../v9/guard` | HTTP guards: rate limiter (LRU), CORS, IP filter, security headers, body limits, timeouts |
+| `flagz` | `.../v9/flagz` | Feature flags with percentage rollouts (FNV-1a), pluggable sources, OTel span events |
+| `metrics` | `.../v9/metrics` | OTel-native metrics recorder with cardinality protection (max 1000 label combos) |
+| `otel` | `.../v9/otel` | OpenTelemetry bootstrap: OTLP gRPC traces + metrics, configurable samplers |
+| `errors` | `.../v9/errors` | Unified error type with dual HTTP/gRPC codes and RFC 9457 Problem Details |
+| `secval` | `.../v9/secval` | JSON security validation: blocks prototype pollution keys (`__proto__`, `constructor`, `prototype`) and deep nesting |
+| `work` | `.../v9/work` | Structured concurrency: `Map`, `All`, `Race`, `Stream` — all OTel-traced |
+
+### Tier 4: Utilities
+
+| Package | Import | Purpose |
+|---------|--------|---------|
+| `cache` | `.../v9/cache` | Generic LRU+TTL in-memory cache with `Prune()` |
+| `seal` | `.../v9/seal` | AES-256-GCM encrypt/decrypt, HMAC-SHA256 sign/verify, temporary tokens |
+| `tick` | `.../v9/tick` | Periodic task components for `lifecycle.Run` (`Every` with `Immediate`/`OnError` options) |
+| `webhook` | `.../v9/webhook` | HMAC-signed webhook send with retry, delivery tracking, `VerifyPayload` |
+| `deploy` | `.../v9/deploy` | Convention-based deploy directory discovery, environment detection, endpoints, dependencies, health |
 
 **Tier isolation**: If you only use Tier 1 packages, only `golang.org/x/sync` is pulled in — no gRPC, no OTel SDK.
 
@@ -68,13 +78,13 @@ import (
     "net/http"
     "time"
 
-    chassis "github.com/ai8future/chassis-go/v7"
-    "github.com/ai8future/chassis-go/v7/config"
-    "github.com/ai8future/chassis-go/v7/guard"
-    "github.com/ai8future/chassis-go/v7/health"
-    "github.com/ai8future/chassis-go/v7/httpkit"
-    "github.com/ai8future/chassis-go/v7/lifecycle"
-    "github.com/ai8future/chassis-go/v7/logz"
+    chassis "github.com/ai8future/chassis-go/v9"
+    "github.com/ai8future/chassis-go/v9/config"
+    "github.com/ai8future/chassis-go/v9/guard"
+    "github.com/ai8future/chassis-go/v9/health"
+    "github.com/ai8future/chassis-go/v9/httpkit"
+    "github.com/ai8future/chassis-go/v9/lifecycle"
+    "github.com/ai8future/chassis-go/v9/logz"
 )
 
 type AppConfig struct {
@@ -84,7 +94,7 @@ type AppConfig struct {
 
 func main() {
     // Version gate — must be first
-    chassis.RequireMajor(7)
+    chassis.RequireMajor(9)
 
     cfg := config.MustLoad[AppConfig]()
     logger := logz.New(cfg.LogLevel)
@@ -202,7 +212,7 @@ Every service automatically registers itself at `/tmp/chassis/<service-name>/` w
 
 **Module-level API** — no object to pass around:
 ```go
-import "github.com/ai8future/chassis-go/v7/registry"
+import "github.com/ai8future/chassis-go/v9/registry"
 
 // Report status (written to the service log)
 registry.Status("processing batch 42")
@@ -483,7 +493,7 @@ chassis-go enforces a mandatory version compatibility contract. Every service mu
 
 ```go
 func main() {
-    chassis.RequireMajor(7)  // must be the first chassis call
+    chassis.RequireMajor(9)  // must be the first chassis call
     // ...
 }
 ```

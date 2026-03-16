@@ -1,5 +1,17 @@
 # Changelog
 
+## [9.0.2] - 2026-03-16
+
+### Improvements
+
+- **deploy**: `RunHook()` now returns `error` instead of silently discarding hook execution failures
+- **deploy**: Default `Protocol` to `"tcp"` for dependencies missing the field in deploy.json
+- **deploy**: New tests for environment override (provider/region/cluster) and default dependency protocol
+- **docs**: Update INTEGRATING.md with full `deploy` module documentation section
+- **docs**: Update README.md import paths from v6/v7 to v9, fix version badge
+
+(Claude Code:Opus 4.6)
+
 ## [9.0.1] - 2026-03-16
 
 ### New Features

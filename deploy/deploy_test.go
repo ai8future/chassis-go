@@ -491,6 +491,41 @@ func TestHealth(t *testing.T) {
 	}
 }
 
+func TestEnvironmentProviderRegionClusterOverride(t *testing.T) {
+	dir := t.TempDir()
+	meta := `{"chassis":"9.0","environment":{"provider":"gcp","region":"europe-west1","cluster":"alpha"}}`
+	os.WriteFile(filepath.Join(dir, "deploy.json"), []byte(meta), 0600)
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	t.Setenv("CHASSIS_PROVIDER", "aws")
+	t.Setenv("CHASSIS_REGION", "us-west-2")
+	t.Setenv("CHASSIS_CLUSTER", "beta")
+	d := deploy.Discover("test-svc")
+	env := d.Environment()
+	if env.Provider != "aws" {
+		t.Fatalf("expected CHASSIS_PROVIDER override aws, got %s", env.Provider)
+	}
+	if env.Region != "us-west-2" {
+		t.Fatalf("expected CHASSIS_REGION override us-west-2, got %s", env.Region)
+	}
+	if env.Cluster != "beta" {
+		t.Fatalf("expected CHASSIS_CLUSTER override beta, got %s", env.Cluster)
+	}
+}
+
+func TestDependenciesDefaultProtocol(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "deploy.json"), []byte(`{"chassis":"9.0","dependencies":[{"service":"db","port":5432}]}`), 0600)
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+	deps := d.Dependencies()
+	if len(deps) != 1 {
+		t.Fatalf("expected 1, got %d", len(deps))
+	}
+	if deps[0].Protocol != "tcp" {
+		t.Fatalf("expected default protocol tcp, got %s", deps[0].Protocol)
+	}
+}
+
 func TestHealthNoDeployJSON(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CHASSIS_DEPLOY_DIR", dir)

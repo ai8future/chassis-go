@@ -265,6 +265,9 @@ func (d *Deploy) Dependencies() []Dependency {
 			v := true
 			raw.Dependencies[i].Required = &v
 		}
+		if raw.Dependencies[i].Protocol == "" {
+			raw.Dependencies[i].Protocol = "tcp"
+		}
 	}
 	return raw.Dependencies
 }
@@ -309,19 +312,19 @@ func (d *Deploy) FlagSource() *FlagLookup {
 	return &FlagLookup{flags: raw}
 }
 
-func (d *Deploy) RunHook(name string) {
+func (d *Deploy) RunHook(name string) error {
 	if !d.found {
-		return
+		return nil
 	}
 	hooksDir := filepath.Join(d.dir, "hooks")
 	hookPath := filepath.Join(hooksDir, name)
 	if !strings.HasPrefix(hookPath, hooksDir+string(os.PathSeparator)) {
-		return // path traversal attempt
+		return nil // path traversal attempt
 	}
 	if _, err := os.Stat(hookPath); err != nil {
-		return
+		return nil
 	}
-	runHookExec(hookPath)
+	return runHookExec(hookPath)
 }
 
 func parseEnvFile(path string) map[string]string {
@@ -352,18 +355,13 @@ func parseEnvFile(path string) map[string]string {
 	return result
 }
 
-func runHookExec(path string) {
+func runHookExec(path string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path)
 	cmd.Dir = filepath.Dir(path)
-	out, err := cmd.CombinedOutput()
-	if len(out) > 0 {
-		_ = out
-	}
-	if err != nil {
-		_ = err
-	}
+	_, err := cmd.CombinedOutput()
+	return err
 }
 
 // detectRuntime returns the detected runtime environment.
