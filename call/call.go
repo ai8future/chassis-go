@@ -107,6 +107,18 @@ func WithBreaker(b Breaker) Option {
 	}
 }
 
+// WithHTTPClient replaces the underlying *http.Client used by the call
+// Client. This is useful when you need a custom Transport (e.g., proxy
+// routing, SSRF-safe dialer) or a custom CheckRedirect policy. The
+// timeout set by [WithTimeout] is applied via a per-request context and
+// does not override the http.Client.Timeout field — set that to zero or
+// remove it if you want the call-level timeout to be authoritative.
+func WithHTTPClient(hc *http.Client) Option {
+	return func(c *Client) {
+		c.httpClient = hc
+	}
+}
+
 // WithTokenSource configures a TokenSource that provides a Bearer token
 // injected into the Authorization header of every outbound request.
 func WithTokenSource(source TokenSource) Option {

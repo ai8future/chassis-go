@@ -1,5 +1,32 @@
 # Changelog
 
+## [9.0.1] - 2026-03-16
+
+### New Features
+
+- **call**: Add `WithHTTPClient(hc)` option to replace the underlying `*http.Client`, enabling custom transports (proxy routing, SSRF-safe dialer) and redirect policies while preserving call-level retry, circuit breaker, and timeout middleware
+
+(Claude Code:Opus 4.6)
+
+## [9.0.0] - 2026-03-08
+
+### Breaking Changes
+
+- **Module path migrated to v9**: All import paths changed from `chassis-go/v8` to `chassis-go/v9`. All consumer code must update imports and call `chassis.RequireMajor(9)`.
+
+### New Features
+
+- **deploy**: Add `Spec()` method — reads `"chassis"` field from deploy.json for spec versioning (defaults to `"8.0"` for pre-v9 files)
+- **deploy**: Add `Environment()` method — auto-detects runtime environment (kubernetes/container/vm/bare-metal) with deploy.json `environment` block and env var overrides (`CHASSIS_ENV`, `CHASSIS_PROVIDER`, `CHASSIS_REGION`, `CHASSIS_CLUSTER`); Kubernetes auto-detects namespace and pod name
+- **deploy**: Add `Endpoints()` and `Endpoint(name)` methods — typed endpoint objects with port, protocol (default `"http"`), and path from deploy.json
+- **deploy**: Add `Dependencies()` method — service topology declarations with required/optional (`Required` defaults to `true` when omitted)
+- **deploy**: Add `Health(components)` method — structured health payload with service name, version, chassis spec, runtime, uptime (float64 seconds), environment, endpoints, and component status
+- **deploy**: New types: `Environment`, `Endpoint`, `Dependency`, `HealthStatus`
+- **deploy**: Add K8s discovery path `/app/deploy/<svc>/` at priority 2 in search order (`CHASSIS_DEPLOY_DIR` → `/app/deploy/<svc>/` → `~/deploy/<svc>/` → `/deploy/<svc>/`)
+- **deploy**: Deploy struct gained `name` and `created` fields for service identity and uptime tracking
+
+(Claude Code:Opus 4.6)
+
 ## [8.0.3] - 2026-03-07
 
 ### Bug Fixes
