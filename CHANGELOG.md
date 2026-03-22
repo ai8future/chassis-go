@@ -1,5 +1,19 @@
 # Changelog
 
+## [9.0.8] - 2026-03-22
+
+### New Features
+
+- **graphkit**: New HTTP client for graphiti_svc -- `NewClient(baseURL, opts...)` creates a client with configurable tenant ID and timeout (default 5s); `Search(ctx, query)` searches the knowledge graph; `Recall(ctx, query, at)` retrieves entities optionally at a point in time; `Cypher(ctx, query, params)` executes Cypher queries; `EntityGraph(ctx, entityName, opts...)` returns graph neighborhood with configurable depth; `EntityTimeline(ctx, entityName)` returns temporal event history; `Paths(ctx, from, to, opts...)` finds paths with configurable MaxHops; all requests set X-Tenant-ID and X-Trace-ID headers via tracekit
+- **lakekit**: New HTTP client for lake_svc -- `NewClient(baseURL, opts...)` creates a client with configurable tenant ID and timeout (default 5s); `Query(ctx, sql, params...)` executes SQL queries; `EntityHistory(ctx, entityID)` returns entity event history; `Datasets(ctx)` lists all datasets with schema; `DatasetStats(ctx, name)` returns dataset metadata; all requests set X-Tenant-ID and X-Trace-ID headers via tracekit
+
+### Tests
+
+- **graphkit**: 12 tests -- search with header verification, recall with/without time, cypher with/without params, entity graph with depth, entity graph 404, entity timeline with headers, entity timeline 404, paths with MaxHops, service unavailable 503, network timeout
+- **lakekit**: 10 tests -- query with header verification, query without params, entity history with headers, entity history 404, datasets list with headers, dataset stats with headers, dataset stats 404, service unavailable 503, network timeout, forbidden 403
+
+(Claude Code:Opus 4.6)
+
 ## [9.0.7] - 2026-03-22
 
 ### New Features
