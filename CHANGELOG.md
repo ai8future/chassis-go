@@ -1,5 +1,17 @@
 # Changelog
 
+## [10.0.1] - 2026-03-22
+
+### New Features
+
+- **lifecycle**: Wire kafkakit, heartbeatkit, and announcekit into the lifecycle module. `Run()` now accepts `Option` values mixed with components: `WithKafkaConfig(cfg)` enables automatic kafkakit publisher creation, heartbeatkit liveness publishing, and announcekit service lifecycle events (started/stopping). `WithServiceName(name)` overrides the service name for these integrations. When kafkakit is configured, the publisher is created on startup and closed on shutdown; heartbeatkit and announcekit are started/stopped automatically. All announce calls use a best-effort timeout (`AnnounceTimeout`, default 5s) to avoid blocking the service lifecycle when brokers are unreachable. If `Config.Source` is empty, it defaults to the resolved service name. The entire integration is conditional -- if `BootstrapServers` is empty, everything is silently skipped.
+
+### Tests
+
+- **lifecycle**: 11 new tests -- kafkakit disabled config, enabled config, source defaults to service name, custom service name option, component error with kafkakit, registry integration with kafkakit, mixed options and components, resolveName from cwd, resolveName from env, WithKafkaConfig unit, WithServiceName unit
+
+(Claude Code:Opus 4.6)
+
 ## [10.0.0] - 2026-03-22
 
 ### Breaking Changes
