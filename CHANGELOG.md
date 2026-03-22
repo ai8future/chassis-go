@@ -1,5 +1,17 @@
 # Changelog
 
+## [9.0.3] - 2026-03-22
+
+### New Features
+
+- **schemakit**: New module for Avro schema management — `NewRegistry(url)` creates a Schema Registry client, `LoadSchemas(dir)` walks directories to load `.avsc` files keyed by `namespace.name`, `Validate(schema, data)` checks data against Avro schemas, `Serialize(schema, data)` encodes with Confluent wire format header (0x00 + 4-byte schema ID), `Deserialize(raw)` decodes wire-format payloads, `Register(ctx, schema)` registers schemas with Redpanda/Confluent Schema Registry via HTTP
+
+### Tests
+
+- **schemakit**: Add TestNewRegistry, TestGetSchema_NotFound, TestLoadSchemas, TestValidate_Valid, TestValidate_Invalid, TestSerializeDeserialize, TestRegister (7 tests, all pass)
+
+(Claude Code:Opus 4.6)
+
 ## [9.0.2] - 2026-03-16
 
 ### Improvements

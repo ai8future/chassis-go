@@ -1,0 +1,15 @@
+{
+  "type": "record",
+  "name": "SignalSurge",
+  "namespace": "ai8.scanner.gdelt.v1",
+  "doc": "GDELT trend spike detected",
+  "fields": [
+    {"name": "entity", "type": "string", "doc": "Entity name detected in surge"},
+    {"name": "tier", "type": {"type": "enum", "name": "SignalTier", "symbols": ["flash", "elevated", "baseline"]}, "doc": "Signal severity tier"},
+    {"name": "kind", "type": "string", "doc": "Signal kind"},
+    {"name": "current", "type": "float", "doc": "Current value"},
+    {"name": "baseline", "type": "float", "doc": "Baseline value"},
+    {"name": "multiplier", "type": "float", "doc": "Current / baseline ratio"},
+    {"name": "window_minutes", "type": "int", "doc": "Detection window in minutes"}
+  ]
+}
