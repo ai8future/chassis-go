@@ -1,5 +1,20 @@
 # Changelog
 
+## [10.0.2] - 2026-03-22
+
+### Docs
+
+- Bulk v9→v10 update: all import paths, RequireMajor, version badge across README, AGENTS.md, INTEGRATING.md, XYOPS.md
+- Added 8 new v10 modules to README (kafkakit, schemakit, tracekit, heartbeatkit, announcekit, registrykit, graphkit, lakekit)
+- Added franz-go and hamba/avro to README dependencies section
+- Added event bus integration section to INTEGRATING.md with cross-references to chassis-docs
+- Fixed NewSubscriber quick reference to include required consumerGroup param
+- Removed nonexistent DisableHeartbeat/DisableAnnounce config flag references
+- Fixed deploy.json spec version from "9.0" to "10.0"
+- Fixed registry PID JSON example from "8.0.0" to "10.0.1"
+
+(Claude Code:Opus 4.6)
+
 ## [10.0.1] - 2026-03-22
 
 ### New Features
