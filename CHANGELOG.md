@@ -1,5 +1,17 @@
 # Changelog
 
+## [9.0.5] - 2026-03-22
+
+### New Features
+
+- **tracekit**: New module for trace ID propagation across events and HTTP calls — `GenerateID()` creates `tr_` + 12 hex random chars; `NewTrace(ctx)` creates a new trace ID on context; `WithTraceID(ctx, id)` sets a specific trace ID; `TraceID(ctx)` extracts trace ID from context; `Middleware(next)` HTTP middleware that extracts `X-Trace-ID` header (or generates new), sets on context, and adds to response header
+
+### Tests
+
+- **tracekit**: Add TestGenerateID_Format, TestGenerateID_Uniqueness, TestNewTrace, TestWithTraceID, TestTraceID_EmptyContext, TestMiddleware_ExtractsHeader, TestMiddleware_GeneratesIfMissing, TestMiddleware_SetsResponseHeader (8 tests, all pass)
+
+(Claude Code:Opus 4.6)
+
 ## [9.0.4] - 2026-03-22
 
 ### New Features
