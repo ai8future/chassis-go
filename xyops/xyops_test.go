@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v9"
-	"github.com/ai8future/chassis-go/v9/testkit"
-	"github.com/ai8future/chassis-go/v9/xyops"
+	chassis "github.com/ai8future/chassis-go/v10"
+	"github.com/ai8future/chassis-go/v10/testkit"
+	"github.com/ai8future/chassis-go/v10/xyops"
 )
 
-func init() { chassis.RequireMajor(9) }
+func init() { chassis.RequireMajor(10) }
 
 // mux builds a handler that routes by method+path for the mock xyops API.
 func mux() http.Handler {

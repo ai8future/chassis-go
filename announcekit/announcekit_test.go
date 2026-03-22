@@ -6,11 +6,11 @@ import (
 	"sync"
 	"testing"
 
-	chassis "github.com/ai8future/chassis-go/v9"
-	"github.com/ai8future/chassis-go/v9/announcekit"
+	chassis "github.com/ai8future/chassis-go/v10"
+	"github.com/ai8future/chassis-go/v10/announcekit"
 )
 
-func init() { chassis.RequireMajor(9) }
+func init() { chassis.RequireMajor(10) }
 
 type mockPublisher struct {
 	mu       sync.Mutex

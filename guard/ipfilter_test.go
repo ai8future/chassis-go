@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ai8future/chassis-go/v9/guard"
+	"github.com/ai8future/chassis-go/v10/guard"
 )
 
 func TestIPFilterAllowOnly(t *testing.T) {

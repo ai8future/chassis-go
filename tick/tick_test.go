@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v9"
-	"github.com/ai8future/chassis-go/v9/tick"
+	chassis "github.com/ai8future/chassis-go/v10"
+	"github.com/ai8future/chassis-go/v10/tick"
 )
 
-func init() { chassis.RequireMajor(9) }
+func init() { chassis.RequireMajor(10) }
 
 func TestEveryRunsRepeatedly(t *testing.T) {
 	var count atomic.Int32

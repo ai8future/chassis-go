@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v9"
-	"github.com/ai8future/chassis-go/v9/work"
+	chassis "github.com/ai8future/chassis-go/v10"
+	"github.com/ai8future/chassis-go/v10/work"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -22,7 +22,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(9)
+	chassis.RequireMajor(10)
 	os.Exit(m.Run())
 }
 

@@ -8,15 +8,15 @@ import (
 	"strings"
 	"testing"
 
-	chassis "github.com/ai8future/chassis-go/v9"
-	"github.com/ai8future/chassis-go/v9/registry"
+	chassis "github.com/ai8future/chassis-go/v10"
+	"github.com/ai8future/chassis-go/v10/registry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(9)
+	chassis.RequireMajor(10)
 	initRegistryForTest()
 	os.Exit(m.Run())
 }

@@ -4,11 +4,11 @@ import (
 	"testing"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v9"
-	"github.com/ai8future/chassis-go/v9/cache"
+	chassis "github.com/ai8future/chassis-go/v10"
+	"github.com/ai8future/chassis-go/v10/cache"
 )
 
-func init() { chassis.RequireMajor(9) }
+func init() { chassis.RequireMajor(10) }
 
 func TestSetGet(t *testing.T) {
 	c := cache.New[string, string](cache.MaxSize(10))

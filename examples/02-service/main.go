@@ -22,12 +22,12 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
-	chassis "github.com/ai8future/chassis-go/v9"
-	"github.com/ai8future/chassis-go/v9/config"
-	"github.com/ai8future/chassis-go/v9/grpckit"
-	"github.com/ai8future/chassis-go/v9/health"
-	"github.com/ai8future/chassis-go/v9/lifecycle"
-	"github.com/ai8future/chassis-go/v9/logz"
+	chassis "github.com/ai8future/chassis-go/v10"
+	"github.com/ai8future/chassis-go/v10/config"
+	"github.com/ai8future/chassis-go/v10/grpckit"
+	"github.com/ai8future/chassis-go/v10/health"
+	"github.com/ai8future/chassis-go/v10/lifecycle"
+	"github.com/ai8future/chassis-go/v10/logz"
 )
 
 type ServiceConfig struct {
@@ -36,7 +36,7 @@ type ServiceConfig struct {
 }
 
 func main() {
-	chassis.RequireMajor(9)
+	chassis.RequireMajor(10)
 	cfg := config.MustLoad[ServiceConfig]()
 	logger := logz.New(cfg.LogLevel)
 

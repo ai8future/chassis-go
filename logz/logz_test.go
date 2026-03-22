@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	chassis "github.com/ai8future/chassis-go/v9"
+	chassis "github.com/ai8future/chassis-go/v10"
 	"go.opentelemetry.io/otel/trace"
 )
 
 func TestMain(m *testing.M) {
-	chassis.RequireMajor(9)
+	chassis.RequireMajor(10)
 	os.Exit(m.Run())
 }
 

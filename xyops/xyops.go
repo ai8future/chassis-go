@@ -13,11 +13,11 @@ import (
 	"net/url"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v9"
-	"github.com/ai8future/chassis-go/v9/cache"
-	"github.com/ai8future/chassis-go/v9/call"
-	"github.com/ai8future/chassis-go/v9/tick"
-	"github.com/ai8future/chassis-go/v9/webhook"
+	chassis "github.com/ai8future/chassis-go/v10"
+	"github.com/ai8future/chassis-go/v10/cache"
+	"github.com/ai8future/chassis-go/v10/call"
+	"github.com/ai8future/chassis-go/v10/tick"
+	"github.com/ai8future/chassis-go/v10/webhook"
 )
 
 // Config holds the environment-driven configuration for the xyops client.

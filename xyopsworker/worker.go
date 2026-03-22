@@ -8,7 +8,7 @@ import (
 	"os"
 	"sync"
 
-	chassis "github.com/ai8future/chassis-go/v9"
+	chassis "github.com/ai8future/chassis-go/v10"
 )
 
 // Config holds the environment-driven settings for an xyops worker.

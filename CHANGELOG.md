@@ -1,5 +1,15 @@
 # Changelog
 
+## [10.0.0] - 2026-03-22
+
+### Breaking Changes
+
+- **Module path migrated to v10**: All import paths changed from `chassis-go/v9` to `chassis-go/v10`. All consumer code must update imports and call `chassis.RequireMajor(10)`.
+
+### Theme: Event Bus + Platform Connectivity
+
+(Claude Code:Opus 4.6)
+
 ## [9.0.8] - 2026-03-22
 
 ### New Features

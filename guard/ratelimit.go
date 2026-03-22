@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v9"
-	"github.com/ai8future/chassis-go/v9/errors"
+	chassis "github.com/ai8future/chassis-go/v10"
+	"github.com/ai8future/chassis-go/v10/errors"
 )
 
 // RateLimitConfig configures the rate limiter.
