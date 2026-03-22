@@ -1,5 +1,17 @@
 # Changelog
 
+## [9.0.7] - 2026-03-22
+
+### New Features
+
+- **registrykit**: New HTTP client for registry_svc — `NewClient(baseURL, opts...)` creates a client with configurable tenant ID and timeout (default 5s); `Resolve(ctx, entityType, opts...)` looks up entities by CRD, domain, email, slug, or namespaced identifier (404 returns nil, nil); `Related(ctx, entityID, opts...)` returns relationships with optional type/rel/as_of filters; `Descendants(ctx, entityID, opts...)` and `Ancestors(ctx, entityID)` traverse entity hierarchy; `Graph(ctx, entityID, opts...)` returns nested graph with configurable depth; `CreateEntity(ctx, req)` creates entities; `AddIdentifier(ctx, entityID, ns, val)` adds identifiers; `CreateRelationship(ctx, req)` creates relationships; `Merge(ctx, winnerID, loserID, reason)` merges entities; all requests set X-Tenant-ID and X-Trace-ID headers via tracekit
+
+### Tests
+
+- **registrykit**: 14 tests — resolve found with header verification, resolve 404 returns nil, resolve 503 error, resolve 403 forbidden, related returns relationships, create entity, merge 409 conflict, network timeout, resolve by identifier, graph returns tree, descendants, ancestors, add identifier, create relationship
+
+(Claude Code:Opus 4.6)
+
 ## [9.0.6] - 2026-03-22
 
 ### New Features
