@@ -1,5 +1,17 @@
 # Changelog
 
+## [9.0.4] - 2026-03-22
+
+### New Features
+
+- **kafkakit**: New module for Kafka/Redpanda publish/subscribe — `Config` with bootstrap servers, schema registry, tenant, and source identity; `Event`/`OutboundEvent` types with Ack/Reject/Header methods; `Publisher` with `Publish(ctx, subject, data)` and `PublishBatch(ctx, events)` using franz-go, atomic `Stats()` counters; `Subscriber` with `Subscribe(pattern, handler)`, `SubscribeMulti(handlers)`, `Start(ctx)` blocking consumer loop, wildcard pattern matching (`ai8.scanner.>` matches `ai8.scanner.gdelt.signal.surge`), and DLQ routing to `ai8._dlq.{subject}` on handler errors; `TenantFilter` with own/shared/granted tenant delivery logic; envelope wrapping with `evt_` + 12 hex ID, millisecond timestamps, OTel trace ID extraction, and JSON wire format
+
+### Tests
+
+- **kafkakit**: Add TestConfigEnabled, TestConfigDisabled, TestWrapUnwrapEnvelope, TestWrapEnvelope_UniqueIDs, TestTenantFilter_OwnTenant, TestTenantFilter_SharedTenant, TestTenantFilter_OtherTenant, TestTenantFilter_GrantedTenant, TestTenantFilter_EmptyTenantDelivers, TestPublisherStats, TestSubscribePattern, TestEvent_Ack, TestEvent_Reject, TestEvent_Header, TestOutboundEvent, TestDLQTopic, TestEnvelopeToEvent (17 tests, all pass)
+
+(Claude Code:Opus 4.6)
+
 ## [9.0.3] - 2026-03-22
 
 ### New Features
