@@ -1,5 +1,19 @@
 # Changelog
 
+## [9.0.6] - 2026-03-22
+
+### New Features
+
+- **heartbeatkit**: New module for zero-config automatic liveness events — `Start(ctx, pub, cfg)` publishes heartbeat payloads to `ai8.infra.heartbeat` at a configurable interval (default 30s) with service name, hostname, PID, uptime, version, and status; enriches payload with publisher stats if the publisher implements `statsProvider` interface; `Stop()` halts publishing; supports context cancellation
+- **announcekit**: New module for standardized service and job lifecycle events — `SetServiceName(name)` configures identity; service lifecycle: `Started()`, `Ready()`, `Stopping()`, `Failed(err)` publish to `ai8.infra.{service}.lifecycle.{state}`; job lifecycle: `JobStarted()`, `JobComplete()`, `JobFailed()` publish to `ai8.infra.{service}.job.{state}`; all functions accept a `publisher` interface for dependency inversion
+
+### Tests
+
+- **heartbeatkit**: 7 tests — publishes at interval, correct subject, payload fields, stop halts publishing, default interval, context cancellation, stats provider enrichment
+- **announcekit**: 9 tests — started/ready/stopping/failed correct subjects, failed includes error, job started/complete/failed correct subjects with job_name/job_id, lifecycle pattern validation, job pattern validation
+
+(Claude Code:Opus 4.6)
+
 ## [9.0.5] - 2026-03-22
 
 ### New Features
