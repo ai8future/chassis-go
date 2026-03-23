@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.0.3] - 2026-03-23
+
+### Docs
+
+- Added GO-BEST-PRACTICES.md: prescriptive build and project conventions for agents maintaining Go services. Covers cross-platform builds (Makefile cross-compile targets, launcher scripts), Makefile conventions, binary naming, VERSION/LDFLAGS injection, and Dockerfile patterns. Includes copy-paste templates and reference implementations.
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.0.2] - 2026-03-22
 
 ### Docs
