@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.0.4] - 2026-03-23
+
+### Docs
+
+- Fix GO-BEST-PRACTICES.md Dockerfile template: add GOARCH=amd64 to match actual reference implementations
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.0.3] - 2026-03-23
 
 ### Docs

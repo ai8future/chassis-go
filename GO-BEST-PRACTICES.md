@@ -188,7 +188,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=linux go build \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags="-w -s -X main.version=${VERSION}" \
     -o /app/{service_name} ./cmd/{service_name}
 
@@ -208,7 +208,7 @@ ENTRYPOINT ["/{service_name}"]
 |------|--------|
 | Builder image | `golang:1.25-alpine` |
 | Production image | `gcr.io/distroless/static-debian12:nonroot` (preferred) or `alpine:3.21` if shell access needed |
-| Always set `CGO_ENABLED=0 GOOS=linux` | Even though Docker runs Linux — makes the build explicit and reproducible |
+| Always set `CGO_ENABLED=0 GOOS=linux GOARCH=amd64` | Even though Docker runs Linux — makes the build explicit and reproducible |
 | Copy VERSION into image | Health check endpoints should report the version |
 | Use `nonroot` user | Never run as root in production |
 | Standard ports | gRPC: 50051, HTTP: 8080, Admin/Metrics: 9090 (or use `chassis.Port()` for deterministic assignment) |
