@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.0.5] - 2026-03-25
+
+### Docs
+
+- Add Go Best Practices reference section to INTEGRATING.md with key highlights (cross-platform builds, binary naming, VERSION injection, Dockerfile conventions, required Makefile targets)
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.0.4] - 2026-03-23
 
 ### Docs

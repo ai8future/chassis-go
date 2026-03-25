@@ -1189,6 +1189,18 @@ heartbeatkit and announcekit auto-activate when kafkakit is configured via `life
 
 ---
 
+## Go Best Practices for Chassis Services
+
+See **[GO-BEST-PRACTICES.md](GO-BEST-PRACTICES.md)** for prescriptive rules on building and maintaining Go services that use chassis-go. Key highlights:
+
+- **Cross-platform binaries**: Every deployable service must support `build-linux`, `build-darwin`, and `build-all` Makefile targets. Developing on Mac and deploying to Linux without explicit `GOOS`/`GOARCH` produces binaries that fail silently.
+- **Binary naming**: Name binaries after the service (not `server`) so they're distinguishable in `ps ax`. Output to `bin/`, never the project root.
+- **VERSION injection**: Pick one approach per project — either LDFLAGS (`-X main.version=$(VERSION)`) or `go:embed`. Don't use both.
+- **Dockerfile builds**: Always set `CGO_ENABLED=0 GOOS=linux GOARCH=amd64` explicitly in the build stage, even though Docker runs Linux.
+- **Required Makefile targets**: `build`, `build-linux`, `build-darwin`, `build-all`, `test`, `clean`, `lint`, `deps`, `run`.
+
+---
+
 ## Things to watch out for
 
 **config panics are intentional.** `MustLoad` panics on missing required config. This is by design — configuration errors should crash the process at startup, not cause mysterious failures later. If you need softer error handling, validate env vars before calling `MustLoad`, or contribute a `Load` variant that returns errors.
