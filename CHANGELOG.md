@@ -1,5 +1,14 @@
 # Changelog
 
+## [10.0.6] - 2026-03-26
+
+### Fixed
+
+- config.MustLoad now recurses into nested struct fields (e.g. xyops.Config, kafkakit.Config) so their env tags and defaults are applied correctly; previously nested structs were silently left at zero values
+- tick.Every returns an error instead of panicking when given a zero/negative interval
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.0.5] - 2026-03-25
 
 ### Docs

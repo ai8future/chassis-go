@@ -3,6 +3,7 @@ package tick
 
 import (
 	"context"
+	"fmt"
 	"math/rand/v2"
 	"time"
 
@@ -49,6 +50,9 @@ func Every(interval time.Duration, fn func(context.Context) error, opts ...Optio
 	}
 
 	return func(ctx context.Context) error {
+		if interval <= 0 {
+			return fmt.Errorf("tick: interval must be positive, got %v", interval)
+		}
 		if cfg.immediate {
 			if err := fn(ctx); err != nil {
 				if cfg.onError == Stop {

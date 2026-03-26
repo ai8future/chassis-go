@@ -31,17 +31,32 @@ func MustLoad[T any]() T {
 	v := reflect.ValueOf(&cfg).Elem()
 	t := v.Type()
 
+	loadFields(v, t)
+
+	return cfg
+}
+
+// loadFields populates struct fields from environment variables, recursing
+// into nested structs so that embedded config types (e.g. xyops.Config) are
+// populated correctly.
+func loadFields(v reflect.Value, t reflect.Type) {
 	for i := range t.NumField() {
 		field := t.Field(i)
 		fieldVal := v.Field(i)
 
-		envKey := field.Tag.Get("env")
-		if envKey == "" {
+		// Skip unexported fields — they can't be set via reflection.
+		if !field.IsExported() {
 			continue
 		}
 
-		// Skip unexported fields — they can't be set via reflection.
-		if !field.IsExported() {
+		// Recurse into nested structs (e.g. xyops.Config, kafkakit.Config).
+		if field.Type.Kind() == reflect.Struct && field.Type != reflect.TypeOf(time.Duration(0)) {
+			loadFields(fieldVal, field.Type)
+			continue
+		}
+
+		envKey := field.Tag.Get("env")
+		if envKey == "" {
 			continue
 		}
 
@@ -72,8 +87,6 @@ func MustLoad[T any]() T {
 			validateField(field.Name, fieldVal, vTag)
 		}
 	}
-
-	return cfg
 }
 
 // setField converts a raw string value and sets it on the reflected field.
