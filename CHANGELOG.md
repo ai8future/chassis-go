@@ -1,5 +1,15 @@
 # Changelog
 
+## [10.0.7] - 2026-03-26
+
+### Fixed
+
+- xyops.Config: removed required:"true" from BaseURL and APIKey fields so services that embed xyops.Config in their main config struct no longer panic on startup when XYOPS env vars are not set
+- xyops.New: monitoring bridge is now automatically disabled when BaseURL is empty, even if MonitorEnabled is true
+- xyops.Client.apiRequest: returns a clear error ("not configured") instead of making requests to an empty URL
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.0.6] - 2026-03-26
 
 ### Fixed

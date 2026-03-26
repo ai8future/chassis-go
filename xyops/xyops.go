@@ -22,8 +22,8 @@ import (
 
 // Config holds the environment-driven configuration for the xyops client.
 type Config struct {
-	BaseURL         string `env:"XYOPS_BASE_URL" required:"true"`
-	APIKey          string `env:"XYOPS_API_KEY" required:"true"`
+	BaseURL         string `env:"XYOPS_BASE_URL"`
+	APIKey          string `env:"XYOPS_API_KEY"`
 	ServiceName     string `env:"XYOPS_SERVICE_NAME"`
 	MonitorEnabled  bool   `env:"XYOPS_MONITOR_ENABLED" default:"false"`
 	MonitorInterval int    `env:"XYOPS_MONITOR_INTERVAL" default:"30"`
@@ -101,7 +101,7 @@ func New(cfg Config, opts ...Option) *Client {
 	for _, o := range opts {
 		o(c)
 	}
-	if cfg.MonitorEnabled {
+	if cfg.MonitorEnabled && cfg.BaseURL != "" {
 		c.monitorEnabled = true
 	}
 	if c.monitorInterval == 0 {
@@ -113,6 +113,9 @@ func New(cfg Config, opts ...Option) *Client {
 // apiRequest performs a single HTTP request against the xyops API, returning
 // the raw JSON response body.
 func (c *Client) apiRequest(ctx context.Context, method, path string, body any) (json.RawMessage, error) {
+	if c.config.BaseURL == "" {
+		return nil, fmt.Errorf("xyops: not configured (XYOPS_BASE_URL is empty)")
+	}
 	var bodyReader *bytes.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
