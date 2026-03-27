@@ -211,6 +211,7 @@ func Init(cancel context.CancelFunc, chassisVersion string) error {
 			return fmt.Errorf("registry: directory %s has unsafe permissions %o (want 0700)", svcDir, perm)
 		}
 	}
+	killPreviousInstances(svcDir, pid)
 	cleanStale(svcDir)
 
 	ps := strconv.Itoa(pid)
@@ -337,6 +338,7 @@ func InitCLI(chassisVersion string) error {
 			return fmt.Errorf("registry: directory %s has unsafe permissions %o (want 0700)", svcDir, perm)
 		}
 	}
+	killPreviousInstances(svcDir, pid)
 	cleanStale(svcDir)
 
 	ps := strconv.Itoa(pid)
@@ -664,6 +666,50 @@ func appendLogLocked(entry map[string]any) {
 		return
 	}
 	logFile.Write(append(data, '\n'))
+}
+
+// killPreviousInstances sends SIGTERM to any running instances of the same
+// service, waits up to 3 seconds for graceful shutdown, then sends SIGKILL.
+// This prevents port conflicts and duplicate daemons on restart.
+func killPreviousInstances(dir string, myPID int) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".cmd.json") || strings.HasSuffix(name, ".tmp") {
+			continue
+		}
+		pidStr := strings.TrimSuffix(name, ".json")
+		pid, err := strconv.Atoi(pidStr)
+		if err != nil || pid == myPID {
+			continue
+		}
+		if !processAlive(pid) {
+			continue
+		}
+		p, err := os.FindProcess(pid)
+		if err != nil {
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "registry: killing stale instance (PID %d)\n", pid)
+		_ = p.Signal(syscall.SIGTERM)
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			if !processAlive(pid) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		if processAlive(pid) {
+			_ = p.Signal(syscall.SIGKILL)
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
 }
 
 func cleanStale(dir string) {

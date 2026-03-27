@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.0.9] - 2026-03-27
+
+### New Features
+
+- **registry**: Add `killPreviousInstances()` — on startup, scans PID files for the same service, sends SIGTERM to any live stale instances, waits up to 3 seconds for graceful shutdown, then SIGKILL. Called from both `Init()` and `InitCLI()` before `cleanStale()`. Prevents port conflicts and duplicate daemons on restart.
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.0.8] - 2026-03-27
 
 ### Fixed
