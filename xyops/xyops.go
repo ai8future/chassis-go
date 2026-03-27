@@ -22,9 +22,9 @@ import (
 
 // Config holds the environment-driven configuration for the xyops client.
 type Config struct {
-	BaseURL         string `env:"XYOPS_BASE_URL"`
-	APIKey          string `env:"XYOPS_API_KEY"`
-	ServiceName     string `env:"XYOPS_SERVICE_NAME"`
+	BaseURL         string `env:"XYOPS_BASE_URL" required:"false"`
+	APIKey          string `env:"XYOPS_API_KEY" required:"false"`
+	ServiceName     string `env:"XYOPS_SERVICE_NAME" required:"false"`
 	MonitorEnabled  bool   `env:"XYOPS_MONITOR_ENABLED" default:"false"`
 	MonitorInterval int    `env:"XYOPS_MONITOR_INTERVAL" default:"30"`
 }

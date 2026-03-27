@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.0.8] - 2026-03-27
+
+### Fixed
+
+- xyops.Config: add `required:"false"` to BaseURL, APIKey, and ServiceName fields — the v10.0.7 fix removed `required:"true"` but config.loadFields defaults to required when no tag is present, so services embedding xyops.Config still panicked without XYOPS env vars
+
+(Claude Code:Opus 4.6)
+
 ## [10.0.7] - 2026-03-26
 
 ### Fixed
