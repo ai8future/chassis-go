@@ -1,27 +1,10 @@
 # Changelog
 
-## [10.0.13] - 2026-03-28
+## [10.0.14] - 2026-03-28
 
 ### New Features
 
-- **chassis**: Add `rebuild` function in `freshness.go` — runs `go build` to produce a new binary at the target path, builds to a temp file then atomically renames; enforces a 2-minute timeout via context; returns descriptive errors for missing go binary, build failures, and rename failures
-- **chassis**: Add `checkFreshness` orchestrator in `freshness.go` — compares compiled-in `appVersion` against the VERSION file on disk at the binary's module root; if the disk version is newer, rebuilds the binary and re-execs via `syscall.Exec`; respects `CHASSIS_NO_REBUILD` and `CHASSIS_REBUILD_GUARD` env vars; validates module path against `debug.ReadBuildInfo`; silently no-ops when `appVersion` is unset or any resolution step fails
-
-### Tests
-
-- **chassis**: Add `TestRebuildNoGo` — verifies rebuild returns "go not found in PATH" error when PATH is empty
-- **chassis**: Add `TestCheckFreshnessSkipsWhenNoAppVersion` — verifies checkFreshness is a no-op when appVersion is empty
-- **chassis**: Add `TestCheckFreshnessSkipsWithNoRebuildEnv` — verifies checkFreshness is a no-op when CHASSIS_NO_REBUILD is set
-- **chassis**: Add `TestCheckFreshnessSkipsWithGuardEnv` — verifies checkFreshness is a no-op when CHASSIS_REBUILD_GUARD is set
-
-(Claude Code:Opus 4.6 (1M context))
-
-## [10.0.12] - 2026-03-28
-
-### New Features
-
-- **chassis**: Add `semverNewer` version comparison utility in `freshness.go` — compares dot-separated numeric version strings, returns true if version a is strictly newer than version b; handles variable-length segments and returns false on parse errors or equal versions
-- **chassis**: Add `TestSemverNewer` with 13 test cases covering newer/equal/older/empty/malformed/variable-length inputs
+- **chassis**: Auto-rebuild freshness check. When `SetAppVersion()` is called and the binary's compiled version is older than the VERSION file on disk, `RequireMajor()` automatically recompiles the binary and re-execs. Walks up from binary location to find `go.mod` + `VERSION`, verifies module path via `debug.ReadBuildInfo`, builds to temp file with atomic rename, 2-minute build timeout. Opt out with `CHASSIS_NO_REBUILD=1`. Loop guard via `CHASSIS_REBUILD_GUARD` env var. Dormant until consumer calls `SetAppVersion()`.
 
 (Claude Code:Opus 4.6 (1M context))
 
