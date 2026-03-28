@@ -68,6 +68,31 @@ func runHelper(t *testing.T, mode string) ([]byte, error) {
 	return cmd.CombinedOutput()
 }
 
+func TestVersionFlagPrintsVersionAndExitsZero(t *testing.T) {
+	output, err := runHelper(t, "version-flag")
+	if err != nil {
+		t.Fatalf("expected exit 0, got error: %v\noutput: %s", err, string(output))
+	}
+	out := string(output)
+	if !strings.Contains(out, "chassis-go/"+Version) {
+		t.Fatalf("expected chassis-go/%s in output, got: %s", Version, out)
+	}
+}
+
+func TestVersionFlagWithAppVersion(t *testing.T) {
+	output, err := runHelper(t, "version-flag-app")
+	if err != nil {
+		t.Fatalf("expected exit 0, got error: %v\noutput: %s", err, string(output))
+	}
+	out := string(output)
+	if !strings.Contains(out, "42.0.0") {
+		t.Fatalf("expected app version 42.0.0 in output, got: %s", out)
+	}
+	if !strings.Contains(out, "chassis-go "+Version) {
+		t.Fatalf("expected chassis-go %s in output, got: %s", Version, out)
+	}
+}
+
 func TestHelperProcess(t *testing.T) {
 	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
 		return
@@ -79,6 +104,16 @@ func TestHelperProcess(t *testing.T) {
 	case "require":
 		ResetVersionCheck()
 		RequireMajor(999)
+	case "version-flag":
+		// Inject --version into os.Args so RequireMajor sees it.
+		os.Args = []string{os.Args[0], "--version"}
+		ResetVersionCheck()
+		RequireMajor(parseMajorHelper(Version))
+	case "version-flag-app":
+		os.Args = []string{os.Args[0], "--version"}
+		SetAppVersion("42.0.0")
+		ResetVersionCheck()
+		RequireMajor(parseMajorHelper(Version))
 	}
 	os.Exit(0)
 }
@@ -130,6 +165,12 @@ func TestPortDefaultOffsetZero(t *testing.T) {
 	if Port("x") != Port("x", 0) {
 		t.Error("Port with no offset should equal Port with offset 0")
 	}
+}
+
+func parseMajorHelper(version string) int {
+	parts := strings.SplitN(strings.TrimSpace(version), ".", 2)
+	major, _ := strconv.Atoi(parts[0])
+	return major
 }
 
 func parseMajor(t *testing.T, version string) int {

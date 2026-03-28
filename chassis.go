@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -18,11 +19,23 @@ var rawVersion string
 var Version = strings.TrimSpace(rawVersion)
 
 var majorVersionAsserted atomic.Bool
+var appVersion string
+
+// SetAppVersion sets the consumer application's own version string.
+// When set, --version output includes both the app version and the chassis
+// version. Call this before RequireMajor if you want it included.
+func SetAppVersion(v string) {
+	appVersion = v
+}
 
 // RequireMajor crashes the process if the chassis major version does not match
 // the required version. Services must call this at the top of main() before
 // using any other chassis module.
+//
+// If os.Args contains "--version", RequireMajor prints the version and exits 0.
+// This ensures every chassis binary automatically supports --version.
 func RequireMajor(required int) {
+	checkVersionFlag()
 	majorVersionAsserted.Store(true)
 	parts := strings.SplitN(Version, ".", 2)
 	actual, err := strconv.Atoi(parts[0])
@@ -56,6 +69,28 @@ func AssertVersionChecked() {
 func ResetVersionCheck() {
 	majorVersionAsserted.Store(false)
 }
+
+// checkVersionFlag scans os.Args for "--version" and prints version info if found.
+func checkVersionFlag() {
+	for _, arg := range os.Args[1:] {
+		if arg == "--version" {
+			bin := filepath.Base(os.Args[0])
+			if appVersion != "" {
+				fmt.Printf("%s %s (chassis-go %s)\n", bin, appVersion, Version)
+			} else {
+				fmt.Printf("%s chassis-go/%s\n", bin, Version)
+			}
+			osExit(0)
+			return
+		}
+		if arg == "--" {
+			break
+		}
+	}
+}
+
+// osExit is overridable for testing.
+var osExit = os.Exit
 
 // Standard port role offsets for chassis transport roles.
 const (

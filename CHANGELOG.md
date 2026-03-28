@@ -1,5 +1,14 @@
 # Changelog
 
+## [10.0.11] - 2026-03-28
+
+### New Features
+
+- **chassis**: Automatic `--version` flag for all binaries. `RequireMajor()` now intercepts `--version` in os.Args, prints version info, and exits 0. Every binary built with chassis-go gets this for free — no consumer code changes needed.
+- **chassis**: Add `SetAppVersion(v string)` so consumers can optionally include their own app version in `--version` output (e.g. `mybinary 2.1.0 (chassis-go 10.0.11)`).
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.0.10] - 2026-03-27
 
 ### Tests
