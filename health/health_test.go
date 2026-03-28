@@ -225,6 +225,47 @@ func TestAll_PreservesOriginalError(t *testing.T) {
 // Handler tests
 // ---------------------------------------------------------------------------
 
+func TestAll_EmptyChecks(t *testing.T) {
+	results, err := All(map[string]Check{})(context.Background())
+	if err != nil {
+		t.Fatalf("expected nil error for empty checks, got %v", err)
+	}
+	if results == nil {
+		t.Fatal("All(empty) returned nil results, want empty slice")
+	}
+	if len(results) != 0 {
+		t.Errorf("len(results) = %d, want 0", len(results))
+	}
+}
+
+func TestHandlerContentType(t *testing.T) {
+	h := Handler(map[string]Check{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/health", nil)
+	h.ServeHTTP(rec, req)
+
+	ct := rec.Header().Get("Content-Type")
+	if ct != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", ct, "application/json")
+	}
+}
+
+func TestHandlerEmptyChecksReturnsValidJSON(t *testing.T) {
+	h := Handler(map[string]Check{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/health", nil)
+	h.ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(body), &parsed); err != nil {
+		t.Fatalf("response body is not valid JSON: %v (body: %s)", err, body)
+	}
+	if parsed["status"] != "healthy" {
+		t.Errorf("status = %v, want %q", parsed["status"], "healthy")
+	}
+}
+
 func TestHandler_Healthy(t *testing.T) {
 	checks := map[string]Check{
 		"db": func(ctx context.Context) error { return nil },

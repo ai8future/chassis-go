@@ -39,6 +39,29 @@ func TestCircuitBreaker_ProbeBlocksConcurrentAllow(t *testing.T) {
 	}
 }
 
+func TestRemoveBreaker(t *testing.T) {
+	name := uniqueBreakerName()
+	cb := GetBreaker(name, 3, 5*time.Second)
+	if cb == nil {
+		t.Fatal("expected non-nil breaker")
+	}
+
+	RemoveBreaker(name)
+
+	// After removal, GetBreaker should create a new instance.
+	cb2 := GetBreaker(name, 5, 10*time.Second)
+	if cb2 == cb {
+		t.Error("expected new breaker instance after RemoveBreaker, got same pointer")
+	}
+	// Clean up.
+	RemoveBreaker(name)
+}
+
+func TestRemoveBreaker_Nonexistent(t *testing.T) {
+	// Should not panic.
+	RemoveBreaker("does-not-exist-" + uniqueBreakerName())
+}
+
 func TestStateName(t *testing.T) {
 	cases := []struct {
 		state State

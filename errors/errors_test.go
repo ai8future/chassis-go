@@ -383,6 +383,65 @@ func TestFromErrorWrappedServiceError(t *testing.T) {
 	}
 }
 
+func TestFromErrorNil(t *testing.T) {
+	got := FromError(nil)
+	if got != nil {
+		t.Errorf("FromError(nil) = %v, want nil", got)
+	}
+}
+
+func TestWriteProblemNilError(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+
+	WriteProblem(rec, req, nil, "")
+
+	// nil error should be a no-op -- no response written.
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 (default, no WriteHeader called)", rec.Code)
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("body should be empty for nil error, got %q", rec.Body.String())
+	}
+}
+
+func TestProblemDetailNilRequest(t *testing.T) {
+	err := ValidationError("bad")
+	pd := err.ProblemDetail(nil)
+
+	if pd.Instance != "" {
+		t.Errorf("Instance = %q, want empty for nil request", pd.Instance)
+	}
+	if pd.Status != 400 {
+		t.Errorf("Status = %d, want 400", pd.Status)
+	}
+}
+
+func TestWithDetailDoesNotMutateOriginal(t *testing.T) {
+	original := ValidationError("base")
+	derived := original.WithDetail("field", "email")
+
+	if original.Details != nil {
+		t.Error("original.Details should remain nil after WithDetail on derived")
+	}
+	if derived.Details["field"] != "email" {
+		t.Errorf("derived.Details[field] = %v, want %q", derived.Details["field"], "email")
+	}
+}
+
+func TestWithCauseDoesNotMutateOriginal(t *testing.T) {
+	original := InternalError("base")
+	cause := errors.New("root cause")
+	derived := original.WithCause(cause)
+
+	if original.Unwrap() != nil {
+		t.Error("original cause should remain nil")
+	}
+	if derived.Unwrap() != cause {
+		t.Error("derived should have the cause set")
+	}
+}
+
 func TestProblemDetailMarshalJSONSkipsReservedExtensions(t *testing.T) {
 	pd := ProblemDetail{
 		Type:   "https://example.com/err",

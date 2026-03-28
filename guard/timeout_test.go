@@ -85,6 +85,53 @@ func TestTimeoutFlushesOnSuccess(t *testing.T) {
 	}
 }
 
+func TestTimeoutWriteAfterDeadline(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Block until timeout fires
+		<-r.Context().Done()
+		// Now try to write -- should be discarded by the timeoutWriter
+		time.Sleep(10 * time.Millisecond)
+		w.Write([]byte("too late"))
+	})
+
+	mw := guard.Timeout(30 * time.Millisecond)
+	srv := httptest.NewServer(mw(handler))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	// The timeout middleware should have responded with 504 before the handler wrote
+	if resp.StatusCode != http.StatusGatewayTimeout {
+		t.Errorf("status = %d, want 504", resp.StatusCode)
+	}
+}
+
+func TestTimeoutPanicRepropagated(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("handler boom")
+	})
+
+	mw := guard.Timeout(5 * time.Second)
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic to be re-propagated, got nil")
+		}
+		if s, ok := r.(string); !ok || s != "handler boom" {
+			t.Errorf("panic value = %v, want 'handler boom'", r)
+		}
+	}()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+	mw(handler).ServeHTTP(rec, req)
+}
+
 func TestTimeoutPanicsOnZero(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {

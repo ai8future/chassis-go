@@ -189,3 +189,47 @@ func TestValidateIdentifier(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateIdentifierBoundary64(t *testing.T) {
+	// The regex allows ^[a-zA-Z_][a-zA-Z0-9_]{0,63}$ so max total is 64 chars.
+	// Exactly 64 characters -- should pass.
+	id64 := "a" + strings.Repeat("b", 63)
+	if err := ValidateIdentifier(id64); err != nil {
+		t.Errorf("64-char identifier should be valid, got: %v", err)
+	}
+
+	// 65 characters -- should fail.
+	id65 := "a" + strings.Repeat("b", 64)
+	if err := ValidateIdentifier(id65); err == nil {
+		t.Error("65-char identifier should be invalid, got nil")
+	}
+}
+
+func TestSafeFilenameUnicode(t *testing.T) {
+	tests := []struct {
+		input string
+		check func(string) bool
+		desc  string
+	}{
+		// Accented characters are stripped by the unsafeFilenameChars regex,
+		// so the result must still be non-empty (falls back to remaining chars or "unnamed").
+		{"resume.pdf", func(s string) bool { return len(s) > 0 }, "ASCII chars produce non-empty output"},
+		{"hello\x00world", func(s string) bool { return !strings.Contains(s, "\x00") }, "null byte stripped"},
+		{"foo   bar   baz", func(s string) bool { return !strings.Contains(s, "  ") }, "consecutive spaces collapsed"},
+	}
+
+	for _, tt := range tests {
+		result := SafeFilename(tt.input)
+		if !tt.check(result) {
+			t.Errorf("SafeFilename(%q) = %q -- %s", tt.input, result, tt.desc)
+		}
+	}
+}
+
+func TestSafeFilenameAllNonASCII(t *testing.T) {
+	// A filename with only non-ASCII chars should return "unnamed".
+	result := SafeFilename("\u00e9\u00e8\u00ea")
+	if result != "unnamed" {
+		t.Errorf("SafeFilename(all non-ASCII) = %q, want %q", result, "unnamed")
+	}
+}

@@ -1,0 +1,15 @@
+Tool:      rclaude
+Model:  opus
+Budget: $10.00
+Codebase:  chassis-go
+Output:    chassis_suite/chassis-go/_rcodegen
+Command:   rclaude -A chassis_suite suite
+Started:   2026-03-27 14:02:43
+Ended:     2026-03-27 15:06:21
+Duration:  63m 37s
+Exit Code: 1
+
+--- Token Usage ---
+Input:     0
+Output:    0
+Cost:      $0.4966

@@ -263,6 +263,6 @@ HTTP middleware uses the standard `func(http.Handler) http.Handler` signature. g
 
 ## Current Version and Maturity
 
-The toolkit is at version 10.0.5 as of March 2026. It has gone through 10 major versions since its initial release in February 2026, reflecting rapid iteration driven by real-world adoption across the ai8future service fleet. The first planned consumers were `pricing-cli` (CLI tool validating Tier 1 packages) and `serp_svc` (full-stack service validating all tiers).
+The toolkit is at version 10.0.10 as of March 2026. It has gone through 10 major versions since its initial release in February 2026, reflecting rapid iteration driven by real-world adoption across the ai8future service fleet. The first planned consumers were `pricing-cli` (CLI tool validating Tier 1 packages) and `serp_svc` (full-stack service validating all tiers).
 
 The changelog shows a progression from foundational packages (config, logging, lifecycle, HTTP, gRPC, health, call) through security hardening (registry permissions, credential redaction, safe file writes), operational tooling (registry, CLI mode, deploy directories, XYOps), cross-cutting concerns (feature flags, guards, structured concurrency, cryptography, webhooks), and platform connectivity (event bus, schema management, service clients).

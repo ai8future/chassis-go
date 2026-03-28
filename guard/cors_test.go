@@ -3,6 +3,7 @@ package guard_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -126,6 +127,60 @@ func TestCORSPassthroughWithoutOrigin(t *testing.T) {
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
 		t.Fatalf("expected no Allow-Origin header, got %q", got)
+	}
+}
+
+func TestCORSAllowCredentials(t *testing.T) {
+	cfg := guard.CORSConfig{
+		AllowOrigins:     []string{"https://example.com"},
+		AllowCredentials: true,
+		AllowMethods:     []string{"GET", "POST"},
+	}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+	})
+
+	mw := guard.CORS(cfg)(handler)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Origin", "https://example.com")
+	mw.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Errorf("Allow-Credentials = %q, want %q", got, "true")
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://example.com" {
+		t.Errorf("Allow-Origin = %q, want %q (must echo origin, not *)", got, "https://example.com")
+	}
+}
+
+func TestCORSPreflightCustomMethods(t *testing.T) {
+	cfg := guard.CORSConfig{
+		AllowOrigins: []string{"*"},
+		AllowMethods: []string{"GET", "DELETE", "PATCH"},
+		AllowHeaders: []string{"X-Custom-Header"},
+	}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+	})
+
+	mw := guard.CORS(cfg)(handler)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("OPTIONS", "/", nil)
+	req.Header.Set("Origin", "https://test.com")
+	req.Header.Set("Access-Control-Request-Method", "DELETE")
+	mw.ServeHTTP(rec, req)
+
+	methods := rec.Header().Get("Access-Control-Allow-Methods")
+	if !strings.Contains(methods, "DELETE") {
+		t.Errorf("Allow-Methods = %q, should contain DELETE", methods)
+	}
+
+	headers := rec.Header().Get("Access-Control-Allow-Headers")
+	if !strings.Contains(headers, "X-Custom-Header") {
+		t.Errorf("Allow-Headers = %q, should contain X-Custom-Header", headers)
 	}
 }
 

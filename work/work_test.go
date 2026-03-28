@@ -421,6 +421,76 @@ func TestAll_EmptySlice(t *testing.T) {
 	}
 }
 
+func TestMapContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	items := make([]int, 100)
+	for i := range items {
+		items[i] = i
+	}
+
+	start := time.Now()
+
+	_, err := Map(ctx, items, func(ctx context.Context, item int) (int, error) {
+		if item == 5 {
+			cancel() // cancel after 5 items start
+		}
+		time.Sleep(50 * time.Millisecond)
+		return item, ctx.Err()
+	}, Workers(2))
+
+	elapsed := time.Since(start)
+	// Map should not process all 100 items (would take ~2.5s with 2 workers).
+	// With cancellation it should abort early.
+	if elapsed > 2*time.Second {
+		t.Errorf("Map took %v -- context cancellation did not abort early", elapsed)
+	}
+	// It's acceptable for err to be nil or non-nil depending on timing.
+	_ = err
+}
+
+func TestRaceSingleTask(t *testing.T) {
+	result, err := Race(context.Background(), func(ctx context.Context) (string, error) {
+		return "only-one", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != "only-one" {
+		t.Errorf("result = %q, want %q", result, "only-one")
+	}
+}
+
+func TestStreamContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	in := make(chan int)
+
+	out := Stream(ctx, in, func(ctx context.Context, n int) (int, error) {
+		time.Sleep(20 * time.Millisecond)
+		return n * 2, nil
+	})
+
+	// Send a few items
+	in <- 1
+	in <- 2
+
+	// Cancel and close input
+	cancel()
+	close(in)
+
+	// Drain output -- channel must eventually close
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case _, ok := <-out:
+			if !ok {
+				return // success -- channel closed
+			}
+		case <-timeout:
+			t.Fatal("output channel not closed within 2s after context cancellation")
+		}
+	}
+}
+
 func TestWorkers_ClampsToOne(t *testing.T) {
 	items := []int{1, 2, 3}
 	results, err := Map(context.Background(), items, func(_ context.Context, n int) (int, error) {

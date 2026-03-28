@@ -1,6 +1,8 @@
 package cache_test
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -120,4 +122,55 @@ func TestSetOverwrite(t *testing.T) {
 	if c.Len() != 1 {
 		t.Fatalf("expected len=1, got %d", c.Len())
 	}
+}
+
+func TestCacheConcurrentAccess(t *testing.T) {
+	c := cache.New[string, int](cache.MaxSize(100), cache.TTL(time.Minute))
+
+	var wg sync.WaitGroup
+	// Writers
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				key := fmt.Sprintf("key-%d-%d", n, j)
+				c.Set(key, n*100+j)
+			}
+		}(i)
+	}
+	// Readers
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				key := fmt.Sprintf("key-%d-%d", n, j%50)
+				c.Get(key)
+			}
+		}(i)
+	}
+	// Deleters
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				key := fmt.Sprintf("key-%d-%d", n, j)
+				c.Delete(key)
+			}
+		}(i)
+	}
+	// Len + Prune
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 20; i++ {
+			c.Len()
+			c.Prune()
+		}
+	}()
+
+	wg.Wait()
+	// No assertion needed -- test passes if no race detector violation.
 }

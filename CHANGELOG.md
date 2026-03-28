@@ -1,5 +1,23 @@
 # Changelog
 
+## [10.0.10] - 2026-03-27
+
+### Tests
+
+- **internal/otelutil**: Add histogram_test.go -- first-ever tests for LazyHistogram (basic usage, concurrent init safety, value recording)
+- **kafkakit**: Add tenant_test.go -- Revoke, concurrent access, grant idempotency, multiple grants
+- **kafkakit**: Add envelope_test.go -- nil entity refs normalization, JSON roundtrip, invalid JSON error, non-JSON data handling, event ID format
+- **call**: Add RemoveBreaker and RemoveBreaker_Nonexistent tests
+- **errors**: Add FromError(nil), WriteProblem(nil), ProblemDetail(nil request), WithDetail/WithCause immutability tests
+- **secval**: Add ValidateIdentifier 64/65 char boundary, SafeFilename unicode/null byte/whitespace collapse, all-non-ASCII filename tests
+- **health**: Add empty checks map, Content-Type assertion, valid JSON response tests
+- **guard/cors**: Add AllowCredentials header, preflight custom methods/headers tests
+- **guard/timeout**: Add write-after-deadline discard, panic re-propagation tests
+- **cache**: Add concurrent read/write/delete/prune race-safety test
+- **work**: Add Map context cancellation early abort, Race single task, Stream context cancellation tests
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.0.9] - 2026-03-27
 
 ### New Features
