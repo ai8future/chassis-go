@@ -36,6 +36,7 @@ func SetAppVersion(v string) {
 // This ensures every chassis binary automatically supports --version.
 func RequireMajor(required int) {
 	checkVersionFlag()
+	checkFreshness()
 	majorVersionAsserted.Store(true)
 	parts := strings.SplitN(Version, ".", 2)
 	actual, err := strconv.Atoi(parts[0])
