@@ -1,5 +1,14 @@
 # Changelog
 
+## [10.0.12] - 2026-03-28
+
+### New Features
+
+- **chassis**: Add `semverNewer` version comparison utility in `freshness.go` — compares dot-separated numeric version strings, returns true if version a is strictly newer than version b; handles variable-length segments and returns false on parse errors or equal versions
+- **chassis**: Add `TestSemverNewer` with 13 test cases covering newer/equal/older/empty/malformed/variable-length inputs
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.0.11] - 2026-03-28
 
 ### New Features
