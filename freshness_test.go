@@ -3,6 +3,7 @@ package chassis
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -131,4 +132,42 @@ func TestResolveMainPackageBinaryAtRoot(t *testing.T) {
 	if got != "github.com/ai8future/rcodegen" {
 		t.Errorf("got %q, want module path", got)
 	}
+}
+
+func TestRebuildNoGo(t *testing.T) {
+	t.Setenv("PATH", "")
+
+	err := rebuild("/tmp/fake", "example.com/app", "/tmp/fake/myservice")
+	if err == nil {
+		t.Fatal("expected error when go not in PATH")
+	}
+	if !strings.Contains(err.Error(), "go not found in PATH") {
+		t.Errorf("expected 'go not found in PATH' error, got: %v", err)
+	}
+}
+
+func TestCheckFreshnessSkipsWhenNoAppVersion(t *testing.T) {
+	origAppVersion := appVersion
+	appVersion = ""
+	defer func() { appVersion = origAppVersion }()
+
+	checkFreshness()
+}
+
+func TestCheckFreshnessSkipsWithNoRebuildEnv(t *testing.T) {
+	origAppVersion := appVersion
+	appVersion = "1.0.0"
+	defer func() { appVersion = origAppVersion }()
+	t.Setenv("CHASSIS_NO_REBUILD", "1")
+
+	checkFreshness()
+}
+
+func TestCheckFreshnessSkipsWithGuardEnv(t *testing.T) {
+	origAppVersion := appVersion
+	appVersion = "1.0.0"
+	defer func() { appVersion = origAppVersion }()
+	t.Setenv("CHASSIS_REBUILD_GUARD", "1")
+
+	checkFreshness()
 }

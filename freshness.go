@@ -1,10 +1,16 @@
 package chassis
 
 import (
+	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 )
 
 // semverNewer returns true if version a is strictly newer than version b.
@@ -102,4 +108,115 @@ func resolveMainPackage(buildInfoPath, modulePath, moduleRoot, binPath string) s
 		return modulePath
 	}
 	return modulePath + "/" + filepath.ToSlash(rel)
+}
+
+// rebuildTimeout is the maximum time to wait for go build.
+var rebuildTimeout = 2 * time.Minute
+
+// rebuild runs go build to produce a new binary at binPath, building pkgPath
+// from moduleRoot. Builds to a temp file then atomically renames.
+func rebuild(moduleRoot, pkgPath, binPath string) error {
+	goBin, err := exec.LookPath("go")
+	if err != nil {
+		return fmt.Errorf("go not found in PATH: %w", err)
+	}
+
+	tmpPath := binPath + ".chassis-rebuild.tmp"
+
+	ctx, cancel := context.WithTimeout(context.Background(), rebuildTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, goBin, "build", "-o", tmpPath, pkgPath)
+	cmd.Dir = moduleRoot
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("go build failed: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, binPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("rename failed: %w", err)
+	}
+
+	return nil
+}
+
+// checkFreshness compares the compiled-in appVersion against the VERSION file
+// on disk at the binary's module root. If the disk version is newer, it
+// rebuilds the binary and re-execs. Only active when SetAppVersion() has been
+// called.
+func checkFreshness() {
+	if appVersion == "" {
+		return
+	}
+	if os.Getenv("CHASSIS_NO_REBUILD") != "" {
+		return
+	}
+	if os.Getenv("CHASSIS_REBUILD_GUARD") != "" {
+		return
+	}
+
+	// Resolve binary path.
+	exePath, err := os.Executable()
+	if err != nil {
+		return
+	}
+	exePath, err = filepath.EvalSymlinks(exePath)
+	if err != nil {
+		return
+	}
+
+	// Find module root.
+	moduleRoot := findModuleRoot(exePath)
+	if moduleRoot == "" {
+		return
+	}
+
+	// Verify module path matches build info.
+	diskModulePath := readModulePath(moduleRoot)
+	if diskModulePath == "" {
+		return
+	}
+
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return
+	}
+	if info.Main.Path != diskModulePath {
+		return
+	}
+
+	// Read and compare versions.
+	diskVersionBytes, err := os.ReadFile(filepath.Join(moduleRoot, "VERSION"))
+	if err != nil {
+		return
+	}
+	diskVersion := strings.TrimSpace(string(diskVersionBytes))
+
+	if !semverNewer(diskVersion, appVersion) {
+		return
+	}
+
+	// Stale! Rebuild.
+	fmt.Fprintf(os.Stderr, "chassis: stale binary (compiled %s, source %s) — rebuilding...\n",
+		appVersion, diskVersion)
+
+	pkgPath := resolveMainPackage(info.Path, diskModulePath, moduleRoot, exePath)
+	if pkgPath == "" {
+		fmt.Fprintf(os.Stderr, "chassis: cannot determine main package path — continuing stale\n")
+		return
+	}
+
+	if err := rebuild(moduleRoot, pkgPath, exePath); err != nil {
+		fmt.Fprintf(os.Stderr, "chassis: rebuild failed: %v — continuing stale\n", err)
+		return
+	}
+
+	// Set guard and re-exec.
+	os.Setenv("CHASSIS_REBUILD_GUARD", "1")
+	execErr := syscall.Exec(exePath, os.Args, os.Environ())
+	// If Exec fails, warn and continue.
+	fmt.Fprintf(os.Stderr, "chassis: re-exec failed: %v — continuing stale\n", execErr)
 }

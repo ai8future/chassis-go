@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.0.13] - 2026-03-28
+
+### New Features
+
+- **chassis**: Add `rebuild` function in `freshness.go` — runs `go build` to produce a new binary at the target path, builds to a temp file then atomically renames; enforces a 2-minute timeout via context; returns descriptive errors for missing go binary, build failures, and rename failures
+- **chassis**: Add `checkFreshness` orchestrator in `freshness.go` — compares compiled-in `appVersion` against the VERSION file on disk at the binary's module root; if the disk version is newer, rebuilds the binary and re-execs via `syscall.Exec`; respects `CHASSIS_NO_REBUILD` and `CHASSIS_REBUILD_GUARD` env vars; validates module path against `debug.ReadBuildInfo`; silently no-ops when `appVersion` is unset or any resolution step fails
+
+### Tests
+
+- **chassis**: Add `TestRebuildNoGo` — verifies rebuild returns "go not found in PATH" error when PATH is empty
+- **chassis**: Add `TestCheckFreshnessSkipsWhenNoAppVersion` — verifies checkFreshness is a no-op when appVersion is empty
+- **chassis**: Add `TestCheckFreshnessSkipsWithNoRebuildEnv` — verifies checkFreshness is a no-op when CHASSIS_NO_REBUILD is set
+- **chassis**: Add `TestCheckFreshnessSkipsWithGuardEnv` — verifies checkFreshness is a no-op when CHASSIS_REBUILD_GUARD is set
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.0.12] - 2026-03-28
 
 ### New Features
