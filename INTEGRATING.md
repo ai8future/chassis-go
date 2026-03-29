@@ -1278,4 +1278,15 @@ See **[GO-BEST-PRACTICES.md](GO-BEST-PRACTICES.md)** for prescriptive rules on b
 
 **The toolkit has four external dependencies.** `golang.org/x/sync` (for errgroup), `golang.org/x/crypto` (for seal — scrypt KDF), `google.golang.org/grpc` (for grpckit and errors), and `go.opentelemetry.io/otel` (for otel, metrics, call, and work). If you only use Tier 1 packages (config, logz, lifecycle, testkit), only `x/sync` is pulled in.
 
-**Vendor freshness with local `replace` directives.** If your project uses `go mod vendor` and your `go.mod` has a `replace` directive pointing chassis-go to a local path (e.g., `replace github.com/ai8future/chassis-go/v10 => ../../chassis_suite/chassis-go`), the vendor directory does NOT auto-update when the local chassis source changes. You must re-run `go mod vendor` after chassis-go is updated, or your build will silently use the old vendored code — even though `go.mod` points to the latest source. This is the most common cause of "missing feature" bugs in local development. Before debugging missing chassis features, check `vendor/modules.txt` for the chassis version. **AI agents and coding assistants:** before building, testing, or debugging a vendored project with local `replace` directives, run `go mod vendor` to ensure the vendor directory is current.
+**Vendor freshness with local `replace` directives.** If your project uses `go mod vendor` and your `go.mod` has a `replace` directive pointing chassis-go to a local path (e.g., `replace github.com/ai8future/chassis-go/v10 => ../../chassis_suite/chassis-go`), the vendor directory does NOT auto-update when the local chassis source changes. You must re-run `go mod vendor` after chassis-go is updated, or your build will silently use the old vendored code — even though `go.mod` points to the latest source. This is the most common cause of "missing feature" bugs in local development. Before debugging missing chassis features, check `vendor/modules.txt` for the chassis version.
+
+If your project uses vendoring with local `replace` directives, you **MUST** add the following to your project's `AGENTS.md` (or `CLAUDE.md`):
+
+```
+- **Vendor freshness**: This project vendors dependencies and uses a local `replace` directive
+  for chassis-go. Before building, testing, or debugging, always run `go mod vendor` to ensure
+  the vendor directory reflects the current local chassis-go source. A stale vendor dir will
+  silently use old code even though go.mod points to the latest source.
+```
+
+This ensures that any AI agent or coding assistant working in your repo knows to sync the vendor directory before doing anything else.

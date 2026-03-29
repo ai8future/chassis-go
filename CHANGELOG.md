@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.2.2] - 2026-03-29
+
+### Documentation
+
+- **INTEGRATING.md**: Add mandatory AGENTS.md snippet for consumer repos using vendoring with local `replace` directives — tells consumers they MUST add vendor freshness guidance to their own AGENTS.md so AI agents know to run `go mod vendor`.
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.2.1] - 2026-03-29
 
 ### Documentation
