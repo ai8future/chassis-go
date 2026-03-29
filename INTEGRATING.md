@@ -1218,6 +1218,34 @@ sub.Start(ctx)
 
 heartbeatkit and announcekit auto-activate when kafkakit is configured via `lifecycle.Run(ctx, WithKafkaConfig(cfg), components...)`.
 
+### Subscriber Concurrency
+
+By default, the subscriber processes messages sequentially (one at a time per poll batch). Set `Concurrency` on `SubscriberConfig` to enable parallel message dispatch:
+
+```go
+cfg := kafkakit.Config{
+    BootstrapServers: "localhost:9092",
+    Subscriber: kafkakit.SubscriberConfig{
+        Concurrency: 8, // process up to 8 messages in parallel per batch
+    },
+}
+
+sub, err := kafkakit.NewSubscriber(cfg, "my-service-group")
+```
+
+**Behavior:**
+
+| Concurrency value | Behavior |
+|---|---|
+| `0` (default) or `1` | Sequential processing -- same as before this feature |
+| `>1` (e.g., `8`) | Concurrent dispatch with a semaphore limiting active goroutines |
+
+When concurrency is `>1`, each poll batch dispatches handler invocations as goroutines bounded by a channel semaphore. All goroutines in a batch are drained (`sync.WaitGroup.Wait()`) before the next poll, preserving at-least-once delivery semantics with the consumer group.
+
+**When to use:** CPU-bound or I/O-bound handlers that can safely process multiple events simultaneously. Ensure your handler is goroutine-safe (no shared mutable state without synchronization).
+
+**When not to use:** Handlers that depend on strict per-partition ordering. Concurrent dispatch within a batch does not guarantee ordering.
+
 ---
 
 ## Go Best Practices for Chassis Services

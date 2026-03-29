@@ -38,6 +38,7 @@ type SubscriberConfig struct {
 	EnableAutoCommit bool
 	MaxPollRecords   int
 	SessionTimeoutMs int
+	Concurrency      int // 0 or 1 = sequential; >1 = parallel workers
 }
 
 // TenantFilterConfig holds tenant filtering settings.

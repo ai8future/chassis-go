@@ -24,6 +24,11 @@ type Subscriber struct {
 	cfg           Config
 }
 
+// concurrency returns the configured concurrency level.
+func (s *Subscriber) concurrency() int {
+	return s.cfg.Subscriber.Concurrency
+}
+
 // SubscriberOption configures a Subscriber.
 type SubscriberOption func(*Subscriber)
 
@@ -113,6 +118,13 @@ func (s *Subscriber) Start(ctx context.Context) error {
 	s.client = client
 	s.healthy.Store(true)
 
+	// Create semaphore for concurrent dispatch (allocated once, used across all batches)
+	var sem chan struct{}
+	if s.concurrency() > 1 {
+		sem = make(chan struct{}, s.concurrency())
+		slog.Info("kafkakit: subscriber started", "concurrency", s.concurrency())
+	}
+
 	defer func() {
 		s.healthy.Store(false)
 		s.client.Close()
@@ -137,9 +149,25 @@ func (s *Subscriber) Start(ctx context.Context) error {
 			continue
 		}
 
-		fetches.EachRecord(func(record *kgo.Record) {
-			s.handleRecord(ctx, record)
-		})
+		if s.concurrency() <= 1 {
+			fetches.EachRecord(func(record *kgo.Record) {
+				s.handleRecord(ctx, record)
+			})
+		} else {
+			var wg sync.WaitGroup
+			fetches.EachRecord(func(record *kgo.Record) {
+				sem <- struct{}{}
+				wg.Add(1)
+				go func() {
+					defer func() {
+						<-sem
+						wg.Done()
+					}()
+					s.handleRecord(ctx, record)
+				}()
+			})
+			wg.Wait()
+		}
 	}
 }
 

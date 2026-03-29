@@ -1,5 +1,17 @@
 # Changelog
 
+## [10.2.0] - 2026-03-29
+
+### New Features
+
+- **kafkakit**: Add subscriber concurrency support. New `Concurrency` field on `SubscriberConfig` controls parallel message dispatch: `0` or `1` = sequential (default, backward-compatible), `>1` = concurrent workers with semaphore-bounded parallelism. When concurrency is enabled, each poll batch dispatches handlers via goroutines gated by a channel semaphore, with `sync.WaitGroup` drain before the next poll. The semaphore is allocated once and reused across batches.
+
+### Tests
+
+- **kafkakit**: Add subscriber_test.go -- `TestSubscriberConfig_ConcurrencyDefault`, `TestNewSubscriber_StoresConcurrency`, `TestNewSubscriber_ConcurrencyZeroIsSequential`, `TestNewSubscriber_NegativeConcurrencyTreatedAsSequential`, `TestConcurrentDispatch_MaxActiveWorkers`, `TestConcurrentDispatch_ErrorIsolation`, `TestConcurrentDispatch_DrainOnClose` (7 new tests)
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.1.0] - 2026-03-29
 
 ### Documentation
