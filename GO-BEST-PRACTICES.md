@@ -134,44 +134,53 @@ Add `proto` and `docker` targets if the project uses protobuf or Docker.
 
 ---
 
-## 4. VERSION & LDFLAGS
+## 4. VERSION & App Version
 
-Every service injects its version at build time so that `--version` or health check endpoints report the correct value.
+Every chassis-go service must provide its app version via `SetAppVersion()`. This enables the automatic `--version` flag and auto-rebuild freshness check (stale binaries recompile themselves).
 
-### Standard Pattern (LDFLAGS)
+### Standard Pattern: appversion.go at repo root
+
+Create `appversion.go` next to your `VERSION` and `go.mod`:
 
 ```go
-// cmd/{service_name}/main.go
-var version = "dev"
+// appversion.go
+package yourpkg
+
+import (
+    _ "embed"
+    "strings"
+)
+
+//go:embed VERSION
+var rawAppVersion string
+
+var AppVersion = strings.TrimSpace(rawAppVersion)
 ```
+
+Then in every `cmd/*/main.go`:
+
+```go
+func main() {
+    chassis.SetAppVersion(yourpkg.AppVersion)
+    chassis.RequireMajor(10)
+    // ...
+}
+```
+
+This works because `appversion.go` and `VERSION` are in the same directory (repo root), so `go:embed` can access it. Every binary imports the root package — standard Go import, no filesystem tricks.
+
+Do NOT symlink VERSION into `cmd/` directories — `go:embed` rejects symlinks. Do NOT copy VERSION into `cmd/` directories — copies get out of sync.
+
+### Legacy: LDFLAGS
+
+Some projects inject version via linker flags:
 
 ```makefile
 VERSION := $(shell cat VERSION)
 LDFLAGS := -ldflags="-w -s -X main.version=$(VERSION)"
 ```
 
-The `-w -s` flags strip debug info and symbol tables, reducing binary size.
-
-### Alternative: go:embed
-
-Some projects embed the VERSION file directly:
-
-```go
-import _ "embed"
-
-//go:embed VERSION
-var version string
-```
-
-This avoids LDFLAGS entirely. Use this when:
-- The project doesn't use a Makefile (or you want `go build` without flags to still report the version)
-- The VERSION file is always present at the module root
-
-Use LDFLAGS when:
-- The project already has LDFLAGS for other values (git commit, build time)
-- You need the version available in a non-main package
-
-Don't use both — pick one per project.
+This still works for Makefile-driven builds and for injecting additional values (git commit, build time). But LDFLAGS alone does not enable the `--version` flag or auto-rebuild — `SetAppVersion()` is still required. If you use LDFLAGS for other values, you can still use `appversion.go` for the version itself.
 
 ---
 

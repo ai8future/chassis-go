@@ -1,5 +1,16 @@
 # Changelog
 
+## [10.1.0] - 2026-03-29
+
+### Documentation
+
+- **README.md**: Update version badge to 10.1.0, add `SetAppVersion` to quick start and version gate section with auto-rebuild description
+- **GO-BEST-PRACTICES.md**: Rewrite section 4 (VERSION & LDFLAGS → VERSION & App Version) — `appversion.go` + `SetAppVersion` is now the primary recommendation, LDFLAGS is legacy
+- **INTEGRATING.md**: Add `SetAppVersion(yourpkg.AppVersion)` to all code examples: CLI/batch mode, minimal HTTP service, XYOps client, XYOps worker
+- **chassis-docs**: Update Go examples in README.md and 06-service-adoption.md with `SetAppVersion` pattern, language-qualified (Go only, Python/TypeScript unchanged)
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.0.15] - 2026-03-29
 
 ### Documentation

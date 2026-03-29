@@ -562,6 +562,7 @@ For CLI tools and batch processes that aren't long-running services but still ne
 
 ```go
 func main() {
+    chassis.SetAppVersion(yourpkg.AppVersion) // enables --version and auto-rebuild
     chassis.RequireMajor(10)
     cfg := config.MustLoad[BatchConfig]()
 
@@ -936,6 +937,7 @@ func main() {
 
 ```go
 func main() {
+    chassis.SetAppVersion(yourpkg.AppVersion)
     chassis.RequireMajor(10)
     cfg := config.MustLoad[ServiceConfig]()
     logger := logz.New(cfg.LogLevel)
@@ -1044,6 +1046,7 @@ import (
 )
 
 func main() {
+    chassis.SetAppVersion(yourpkg.AppVersion)
     chassis.RequireMajor(10)
     cfg := config.MustLoad[Config]()
     logger := logz.New(cfg.LogLevel)
@@ -1125,6 +1128,7 @@ import (
 )
 
 func main() {
+    chassis.SetAppVersion(yourpkg.AppVersion)
     chassis.RequireMajor(10)
     cfg := config.MustLoad[Config]()
 
@@ -1150,6 +1154,7 @@ CLI tools and batch processes should also integrate the xyops client. Even witho
 
 ```go
 func main() {
+    chassis.SetAppVersion(yourpkg.AppVersion) // enables --version and auto-rebuild
     chassis.RequireMajor(10)
     cfg := config.MustLoad[BatchConfig]()
 

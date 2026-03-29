@@ -6,7 +6,7 @@ A composable Go service toolkit for building production-grade microservices. Too
 go get github.com/ai8future/chassis-go/v10
 ```
 
-**Current version:** 10.0.10 &middot; **Go:** 1.25.5+ &middot; **License:** MIT
+**Current version:** 10.0.15 &middot; **Go:** 1.25.5+ &middot; **License:** MIT
 
 ---
 
@@ -107,6 +107,7 @@ type AppConfig struct {
 
 func main() {
     // Version gate — must be first
+    chassis.SetAppVersion(myapp.AppVersion) // enables --version flag and auto-rebuild
     chassis.RequireMajor(10)
 
     cfg := config.MustLoad[AppConfig]()
@@ -502,14 +503,21 @@ func TestMyHandler(t *testing.T) {
 
 ## Version Gate
 
-chassis-go enforces a mandatory version compatibility contract. Every service must declare which major version it expects:
+chassis-go enforces a mandatory version compatibility contract. Every service must declare which major version it expects and provide its app version:
 
 ```go
 func main() {
-    chassis.RequireMajor(10)  // must be the first chassis call
+    chassis.SetAppVersion(myapp.AppVersion) // from appversion.go at repo root
+    chassis.RequireMajor(10)                // must be called before any chassis module
     // ...
 }
 ```
+
+`SetAppVersion` enables two automatic features:
+- **`--version` flag**: `myservice --version` prints `myservice 1.2.3 (chassis-go 10.x.y)` and exits
+- **Auto-rebuild**: if the binary's compiled version is older than the VERSION file on disk, it recompiles and re-execs automatically. Opt out with `CHASSIS_NO_REBUILD=1`.
+
+See [INTEGRATING.md](INTEGRATING.md) for the full `appversion.go` setup pattern.
 
 If the installed library's major version doesn't match, the process exits immediately with a clear migration message. Every chassis module calls `AssertVersionChecked()` at its entry points — importing a chassis module without calling `RequireMajor` first causes an immediate crash.
 
