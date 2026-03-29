@@ -26,16 +26,41 @@ import chassis "github.com/ai8future/chassis-go/v10"
 logger.Info("starting", "chassis_version", chassis.Version)
 ```
 
-### Version gate
+### Version gate and app version
 
-Every service must declare which major version of chassis it supports. This prevents silent behavior changes when chassis is upgraded without review.
+Every service must declare which major version of chassis it supports, and should provide its own app version for the `--version` flag and auto-rebuild freshness check.
+
+**Step 1: Create `appversion.go` at your repo root** (next to `VERSION` and `go.mod`):
+
+```go
+package yourpkg
+
+import (
+    _ "embed"
+    "strings"
+)
+
+//go:embed VERSION
+var rawAppVersion string
+
+var AppVersion = strings.TrimSpace(rawAppVersion)
+```
+
+**Step 2: Wire it up in every `cmd/*/main.go`:**
 
 ```go
 func main() {
-    chassis.RequireMajor(10) // crashes if chassis major version != 10
+    chassis.SetAppVersion(yourpkg.AppVersion) // enables --version and auto-rebuild
+    chassis.RequireMajor(10)                  // crashes if chassis major version != 10
     // ... rest of startup
 }
 ```
+
+This gives you:
+- **`--version` flag**: `myservice --version` prints `myservice 1.2.3 (chassis-go 10.x.y)`
+- **Auto-rebuild**: if the binary's compiled version is older than the VERSION file on disk, it automatically recompiles and re-execs. Opt out with `CHASSIS_NO_REBUILD=1`.
+
+Do NOT copy or symlink VERSION into `cmd/` directories. `go:embed` rejects symlinks, and copies get out of sync. The root-package embed + import pattern above is the correct approach.
 
 If the version doesn't match, the process exits with a clear message telling you exactly what to do. If `RequireMajor` is not called before using any chassis module, those modules will also crash at startup.
 

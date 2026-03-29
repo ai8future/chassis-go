@@ -1,5 +1,14 @@
 # Changelog
 
+## [10.0.15] - 2026-03-29
+
+### Documentation
+
+- **CLAUDE.md**: Add mandatory Version & Freshness section — documents `appversion.go` root-package embed pattern, `SetAppVersion` requirement for all consumer binaries, `--version` flag behavior, auto-rebuild behavior, and explicit warnings against symlinks/copies of VERSION in cmd/ directories.
+- **INTEGRATING.md**: Rewrite "Version gate" section to "Version gate and app version" — documents the complete `appversion.go` + `SetAppVersion` + `RequireMajor` wiring pattern with step-by-step instructions.
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.0.14] - 2026-03-28
 
 ### New Features
