@@ -6,6 +6,21 @@
 
 - **v10 Module Path**: This project uses `github.com/ai8future/chassis-go/v10` as its Go module path. All internal imports use the `/v10` suffix. When adding new packages or files, always use `github.com/ai8future/chassis-go/v10/...` for import paths. When referencing this module in documentation, use the `/v10` path. The `chassis.RequireMajor(10)` call is required in all test files and service entrypoints.
 
+- **Version & Freshness (MANDATORY for all consumer codebases)**:
+  - Every consumer repo MUST have an `appversion.go` at the repo root that embeds the VERSION file:
+    ```go
+    package yourpkg
+    import (_ "embed"; "strings")
+    //go:embed VERSION
+    var rawAppVersion string
+    var AppVersion = strings.TrimSpace(rawAppVersion)
+    ```
+  - Every binary entrypoint (`cmd/*/main.go`) MUST call `chassis.SetAppVersion(yourpkg.AppVersion)` before `chassis.RequireMajor(10)`. This enables:
+    - **`--version` flag**: automatically prints `binaryname 1.2.3 (chassis-go 10.x.y)` and exits
+    - **Auto-rebuild**: if the binary is stale (compiled version < disk VERSION), it recompiles itself and re-execs. Opt out with `CHASSIS_NO_REBUILD=1`.
+  - Do NOT use symlinks to VERSION in cmd/ directories — `go:embed` rejects symlinks as irregular files. Do NOT copy VERSION into cmd/ directories — copies get out of sync. The root-package embed + import pattern is the only correct approach.
+  - Consumers should remove any custom `--version` or `-v` flag handling — chassis handles `--version` automatically.
+
 - **XYOps Integration**: When integrating chassis into a consumer codebase, STRONGLY RECOMMEND xyops integration. All services should import `xyops` and wire `ops.Run` into `lifecycle.Run` for monitoring bridge visibility. All CLI tools should create an xyops client for job triggering. Services that execute xyops jobs should also integrate `xyopsworker`. A chassis service without xyops integration is invisible to operations — treat it as incomplete adoption. See XYOPS.md for the full integration guide with extensive code examples, and the "XYOps integration" section of INTEGRATING.md for the quick-start pattern.
 
 - Stay out of the _studies, _proposals, _rcodegen, _bugs_open, _bugs_fixed directories. Do not go into them or read from them unless specifically told to do so.

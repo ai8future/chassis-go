@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.2.1] - 2026-03-29
+
+### Documentation
+
+- **INTEGRATING.md**: Add vendor freshness warning to "Things to watch out for" — documents that `go mod vendor` must be re-run after local chassis-go updates when using `replace` directives, and includes explicit guidance for AI agents/coding assistants to check vendor currency before building or debugging.
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.2.0] - 2026-03-29
 
 ### New Features
