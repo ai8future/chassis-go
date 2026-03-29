@@ -899,6 +899,7 @@ status := d.Health(map[string]string{
 
 ```go
 func main() {
+    chassis.SetAppVersion(yourpkg.AppVersion)
     chassis.RequireMajor(10)
 
     d := deploy.Discover("my-service")

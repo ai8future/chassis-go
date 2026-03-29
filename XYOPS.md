@@ -22,6 +22,7 @@ type Config struct {
 }
 
 func main() {
+    chassis.SetAppVersion(yourpkg.AppVersion)
     chassis.RequireMajor(10)
     cfg := config.MustLoad[Config]()
     log := logz.New(cfg.LogLevel)
@@ -348,6 +349,7 @@ type Config struct {
 }
 
 func main() {
+    chassis.SetAppVersion(yourpkg.AppVersion)
     chassis.RequireMajor(10)
     cfg := config.MustLoad[Config]()
 
@@ -542,6 +544,7 @@ type Config struct {
 }
 
 func main() {
+    chassis.SetAppVersion(yourpkg.AppVersion)
     chassis.RequireMajor(10)
 
     d := deploy.Discover("my-service")
@@ -615,6 +618,7 @@ CLI tools and batch processes should use xyops for job orchestration and operati
 
 ```go
 func main() {
+    chassis.SetAppVersion(yourpkg.AppVersion)
     chassis.RequireMajor(10)
     cfg := config.MustLoad[CLIConfig]()
 
@@ -661,6 +665,7 @@ func main() {
 
 ```go
 func main() {
+    chassis.SetAppVersion(yourpkg.AppVersion)
     chassis.RequireMajor(10)
     cfg := config.MustLoad[CLIConfig]()
 
@@ -715,6 +720,7 @@ func waitForJob(ctx context.Context, ops *xyops.Client, jobID string) error {
 
 ```go
 func main() {
+    chassis.SetAppVersion(yourpkg.AppVersion)
     chassis.RequireMajor(10)
     cfg := config.MustLoad[CLIConfig]()
 
