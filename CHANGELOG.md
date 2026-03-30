@@ -1,5 +1,15 @@
 # Changelog
 
+## [10.2.3] - 2026-03-30
+
+### Bug Fixes
+
+- **kafkakit**: Fix subscriber concurrency model that only processed 1 record at a time. Two changes:
+  1. **Wire up MaxPollRecords**: Switch from `PollFetches` to `PollRecords(ctx, maxPoll)`. When `Concurrency > 1`, auto-scales `maxPoll` to `Concurrency * 2` (unless `MaxPollRecords` is explicitly set higher) so each poll returns enough records to saturate the worker pool.
+  2. **Rolling semaphore model**: Remove per-batch `wg.Wait()` that blocked after each poll. The semaphore now acts as a rolling concurrency limiter — the poll loop continues immediately after dispatching workers. `WaitGroup` is retained only for graceful shutdown drain via `defer wg.Wait()`.
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.2.2] - 2026-03-29
 
 ### Documentation

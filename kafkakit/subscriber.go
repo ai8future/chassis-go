@@ -118,15 +118,25 @@ func (s *Subscriber) Start(ctx context.Context) error {
 	s.client = client
 	s.healthy.Store(true)
 
-	// Create semaphore for concurrent dispatch (allocated once, used across all batches)
+	// Determine max records per poll: use config if set, otherwise scale with
+	// concurrency so each poll returns enough records to saturate the worker pool.
+	maxPoll := s.cfg.Subscriber.MaxPollRecords
+	if s.concurrency() > 1 && maxPoll < s.concurrency() {
+		maxPoll = s.concurrency() * 2 // 2x buffer to keep workers busy
+	}
+
+	// Create semaphore for concurrent dispatch and a WaitGroup for graceful shutdown.
+	// The semaphore caps in-flight workers; the WaitGroup drains them on exit.
 	var sem chan struct{}
+	var wg sync.WaitGroup
 	if s.concurrency() > 1 {
 		sem = make(chan struct{}, s.concurrency())
-		slog.Info("kafkakit: subscriber started", "concurrency", s.concurrency())
+		slog.Info("kafkakit: subscriber started", "concurrency", s.concurrency(), "maxPollRecords", maxPoll)
 	}
 
 	defer func() {
 		s.healthy.Store(false)
+		wg.Wait() // drain in-flight workers before closing client
 		s.client.Close()
 	}()
 
@@ -137,7 +147,8 @@ func (s *Subscriber) Start(ctx context.Context) error {
 		default:
 		}
 
-		fetches := s.client.PollFetches(ctx)
+		// PollRecords returns up to maxPoll records; 0 means unlimited (like PollFetches).
+		fetches := s.client.PollRecords(ctx, maxPoll)
 		if errs := fetches.Errors(); len(errs) > 0 {
 			for _, e := range errs {
 				// Context cancellation is not an error
@@ -154,9 +165,8 @@ func (s *Subscriber) Start(ctx context.Context) error {
 				s.handleRecord(ctx, record)
 			})
 		} else {
-			var wg sync.WaitGroup
 			fetches.EachRecord(func(record *kgo.Record) {
-				sem <- struct{}{}
+				sem <- struct{}{} // blocks when worker pool is full
 				wg.Add(1)
 				go func() {
 					defer func() {
@@ -166,7 +176,9 @@ func (s *Subscriber) Start(ctx context.Context) error {
 					s.handleRecord(ctx, record)
 				}()
 			})
-			wg.Wait()
+			// Rolling model: no per-batch Wait(). The semaphore caps concurrency
+			// and the next poll starts immediately. Workers drain on shutdown
+			// via the deferred wg.Wait() above.
 		}
 	}
 }
