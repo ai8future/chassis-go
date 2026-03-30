@@ -1,5 +1,18 @@
 # Changelog
 
+## [10.2.4] - 2026-03-30
+
+### Features
+
+- **kafkakit**: Add `AtLeastOnce` delivery mode to `SubscriberConfig`. When enabled:
+  - Disables auto-commit; offsets are committed only after all handlers in a batch complete
+  - Adds `OnPartitionsRevoked` callback to commit offsets before partition reassignment
+  - Uses batch-and-wait dispatch (vs rolling) so commits reflect completed work
+  - Adds unconditional shutdown commit to flush processed offsets before close
+  - Recommended for slow handlers (>1s processing time). Trade-off: at-least-once instead of at-most-once delivery
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.2.3] - 2026-03-30
 
 ### Bug Fixes

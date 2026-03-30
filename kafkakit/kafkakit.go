@@ -38,7 +38,8 @@ type SubscriberConfig struct {
 	EnableAutoCommit bool
 	MaxPollRecords   int
 	SessionTimeoutMs int
-	Concurrency      int // 0 or 1 = sequential; >1 = parallel workers
+	Concurrency      int  // 0 or 1 = sequential; >1 = parallel workers
+	AtLeastOnce      bool // When true, offsets are committed only after all handlers in a batch complete. Use for slow handlers (>1s). Trade-off: messages may be reprocessed after a crash (at-least-once vs at-most-once). Handler errors are committed after DLQ routing — no re-delivery loop.
 }
 
 // TenantFilterConfig holds tenant filtering settings.

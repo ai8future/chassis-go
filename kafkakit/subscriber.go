@@ -22,6 +22,7 @@ type Subscriber struct {
 	healthy       atomic.Bool
 	mu            sync.RWMutex
 	cfg           Config
+	wg            sync.WaitGroup // tracks in-flight handlers; used by AtLeastOnce revoke callback and shutdown drain
 }
 
 // concurrency returns the configured concurrency level.
@@ -111,6 +112,18 @@ func (s *Subscriber) Start(ctx context.Context) error {
 		kgo.ConsumeTopics(topics...),
 	}
 
+	if s.cfg.Subscriber.AtLeastOnce {
+		opts = append(opts,
+			kgo.DisableAutoCommit(),
+			kgo.OnPartitionsRevoked(func(ctx context.Context, cl *kgo.Client, _ map[string][]int32) {
+				s.wg.Wait()
+				if err := cl.CommitUncommittedOffsets(ctx); err != nil {
+					slog.Error("kafkakit: revoke commit failed", "err", err)
+				}
+			}),
+		)
+	}
+
 	client, err := kgo.NewClient(opts...)
 	if err != nil {
 		return fmt.Errorf("kafkakit: create subscriber client: %w", err)
@@ -125,18 +138,21 @@ func (s *Subscriber) Start(ctx context.Context) error {
 		maxPoll = s.concurrency() * 2 // 2x buffer to keep workers busy
 	}
 
-	// Create semaphore for concurrent dispatch and a WaitGroup for graceful shutdown.
-	// The semaphore caps in-flight workers; the WaitGroup drains them on exit.
+	// Create semaphore for concurrent dispatch.
 	var sem chan struct{}
-	var wg sync.WaitGroup
 	if s.concurrency() > 1 {
 		sem = make(chan struct{}, s.concurrency())
-		slog.Info("kafkakit: subscriber started", "concurrency", s.concurrency(), "maxPollRecords", maxPoll)
+		slog.Info("kafkakit: subscriber started", "concurrency", s.concurrency(), "maxPollRecords", maxPoll, "atLeastOnce", s.cfg.Subscriber.AtLeastOnce)
 	}
 
 	defer func() {
 		s.healthy.Store(false)
-		wg.Wait() // drain in-flight workers before closing client
+		s.wg.Wait() // drain in-flight workers before closing client
+		// Commit any offsets for successfully processed messages before closing.
+		// In AtLeastOnce mode this is essential; in auto-commit mode it's belt-and-suspenders.
+		if err := s.client.CommitUncommittedOffsets(context.Background()); err != nil {
+			slog.Error("kafkakit: final commit failed", "err", err)
+		}
 		s.client.Close()
 	}()
 
@@ -160,25 +176,49 @@ func (s *Subscriber) Start(ctx context.Context) error {
 			continue
 		}
 
-		if s.concurrency() <= 1 {
-			fetches.EachRecord(func(record *kgo.Record) {
-				s.handleRecord(ctx, record)
-			})
-		} else {
-			fetches.EachRecord(func(record *kgo.Record) {
-				sem <- struct{}{} // blocks when worker pool is full
-				wg.Add(1)
-				go func() {
-					defer func() {
-						<-sem
-						wg.Done()
-					}()
+		if s.cfg.Subscriber.AtLeastOnce {
+			// Batch-and-wait: process all records, then commit offsets.
+			if s.concurrency() <= 1 {
+				fetches.EachRecord(func(record *kgo.Record) {
 					s.handleRecord(ctx, record)
-				}()
-			})
-			// Rolling model: no per-batch Wait(). The semaphore caps concurrency
-			// and the next poll starts immediately. Workers drain on shutdown
-			// via the deferred wg.Wait() above.
+				})
+			} else {
+				fetches.EachRecord(func(record *kgo.Record) {
+					sem <- struct{}{}
+					s.wg.Add(1)
+					go func() {
+						defer func() {
+							<-sem
+							s.wg.Done()
+						}()
+						s.handleRecord(ctx, record)
+					}()
+				})
+				s.wg.Wait()
+			}
+			if err := s.client.CommitUncommittedOffsets(ctx); err != nil {
+				slog.Error("kafkakit: commit offsets failed", "err", err)
+			}
+		} else {
+			// Rolling model: semaphore caps concurrency, next poll starts
+			// immediately. Workers drain on shutdown via deferred s.wg.Wait().
+			if s.concurrency() <= 1 {
+				fetches.EachRecord(func(record *kgo.Record) {
+					s.handleRecord(ctx, record)
+				})
+			} else {
+				fetches.EachRecord(func(record *kgo.Record) {
+					sem <- struct{}{}
+					s.wg.Add(1)
+					go func() {
+						defer func() {
+							<-sem
+							s.wg.Done()
+						}()
+						s.handleRecord(ctx, record)
+					}()
+				})
+			}
 		}
 	}
 }
