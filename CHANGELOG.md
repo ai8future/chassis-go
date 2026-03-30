@@ -1,5 +1,15 @@
 # Changelog
 
+## [10.2.5] - 2026-03-30
+
+### Documentation
+
+- **INTEGRATING.md**: Add AtLeastOnce delivery section documenting manual commit mode, comparison table (default vs AtLeastOnce), when to use, handler error/DLQ semantics
+- **README.md**: Update kafkakit package description to mention AtLeastOnce delivery; update current version to 10.2.4
+- **PRODUCT.md**: Update Event Bus Integration section to describe configurable delivery guarantees
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.2.4] - 2026-03-30
 
 ### Features

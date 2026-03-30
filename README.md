@@ -6,7 +6,7 @@ A composable Go service toolkit for building production-grade microservices. Too
 go get github.com/ai8future/chassis-go/v10
 ```
 
-**Current version:** 10.0.15 &middot; **Go:** 1.25.5+ &middot; **License:** MIT
+**Current version:** 10.2.4 &middot; **Go:** 1.25.5+ &middot; **License:** MIT
 
 ---
 
@@ -66,7 +66,7 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 
 | Package | Import | Purpose |
 |---------|--------|---------|
-| `kafkakit` | `.../v10/kafkakit` | Publish/subscribe to Redpanda event bus with Avro envelopes, tenant filtering, DLQ. Depends on `schemakit`. Uses `github.com/twmb/franz-go` |
+| `kafkakit` | `.../v10/kafkakit` | Publish/subscribe to Redpanda event bus with Avro envelopes, tenant filtering, DLQ, AtLeastOnce delivery. Depends on `schemakit`. Uses `github.com/twmb/franz-go` |
 | `schemakit` | `.../v10/schemakit` | Avro schema validation, registration, serialization. Confluent Schema Registry client |
 | `tracekit` | `.../v10/tracekit` | Distributed trace ID propagation (`tr_` + 12 hex). HTTP middleware. Wraps OTel when available |
 | `heartbeatkit` | `.../v10/heartbeatkit` | Auto liveness heartbeats every 30s. Depends on `kafkakit`. Auto-activates with kafkakit |

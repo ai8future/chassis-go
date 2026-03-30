@@ -1246,6 +1246,46 @@ When concurrency is `>1`, the subscriber uses a rolling semaphore model: each po
 
 **When not to use:** Handlers that depend on strict per-partition ordering. Concurrent dispatch within a batch does not guarantee ordering.
 
+### AtLeastOnce Delivery
+
+By default, the subscriber uses Kafka's auto-commit — offsets are committed when the next poll occurs, before handlers finish processing. If the service restarts mid-processing, those messages are lost (at-most-once delivery).
+
+Set `AtLeastOnce: true` to switch to manual commit mode where offsets are committed only after all handlers in a batch complete:
+
+```go
+cfg := kafkakit.Config{
+    BootstrapServers: "localhost:9092",
+    Subscriber: kafkakit.SubscriberConfig{
+        Concurrency: 96,
+        AtLeastOnce: true, // commit after handlers finish, not on poll
+    },
+}
+```
+
+**How it works:**
+
+| Aspect | Default (auto-commit) | AtLeastOnce |
+|---|---|---|
+| Offset commit timing | On next `PollRecords` call | After `wg.Wait()` + explicit `CommitUncommittedOffsets` |
+| Delivery guarantee | At-most-once | At-least-once |
+| Dispatch model | Rolling semaphore (no per-batch wait) | Batch-and-wait (all handlers must complete before commit) |
+| Restart behavior | Messages in-flight are lost | Messages in-flight are re-delivered |
+| Partition rebalance | Auto-commit handles it | `OnPartitionsRevoked` callback drains workers and commits |
+| Shutdown | Workers drained, client closed | Workers drained, final commit, client closed |
+
+**When to use AtLeastOnce:**
+
+- Handlers take >1 second (e.g., LLM processing, external API calls). The batch-and-wait overhead is negligible compared to handler time.
+- Message loss is unacceptable — you'd rather process a message twice than lose it.
+- Your handlers are idempotent or your pipeline handles duplicates (e.g., entity dedup).
+
+**When NOT to use AtLeastOnce:**
+
+- Fast handlers (sub-second). The batch-and-wait stall between polls becomes a real throughput bottleneck.
+- You already have at-most-once semantics baked into your architecture and don't need re-delivery.
+
+**Handler errors and DLQ:** When `AtLeastOnce` is enabled, handler errors are committed after DLQ routing. A message that fails and is routed to the DLQ is considered "handled" — it will not be re-delivered in a loop. This is the correct behavior: the DLQ captures the failure for investigation.
+
 ---
 
 ## Go Best Practices for Chassis Services

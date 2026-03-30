@@ -190,7 +190,7 @@ The `cache` package provides a generic LRU+TTL in-memory cache with configurable
 
 ### 22. Event Bus Integration (Kafka/Redpanda)
 
-The `kafkakit` package provides publish/subscribe to Kafka/Redpanda with a standardized event envelope (unique event IDs, millisecond timestamps, source identity, subject, OTel trace ID extraction, tenant ID, entity references), tenant-based filtering (own/shared/granted tenant delivery logic), dead letter queue routing on handler errors, wildcard pattern matching for subscriptions, and publisher statistics.
+The `kafkakit` package provides publish/subscribe to Kafka/Redpanda with a standardized event envelope (unique event IDs, millisecond timestamps, source identity, subject, OTel trace ID extraction, tenant ID, entity references), tenant-based filtering (own/shared/granted tenant delivery logic), dead letter queue routing on handler errors, wildcard pattern matching for subscriptions, publisher statistics, and configurable delivery guarantees (at-most-once default with rolling semaphore, or at-least-once via `AtLeastOnce` mode with batch-and-wait and manual offset commit).
 
 The `schemakit` package provides Avro schema loading from `.avsc` files, validation, serialization/deserialization in Confluent wire format, and schema registration with Confluent Schema Registry.
 
