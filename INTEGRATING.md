@@ -1226,7 +1226,7 @@ By default, the subscriber processes messages sequentially (one at a time per po
 cfg := kafkakit.Config{
     BootstrapServers: "localhost:9092",
     Subscriber: kafkakit.SubscriberConfig{
-        Concurrency: 8, // process up to 8 messages in parallel per batch
+        Concurrency: 8, // up to 8 messages processed in parallel
     },
 }
 
@@ -1240,7 +1240,7 @@ sub, err := kafkakit.NewSubscriber(cfg, "my-service-group")
 | `0` (default) or `1` | Sequential processing -- same as before this feature |
 | `>1` (e.g., `8`) | Concurrent dispatch with a semaphore limiting active goroutines |
 
-When concurrency is `>1`, each poll batch dispatches handler invocations as goroutines bounded by a channel semaphore. All goroutines in a batch are drained (`sync.WaitGroup.Wait()`) before the next poll, preserving at-least-once delivery semantics with the consumer group.
+When concurrency is `>1`, the subscriber uses a rolling semaphore model: each polled record is dispatched to a goroutine gated by a channel semaphore, and the poll loop continues immediately without waiting for the batch to drain. This keeps workers saturated continuously. `MaxPollRecords` is auto-scaled to `Concurrency * 2` (unless explicitly set higher) so each poll returns enough records to fill the worker pool. In-flight workers are drained gracefully on shutdown.
 
 **When to use:** CPU-bound or I/O-bound handlers that can safely process multiple events simultaneously. Ensure your handler is goroutine-safe (no shared mutable state without synchronization).
 
