@@ -1,5 +1,16 @@
 # Changelog
 
+## [10.2.6] - 2026-04-03
+
+### Documentation
+
+- **INTEGRATING.md**: Add comprehensive Addon Packages section covering `cache`, `seal`, `tick`, and `webhook` with full API examples and integration guidance
+- **INTEGRATING.md**: Add Service Client Kits section documenting `graphkit` (knowledge graph), `registrykit` (entity registry), and `lakekit` (data lake) clients
+- **INTEGRATING.md**: Add Event Bus Kits section with full documentation for `tracekit`, `schemakit`, `heartbeatkit`, and `announcekit`
+- **INTEGRATING.md**: Update module taxonomy to classify service client kits and event bus kits as distinct categories
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.2.5] - 2026-03-30
 
 ### Documentation

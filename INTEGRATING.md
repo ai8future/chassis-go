@@ -10,7 +10,7 @@ Practical guide for teams adopting chassis-go into an existing Go codebase.
 
 **What this is not**: An opinionated framework. Chassis doesn't own your dependency injection, routing, or service mesh. It provides building blocks that you wire together explicitly.
 
-**Service modules vs. utility modules**: Chassis modules fall into two categories. *Service modules* (`httpkit`, `grpckit`, `lifecycle`, `registry`) require a running service with `lifecycle.Run()` and an active registry — they crash if used without it. *Utility modules* (`config`, `logz`, `errors`, `call`, `work`, `health`, `secval`, `flagz`, `metrics`, `otel`, `testkit`, `cache`, `seal`, `tick`, `webhook`, `deploy`) work anywhere — services, libraries, CLI tools. A Go module that imports chassis utilities can be consumed by any application that calls `RequireMajor(10)`.
+**Service modules vs. utility modules**: Chassis modules fall into two categories. *Service modules* (`httpkit`, `grpckit`, `lifecycle`, `registry`) require a running service with `lifecycle.Run()` and an active registry — they crash if used without it. *Utility modules* (`config`, `logz`, `errors`, `call`, `work`, `health`, `secval`, `flagz`, `metrics`, `otel`, `testkit`, `cache`, `seal`, `tick`, `webhook`, `deploy`, `tracekit`, `schemakit`) work anywhere — services, libraries, CLI tools. *Service client kits* (`graphkit`, `registrykit`, `lakekit`) are HTTP clients for internal platform services — they work anywhere but require the target service to be reachable. *Event bus kits* (`kafkakit`, `heartbeatkit`, `announcekit`) require a Kafka/Redpanda broker. A Go module that imports chassis utilities can be consumed by any application that calls `RequireMajor(10)`.
 
 ## Installation
 
@@ -929,6 +929,501 @@ func main() {
 - `LoadEnv()` never overwrites existing env vars — explicit env vars always take precedence.
 - Environment variable overrides (`CHASSIS_ENV`, `CHASSIS_PROVIDER`, `CHASSIS_REGION`, `CHASSIS_CLUSTER`) always take highest priority, above deploy.json values.
 - `Dependency.Required` uses `*bool` in Go — `nil` defaults to `true`. Set explicitly to `false` for optional dependencies.
+
+---
+
+## Addon packages
+
+These packages provide important functionality that most services should consider adopting. They are utility modules — they work anywhere without `lifecycle.Run()` and have no registry dependency. **If you're building a service that handles data, secrets, periodic tasks, or outbound notifications, you almost certainly need one or more of these.**
+
+### cache — In-memory TTL/LRU cache
+
+**When to use**: You need a fast, bounded, concurrency-safe in-memory cache. Use it for API response caching, expensive computation memoization, or any hot-path data that benefits from local caching.
+
+```go
+import "github.com/ai8future/chassis-go/v10/cache"
+
+// Create a typed cache with TTL and size limits
+userCache := cache.New[string, *User](
+    cache.MaxSize(5000),             // LRU eviction after 5000 entries
+    cache.TTL(10 * time.Minute),     // entries expire after 10 minutes
+    cache.Name("user-cache"),        // name for metrics/debugging
+)
+
+// Simple get/set
+userCache.Set(userID, user)
+if u, ok := userCache.Get(userID); ok {
+    return u, nil
+}
+
+// Explicit deletion
+userCache.Delete(userID)
+
+// Remove all expired entries (useful on a tick interval)
+removed := userCache.Prune()
+
+// Check current size
+size := userCache.Len()
+```
+
+**Behavior**:
+- Generic types: `Cache[K comparable, V any]` — no type assertions needed.
+- LRU eviction: when `MaxSize` is reached, the least-recently-used entry is evicted.
+- TTL expiration: expired entries are removed lazily on `Get` or eagerly via `Prune`.
+- Default max size is 1000 if not specified.
+- Fully concurrency-safe — all operations are guarded by `sync.RWMutex`.
+
+**Integration notes**:
+- Pair with `tick.Every` to run periodic `Prune()` calls and prevent memory from growing between access patterns.
+- The `xyops` client uses `cache` internally for `GetJobStatus` caching — you should follow the same pattern for any frequently-polled external data.
+- For distributed caching (multi-replica), use an external store (Redis, Memcached). This package is strictly in-process.
+
+---
+
+### seal — Encryption, signing, and temporary tokens
+
+**When to use**: You need to encrypt sensitive data at rest, sign payloads for integrity verification, or create short-lived signed tokens for inter-service communication. **Any service handling secrets, API keys, or user tokens should use seal instead of rolling its own crypto.**
+
+```go
+import "github.com/ai8future/chassis-go/v10/seal"
+
+// --- Encrypt / Decrypt (AES-256-GCM with scrypt KDF) ---
+env, err := seal.Encrypt([]byte("sensitive data"), "my-passphrase")
+// env is a self-describing Envelope (JSON-serializable)
+
+plaintext, err := seal.Decrypt(env, "my-passphrase")
+
+// --- HMAC-SHA256 Sign / Verify ---
+sig := seal.Sign([]byte("payload"), "secret-key")
+ok := seal.Verify([]byte("payload"), sig, "secret-key")
+
+// --- Temporary signed tokens ---
+token, err := seal.NewToken(seal.Claims{
+    "user_id": "u_123",
+    "role":    "admin",
+}, "signing-secret", 3600) // expires in 1 hour
+
+claims, err := seal.ValidateToken(token, "signing-secret")
+// err is ErrTokenExpired, ErrTokenInvalid, or ErrSignature
+```
+
+**What it provides**:
+- **Encryption**: AES-256-GCM with scrypt key derivation. The `Envelope` output is self-describing (includes algorithm, salt, IV, tag) and JSON-serializable for storage.
+- **Signing**: HMAC-SHA256 with constant-time comparison via `crypto/subtle`.
+- **Tokens**: Signed, expiring tokens with JSON claims. Similar to JWT but simpler — no header, no algorithm negotiation. Includes automatic `jti` (unique token ID) and `exp` (expiry) claims.
+
+**Integration notes**:
+- `webhook.Sender` uses `seal.Sign` internally for HMAC webhook signatures — the signing is consistent across the toolkit.
+- Tokens are not JWTs. They are simpler and intentionally non-interoperable with external JWT validators. Use them for internal service-to-service auth, not external API tokens.
+- The scrypt parameters (N=16384, r=8, p=1) are tuned for server-side use. Key derivation takes ~100ms — do not use `Encrypt`/`Decrypt` in hot paths. For hot-path signing, use `Sign`/`Verify` (HMAC is fast).
+- Sentinel errors (`ErrDecrypt`, `ErrTokenExpired`, `ErrTokenInvalid`, `ErrSignature`) work with `errors.Is`.
+
+---
+
+### tick — Periodic task scheduling
+
+**When to use**: You have recurring work — cache pruning, metric flushing, health polling, data syncing — that runs on a fixed interval alongside your service. **Most services have at least one periodic task. Use tick instead of writing your own ticker-in-a-goroutine.**
+
+```go
+import "github.com/ai8future/chassis-go/v10/tick"
+
+// Create a periodic task and pass it to lifecycle.Run
+pruner := tick.Every(5*time.Minute, func(ctx context.Context) error {
+    removed := myCache.Prune()
+    logger.Info("pruned cache", "removed", removed)
+    return nil
+}, tick.Label("cache-pruner"))
+
+// Run immediately on startup, then on interval
+syncer := tick.Every(30*time.Second, syncFromUpstream,
+    tick.Immediate(),                  // run once before first tick
+    tick.Jitter(5*time.Second),        // random 0–5s delay per tick
+    tick.OnError(tick.Stop),           // stop on first error (default: Skip)
+    tick.Label("upstream-sync"),
+)
+
+// Wire into lifecycle
+lifecycle.Run(ctx,
+    httpServer,
+    pruner,    // runs as a lifecycle component
+    syncer,
+)
+```
+
+**Options**:
+- `tick.Immediate()` — execute the function once immediately before the first interval tick.
+- `tick.Jitter(d)` — add a random delay (0 to `d`) before each execution. Prevents thundering herd when multiple replicas tick at the same interval.
+- `tick.OnError(tick.Skip)` — log and continue on error (default).
+- `tick.OnError(tick.Stop)` — return the error, which causes `lifecycle.Run` to shut down all components.
+- `tick.Label(s)` — label for logging and debugging.
+
+**Integration notes**:
+- `tick.Every` returns a `func(context.Context) error` — it is directly compatible with `lifecycle.Run` as a component. No wrapping needed.
+- The function respects context cancellation — it exits cleanly when `lifecycle.Run` signals shutdown.
+- Combine with `cache.Prune()` for periodic cache cleanup, or `registry.Status()` for periodic status reporting.
+
+---
+
+### webhook — HMAC-signed webhook delivery
+
+**When to use**: Your service sends outbound webhook notifications to external systems. **If you're building any kind of event notification, integration callback, or partner webhook, use this package.** It handles signing, retries, and delivery tracking so you don't have to.
+
+```go
+import "github.com/ai8future/chassis-go/v10/webhook"
+
+// --- Sending webhooks ---
+sender := webhook.NewSender(
+    webhook.MaxAttempts(5), // default: 3
+)
+
+deliveryID, err := sender.Send(
+    "https://partner.example.com/webhooks",
+    map[string]any{"event": "order.completed", "order_id": "ord_123"},
+    "shared-secret-key",
+)
+
+// Check delivery status
+delivery, ok := sender.Status(deliveryID)
+// delivery.Status: "delivered", "failed", or "pending"
+// delivery.Attempts, delivery.LastError
+
+// --- Receiving/verifying webhooks ---
+func webhookHandler(w http.ResponseWriter, r *http.Request) {
+    body, _ := io.ReadAll(r.Body)
+    verified, err := webhook.VerifyPayload(r.Header, body, "shared-secret-key")
+    if err != nil {
+        // err is webhook.ErrBadSignature
+        http.Error(w, "invalid signature", 401)
+        return
+    }
+    // verified is the raw body, safe to unmarshal
+}
+```
+
+**What it does**:
+- **Signing**: Every outbound webhook includes `X-Webhook-Id`, `X-Webhook-Signature` (HMAC-SHA256 via `seal.Sign`), and `X-Webhook-Timestamp` headers.
+- **Retries**: Retries on 5xx and network errors with linear backoff. Never retries 4xx (client errors are permanent).
+- **Delivery tracking**: Every delivery is tracked in memory by ID with status, attempt count, and error details.
+- **Verification**: `VerifyPayload` validates incoming webhook signatures on the receive side using constant-time comparison.
+
+**Integration notes**:
+- The `xyops` client's `FireWebhook` delegates to `webhook.Sender` — if you use xyops, webhook delivery is already handled.
+- Delivery tracking is in-memory. For durable delivery logs, persist `Delivery` records to your database.
+- The signature format is `sha256=<hex>` over `timestamp.body`, matching common webhook conventions (GitHub, Stripe, etc.).
+
+---
+
+## Service client kits
+
+These packages provide typed HTTP clients for internal platform services. **If your service interacts with any of these platform services, use the corresponding kit instead of building raw HTTP calls.** All service client kits share a consistent pattern:
+
+- Multi-tenant via `WithTenant(id)` — sets `X-Tenant-ID` on every request
+- Automatic trace propagation via `tracekit` — sets `X-Trace-ID` on every request
+- Configurable timeout via `WithTimeout(d)` — default 5 seconds
+- `nil, nil` return on 404 (not-found is not an error)
+
+```go
+import (
+    "github.com/ai8future/chassis-go/v10/graphkit"
+    "github.com/ai8future/chassis-go/v10/registrykit"
+    "github.com/ai8future/chassis-go/v10/lakekit"
+)
+```
+
+### graphkit — Knowledge graph client (graphiti_svc)
+
+**When to use**: Your service needs to search, query, or traverse the knowledge graph. Provides entity search, temporal recall, Cypher queries, entity graph traversal, timelines, and path finding.
+
+```go
+graph := graphkit.NewClient("http://graphiti-svc:8080",
+    graphkit.WithTenant("tenant-123"),
+    graphkit.WithTimeout(10*time.Second),
+)
+
+// Semantic search
+results, err := graph.Search(ctx, "infrastructure deployment events")
+
+// Temporal recall — what was known at a specific point in time
+t := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+results, err := graph.Recall(ctx, "deployment status", &t)
+
+// Cypher query
+cypher, err := graph.Cypher(ctx,
+    "MATCH (n)-[r]->(m) WHERE n.name = $name RETURN n, r, m",
+    map[string]any{"name": "prod-cluster"},
+)
+// cypher.Columns, cypher.Rows
+
+// Entity neighborhood (configurable depth)
+neighborhood, err := graph.EntityGraph(ctx, "prod-cluster", graphkit.Depth(2))
+
+// Entity timeline
+events, err := graph.EntityTimeline(ctx, "prod-cluster")
+
+// Shortest paths between entities
+paths, err := graph.Paths(ctx, "service-a", "service-b", graphkit.MaxHops(5))
+```
+
+**Available methods**:
+
+| Method | Description |
+|--------|-------------|
+| `Search(ctx, query)` | Semantic entity search |
+| `Recall(ctx, query, *time)` | Temporal recall at a point in time |
+| `Cypher(ctx, query, params)` | Raw Cypher query execution |
+| `EntityGraph(ctx, name, ...opts)` | Entity neighborhood traversal |
+| `EntityTimeline(ctx, name)` | Temporal event history for an entity |
+| `Paths(ctx, from, to, ...opts)` | Path traversal between two entities |
+
+---
+
+### registrykit — Entity registry client (registry_svc)
+
+**When to use**: Your service needs to resolve, create, or traverse entities and their relationships. Provides entity resolution by multiple identifier types, relationship traversal, graph queries, ancestor/descendant navigation, and entity mutations.
+
+```go
+reg := registrykit.NewClient("http://registry-svc:8080",
+    registrykit.WithTenant("tenant-123"),
+)
+
+// Resolve by various identifiers
+entity, err := reg.Resolve(ctx, "company", registrykit.ByDomain("example.com"))
+entity, err := reg.Resolve(ctx, "person", registrykit.ByEmail("user@example.com"))
+entity, err := reg.Resolve(ctx, "company", registrykit.ByCRD("CRD-12345"))
+entity, err := reg.Resolve(ctx, "product", registrykit.BySlug("my-product"))
+entity, err := reg.Resolve(ctx, "user", registrykit.ByIdentifier("github", "12345"))
+
+// Relationship traversal
+rels, err := reg.Related(ctx, entityID,
+    registrykit.OfType("person"),
+    registrykit.Rel("employs"),
+    registrykit.AsOf(time.Now().Add(-30*24*time.Hour)), // 30 days ago
+)
+
+// Hierarchy navigation
+children, err := reg.Descendants(ctx, entityID, registrykit.OfType("team"))
+parents, err := reg.Ancestors(ctx, entityID)
+
+// Graph visualization
+graph, err := reg.Graph(ctx, entityID, registrykit.Depth(3))
+
+// Mutations
+newEntity, err := reg.CreateEntity(ctx, registrykit.CreateEntityRequest{
+    EntityTypes:   []string{"company"},
+    CanonicalName: "Acme Corp",
+    Metadata:      map[string]any{"industry": "tech"},
+    Identifiers:   map[string]string{"domain": "acme.com"},
+})
+
+err = reg.AddIdentifier(ctx, entityID, "crunchbase", "acme-corp")
+
+err = reg.CreateRelationship(ctx, registrykit.CreateRelationshipRequest{
+    FromEntity: parentID, ToEntity: childID, Relationship: "subsidiary_of",
+})
+
+// Entity deduplication
+err = reg.Merge(ctx, winnerID, loserID, "duplicate detected by matching domain")
+```
+
+**Available methods**:
+
+| Method | Description |
+|--------|-------------|
+| `Resolve(ctx, type, ...opts)` | Entity resolution by identifier |
+| `Related(ctx, id, ...opts)` | Relationship traversal with filters |
+| `Descendants(ctx, id, ...opts)` | All descendant entities |
+| `Ancestors(ctx, id)` | All ancestor entities |
+| `Graph(ctx, id, ...opts)` | Graph rooted at entity |
+| `CreateEntity(ctx, req)` | Create a new entity |
+| `AddIdentifier(ctx, id, ns, val)` | Add identifier to entity |
+| `CreateRelationship(ctx, req)` | Create directed relationship |
+| `Merge(ctx, winner, loser, reason)` | Merge duplicate entities |
+
+---
+
+### lakekit — Data lake client (lake_svc)
+
+**When to use**: Your service needs to query the data lake for analytics, entity history, or dataset discovery. Provides SQL query execution, entity event history, dataset listing, and dataset statistics.
+
+```go
+lake := lakekit.NewClient("http://lake-svc:8080",
+    lakekit.WithTenant("tenant-123"),
+    lakekit.WithTimeout(30*time.Second), // queries can be slow
+)
+
+// SQL query with parameters
+result, err := lake.Query(ctx, "SELECT * FROM events WHERE entity_id = $1", entityID)
+// result.Columns: ["id", "timestamp", "event_type", ...]
+// result.Rows: [["ev_1", "2026-01-15T...", "created", ...], ...]
+// result.RowCount: 42
+
+// Entity event history
+history, err := lake.EntityHistory(ctx, entityID)
+for _, entry := range history {
+    fmt.Println(entry.Timestamp, entry.EventType, entry.Data)
+}
+
+// Dataset catalog
+datasets, err := lake.Datasets(ctx)
+for _, ds := range datasets {
+    fmt.Println(ds.Name, ds.RowCount, ds.LastUpdate)
+}
+
+// Dataset statistics and schema
+stats, err := lake.DatasetStats(ctx, "events")
+for _, col := range stats.Schema {
+    fmt.Println(col.Name, col.Type)
+}
+```
+
+**Available methods**:
+
+| Method | Description |
+|--------|-------------|
+| `Query(ctx, sql, ...params)` | Execute SQL query against the data lake |
+| `EntityHistory(ctx, entityID)` | Temporal event history for an entity |
+| `Datasets(ctx)` | List all available datasets |
+| `DatasetStats(ctx, name)` | Schema and statistics for a dataset |
+
+**Integration notes** (all service client kits):
+- All kits propagate `tracekit` trace IDs automatically. Ensure `tracekit.Middleware` or `tracekit.WithTraceID` is in your middleware chain for end-to-end tracing.
+- All kits use bare `http.Client` internally. For production use with retry and circuit breaking, consider wrapping the HTTP client with `call.New()` or contributing a `WithHTTPClient` option.
+- All kits return `nil, nil` for 404 responses — check for `nil` before using the result.
+
+---
+
+## Event bus kits
+
+These packages support publishing and subscribing to the Redpanda event bus. For the full cross-language integration guide, see **[chassis-docs/07-event-bus-integration.md](../chassis-docs/07-event-bus-integration.md)**. **If your service publishes or consumes events, these kits are mandatory — they enforce naming conventions, schema validation, and operational visibility.**
+
+### tracekit — Cross-service trace propagation
+
+**When to use**: You need to propagate trace IDs across HTTP calls and event bus messages for end-to-end request tracing. **Every service that handles HTTP requests or publishes/consumes events should use tracekit.** The service client kits (`graphkit`, `registrykit`, `lakekit`) already use it automatically.
+
+```go
+import "github.com/ai8future/chassis-go/v10/tracekit"
+
+// Generate a new trace ID (tr_ + 12 hex chars)
+id := tracekit.GenerateID() // "tr_a1b2c3d4e5f6"
+
+// Set on context
+ctx = tracekit.NewTrace(ctx)            // generate + set
+ctx = tracekit.WithTraceID(ctx, myID)   // set explicit ID
+
+// Extract from context
+id := tracekit.TraceID(ctx)
+
+// HTTP middleware — extracts X-Trace-ID from request (or generates new),
+// sets on context, adds to response header
+mux := http.NewServeMux()
+handler := tracekit.Middleware(mux)
+```
+
+**Integration notes**:
+- `tracekit` operates independently of OTel. It uses a simple `X-Trace-ID` header for lightweight trace correlation. Use it alongside `httpkit.Tracing()` (OTel spans) or as a standalone alternative for services that don't need full distributed tracing.
+- All service client kits (`graphkit`, `registrykit`, `lakekit`) read `tracekit.TraceID(ctx)` and set the `X-Trace-ID` header automatically. Wire `tracekit.Middleware` at your HTTP ingress to complete the chain.
+
+### schemakit — Avro schema management and validation
+
+**When to use**: Your service publishes or consumes Avro-encoded events on the event bus and you need schema validation, serialization, and Schema Registry integration. **Required for any service that needs schema-enforced event contracts.**
+
+```go
+import "github.com/ai8future/chassis-go/v10/schemakit"
+
+// Connect to Schema Registry (Redpanda or Confluent-compatible)
+reg, err := schemakit.NewRegistry("http://schema-registry:8081")
+
+// Load all .avsc files from a directory
+err = reg.LoadSchemas("./schemas/")
+
+// Get a loaded schema by subject (namespace.name from the .avsc file)
+schema := reg.GetSchema("ai8.events.OrderCreated")
+
+// Validate data against schema (catches missing/mistyped fields)
+err = reg.Validate(schema, map[string]any{
+    "order_id": "ord_123",
+    "amount":   99.99,
+})
+
+// Serialize with Confluent wire format (magic byte + schema ID + Avro payload)
+bytes, err := reg.Serialize(schema, data)
+
+// Deserialize (looks up schema by ID from wire format header)
+data, err := reg.Deserialize(rawBytes)
+
+// Register schema with Schema Registry (assigns schema ID)
+err = reg.Register(ctx, schema)
+```
+
+**Integration notes**:
+- Uses the Confluent wire format (0x00 + 4-byte schema ID + Avro payload) for compatibility with Redpanda, Confluent, and any Kafka tooling that expects it.
+- `LoadSchemas` walks a directory recursively — organize your `.avsc` files however you like.
+- Schema subject keys are derived from `namespace.name` in the Avro schema file.
+- After `Register`, the schema's `SchemaID` is updated in-place — subsequent `Serialize` calls include the correct ID.
+
+### heartbeatkit — Automatic liveness events
+
+**When to use**: Automatically — `heartbeatkit` auto-activates when kafkakit is configured via `lifecycle.Run(ctx, WithKafkaConfig(cfg), components...)`. It publishes periodic heartbeat payloads to `ai8.infra.heartbeat` so that operational dashboards and alerting systems can detect service liveness without polling.
+
+```go
+import "github.com/ai8future/chassis-go/v10/heartbeatkit"
+
+// Manual usage (typically auto-activated by lifecycle)
+heartbeatkit.Start(ctx, publisher, heartbeatkit.Config{
+    ServiceName: "my-service",
+    Version:     "2.4.1",
+    Interval:    30 * time.Second, // default
+})
+defer heartbeatkit.Stop()
+```
+
+**Heartbeat payload** (published to `ai8.infra.heartbeat`):
+```json
+{
+    "service": "my-service",
+    "host": "prod-01",
+    "pid": 48231,
+    "uptime_s": 3600,
+    "version": "2.4.1",
+    "status": "healthy",
+    "events_published_1h": 1234,
+    "errors_1h": 2,
+    "last_event_published": "2026-03-07T14:22:01Z"
+}
+```
+
+**Integration notes**:
+- If the publisher implements a `Stats()` method (kafkakit publishers do), the heartbeat payload is enriched with publishing statistics (events/errors in the last hour, last event timestamp).
+- Default interval is 30 seconds. Operations uses the gap between heartbeats to detect frozen or crashed services.
+
+### announcekit — Structured lifecycle events
+
+**When to use**: Automatically — `announcekit` auto-activates when kafkakit is configured via `lifecycle.Run`. It publishes structured lifecycle events (started, ready, stopping, failed) and job lifecycle events (started, complete, failed) to well-known Kafka subjects. **Critical for operational visibility — operations dashboards and alerting rules depend on these events.**
+
+```go
+import "github.com/ai8future/chassis-go/v10/announcekit"
+
+announcekit.SetServiceName("my-service")
+
+// Service lifecycle events (typically auto-fired by lifecycle.Run)
+announcekit.Started(ctx, publisher)
+announcekit.Ready(ctx, publisher)
+announcekit.Stopping(ctx, publisher)
+announcekit.Failed(ctx, publisher, err)
+
+// Job lifecycle events (fire manually in your job handlers)
+announcekit.JobStarted(ctx, publisher, "nightly-etl", jobID)
+announcekit.JobComplete(ctx, publisher, "nightly-etl", jobID, resultMap)
+announcekit.JobFailed(ctx, publisher, "nightly-etl", jobID, err)
+```
+
+**Event subjects**:
+- Service: `ai8.infra.{service}.lifecycle.{started|ready|stopping|failed}`
+- Job: `ai8.infra.{service}.job.{started|complete|failed}`
+
+**Integration notes**:
+- Service lifecycle events are typically handled automatically. Job lifecycle events should be called explicitly in your `xyopsworker` handlers or any long-running batch process.
+- Job events include `job_name` and `job_id` for correlation with xyops job tracking.
 
 ---
 
