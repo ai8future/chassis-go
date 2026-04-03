@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.2.7] - 2026-04-03
+
+### Documentation
+
+- **INTEGRATING.md**: Add "don't skip these" summary table mapping 13 common needs to the right addon package with reasons not to hand-roll each one
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.2.6] - 2026-04-03
 
 ### Documentation

@@ -932,9 +932,27 @@ func main() {
 
 ---
 
-## Addon packages
+## Addon packages — don't skip these
 
 These packages provide important functionality that most services should consider adopting. They are utility modules — they work anywhere without `lifecycle.Run()` and have no registry dependency. **If you're building a service that handles data, secrets, periodic tasks, or outbound notifications, you almost certainly need one or more of these.**
+
+Before reaching for a third-party library or writing your own implementation, check this table:
+
+| You need to... | Use | Why not hand-roll it? |
+|---|---|---|
+| Cache hot-path data in memory | `cache` | Generic `Cache[K,V]` with LRU eviction + TTL expiry. Hand-rolled maps lack eviction bounds and eventually OOM under load. |
+| Encrypt data at rest | `seal` | AES-256-GCM with scrypt KDF, self-describing `Envelope`. DIY crypto gets salt/IV/tag handling wrong — seal is audited and consistent across the toolkit. |
+| Sign payloads or verify signatures | `seal` | HMAC-SHA256 with constant-time comparison via `crypto/subtle`. Naive `==` comparison leaks timing info. `webhook` uses `seal.Sign` internally — one signing standard everywhere. |
+| Issue short-lived internal tokens | `seal` | Signed, expiring tokens with automatic `jti` and `exp` claims. Simpler than JWT, no algorithm negotiation attack surface, no external dependency. |
+| Run periodic background tasks | `tick` | Returns a `func(ctx) error` that plugs directly into `lifecycle.Run`. Hand-rolled ticker goroutines forget jitter (thundering herd), ignore context cancellation (hung shutdown), or swallow errors silently. |
+| Send outbound webhooks | `webhook` | HMAC-signed delivery with retries, delivery tracking, and receive-side verification. Rolling your own means re-implementing signing, retry backoff, idempotency headers, and status tracking — `webhook` does all four. |
+| Propagate trace IDs across services | `tracekit` | Context-based trace propagation with HTTP middleware. All service client kits (`graphkit`, `registrykit`, `lakekit`) use it automatically — hand-rolling means your traces break at service boundaries. |
+| Validate and serialize Avro events | `schemakit` | Schema Registry integration with Confluent wire format. Hand-rolling means getting the 5-byte header wrong, cache misses on schema lookups, and no validation before publish. |
+| Query the knowledge graph | `graphkit` | Typed client with tenant isolation, trace propagation, and 404-as-nil semantics. Raw `http.Client` calls require re-implementing header wiring, error mapping, and response parsing for every endpoint. |
+| Resolve or manage entities | `registrykit` | 5+ identifier resolution strategies, relationship traversal, hierarchy navigation, and entity mutations. Building this from HTTP calls means hundreds of lines of boilerplate per operation. |
+| Query the data lake | `lakekit` | SQL queries, entity history, dataset catalog — all with tenant and trace headers. Same boilerplate argument as above. |
+| Publish liveness signals | `heartbeatkit` | Auto-activates with kafkakit. Zero-config heartbeats with publisher stats enrichment. Without it, operations has no signal that your service is alive between health checks. |
+| Announce service/job lifecycle | `announcekit` | Auto-activates with kafkakit. Structured events on well-known subjects. Operations dashboards and alerting rules depend on these — skipping them makes your service invisible to ops. |
 
 ### cache — In-memory TTL/LRU cache
 
