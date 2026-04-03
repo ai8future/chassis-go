@@ -1,5 +1,14 @@
 # Changelog
 
+## [10.2.8] - 2026-04-03
+
+### Documentation
+
+- **INTEGRATING.md**: Fix tick `OnError(Skip)` doc — correctly states it silently ignores errors (does not log)
+- **INTEGRATING.md**: Fix external dependency count from "four" to "six" — adds `hamba/avro` (schemakit) and `franz-go` (kafkakit)
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.2.7] - 2026-04-03
 
 ### Documentation

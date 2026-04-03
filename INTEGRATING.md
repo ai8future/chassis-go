@@ -1071,7 +1071,7 @@ lifecycle.Run(ctx,
 **Options**:
 - `tick.Immediate()` — execute the function once immediately before the first interval tick.
 - `tick.Jitter(d)` — add a random delay (0 to `d`) before each execution. Prevents thundering herd when multiple replicas tick at the same interval.
-- `tick.OnError(tick.Skip)` — log and continue on error (default).
+- `tick.OnError(tick.Skip)` — silently ignore the error and continue (default). Log inside your function if you need visibility.
 - `tick.OnError(tick.Stop)` — return the error, which causes `lifecycle.Run` to shut down all components.
 - `tick.Label(s)` — label for logging and debugging.
 
@@ -1829,7 +1829,7 @@ See **[GO-BEST-PRACTICES.md](GO-BEST-PRACTICES.md)** for prescriptive rules on b
 
 **Registry enforcement is service-level, not package-level.** The registry crashes the process if `Status()` or `Errorf()` are called before `lifecycle.Run()`. The `httpkit` and `grpckit` middleware also enforce this — handling requests means you're a running service. However, utility modules (`work`, `call`, `health`, `config`, `logz`, `errors`, `secval`, `flagz`) do NOT require registry. They work fine in libraries, CLI tools, and non-service contexts. If your Go module uses chassis utilities internally, the consuming application only needs `RequireMajor(10)` — not `lifecycle.Run()` — unless it also uses httpkit/grpckit to handle requests.
 
-**The toolkit has four external dependencies.** `golang.org/x/sync` (for errgroup), `golang.org/x/crypto` (for seal — scrypt KDF), `google.golang.org/grpc` (for grpckit and errors), and `go.opentelemetry.io/otel` (for otel, metrics, call, and work). If you only use Tier 1 packages (config, logz, lifecycle, testkit), only `x/sync` is pulled in.
+**The toolkit has six direct dependencies.** `golang.org/x/sync` (for errgroup), `golang.org/x/crypto` (for seal — scrypt KDF), `google.golang.org/grpc` (for grpckit and errors), `go.opentelemetry.io/otel` (for otel, metrics, call, and work), `github.com/hamba/avro/v2` (for schemakit — Avro serialization), and `github.com/twmb/franz-go` (for kafkakit — Kafka client). If you only use core packages (config, logz, lifecycle, testkit), only `x/sync` is pulled in.
 
 **Vendor freshness with local `replace` directives.** If your project uses `go mod vendor` and your `go.mod` has a `replace` directive pointing chassis-go to a local path (e.g., `replace github.com/ai8future/chassis-go/v10 => ../../chassis_suite/chassis-go`), the vendor directory does NOT auto-update when the local chassis source changes. You must re-run `go mod vendor` after chassis-go is updated, or your build will silently use the old vendored code — even though `go.mod` points to the latest source. This is the most common cause of "missing feature" bugs in local development. Before debugging missing chassis features, check `vendor/modules.txt` for the chassis version.
 
