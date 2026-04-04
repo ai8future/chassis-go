@@ -2,6 +2,7 @@ package meilikit
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -72,6 +73,18 @@ type SearchResult struct {
 	HitsPerPage        *int                       `json:"hitsPerPage,omitempty"`
 	FacetDistribution  map[string]map[string]int  `json:"facetDistribution,omitempty"`
 	FacetStats         map[string]FacetStat       `json:"facetStats,omitempty"`
+}
+
+// SearchHits unmarshals the raw hits from a SearchResult into a typed slice.
+// Works with both single-search and multi-search results (via result.Results[i]).
+func SearchHits[T any](result *SearchResult) ([]T, error) {
+	out := make([]T, len(result.Hits))
+	for i, raw := range result.Hits {
+		if err := json.Unmarshal(raw, &out[i]); err != nil {
+			return nil, fmt.Errorf("meilikit: unmarshal hit %d: %w", i, err)
+		}
+	}
+	return out, nil
 }
 
 // FacetStat holds min/max values for a numeric facet.

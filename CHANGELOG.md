@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [10.2.14] - 2026-04-04
+
+### Added
+
+- **meilikit**: Add generic `SearchHits[T]` helper to unmarshal raw hits into typed slices, eliminating manual `json.Unmarshal` loops in consumers
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.2.13] - 2026-04-04
 
 ### Added

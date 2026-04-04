@@ -1034,6 +1034,77 @@ func TestMultiSearch_WithOptions(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
+// SearchHits generic helper
+// --------------------------------------------------------------------------
+
+type testPerson struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func TestSearchHits_Success(t *testing.T) {
+	result := &SearchResult{
+		Hits: []json.RawMessage{
+			json.RawMessage(`{"id":"1","name":"Alice"}`),
+			json.RawMessage(`{"id":"2","name":"Bob"}`),
+		},
+	}
+	people, err := SearchHits[testPerson](result)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(people) != 2 {
+		t.Fatalf("len = %d, want 2", len(people))
+	}
+	if people[0].Name != "Alice" {
+		t.Errorf("people[0].Name = %q, want Alice", people[0].Name)
+	}
+	if people[1].ID != "2" {
+		t.Errorf("people[1].ID = %q, want 2", people[1].ID)
+	}
+}
+
+func TestSearchHits_EmptyHits(t *testing.T) {
+	result := &SearchResult{Hits: []json.RawMessage{}}
+	people, err := SearchHits[testPerson](result)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(people) != 0 {
+		t.Fatalf("len = %d, want 0", len(people))
+	}
+}
+
+func TestSearchHits_InvalidJSON(t *testing.T) {
+	result := &SearchResult{
+		Hits: []json.RawMessage{
+			json.RawMessage(`{"id":"1","name":"Alice"}`),
+			json.RawMessage(`{not valid json`),
+		},
+	}
+	_, err := SearchHits[testPerson](result)
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestSearchHits_MultiSearchResult(t *testing.T) {
+	multi := &MultiSearchResult{
+		Results: []SearchResult{
+			{Hits: []json.RawMessage{json.RawMessage(`{"id":"1","name":"Alice"}`)}},
+			{Hits: []json.RawMessage{json.RawMessage(`{"id":"2","name":"Bob"}`)}},
+		},
+	}
+	people, err := SearchHits[testPerson](&multi.Results[0])
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(people) != 1 || people[0].Name != "Alice" {
+		t.Fatalf("got %+v, want [{ID:1 Name:Alice}]", people)
+	}
+}
+
+// --------------------------------------------------------------------------
 // SanitizeUTF8
 // --------------------------------------------------------------------------
 
