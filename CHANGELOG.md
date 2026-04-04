@@ -6,6 +6,16 @@
 
 - **graphkit**: Removed knowledge graph client (graphiti_svc HTTP client). Zero consumers across all codebases. Service was never adopted.
 
+## [10.2.12] - 2026-04-04
+
+### Added
+
+- **inferkit**: Add `ExtraBody map[string]any` to `ChatRequest` and `EmbedRequest` for provider-specific top-level fields (e.g. `service_tier`). Typed fields always win on conflict.
+- **inferkit**: Add `ResponseMeta` (StatusCode + Header) to `ChatResponse` and `EmbedResponse` for accessing response headers (e.g. `x-groq-region`)
+- **inferkit**: `ChatStream` now returns `(*ResponseMeta, <-chan ChatChunk, error)` — **breaking**: callers must update to 3-tuple return
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.2.11] - 2026-04-04
 
 ### Added
