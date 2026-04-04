@@ -6,6 +6,14 @@
 
 - **graphkit**: Removed knowledge graph client (graphiti_svc HTTP client). Zero consumers across all codebases. Service was never adopted.
 
+## [10.2.11] - 2026-04-04
+
+### Added
+
+- **meilikit**: Add test verifying non-404 client errors (e.g. 403) are not swallowed by GetDocument's 404→nil,nil handling
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.2.10] - 2026-04-04
 
 ### Added

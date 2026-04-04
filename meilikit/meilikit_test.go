@@ -1174,6 +1174,31 @@ func TestGetDocument_ServerError(t *testing.T) {
 	}
 }
 
+func TestGetDocument_NonNotFoundClientError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(403)
+		w.Write([]byte(`{"message":"Forbidden","code":"invalid_api_key","type":"auth"}`))
+	}))
+	defer srv.Close()
+
+	c, _ := New(Config{BaseURL: srv.URL})
+	idx, _ := c.Index("test")
+	doc, err := idx.GetDocument(context.Background(), "doc-1")
+	if err == nil {
+		t.Fatal("expected error for 403")
+	}
+	if doc != nil {
+		t.Fatal("expected nil doc on error")
+	}
+	me, ok := err.(*MeiliError)
+	if !ok {
+		t.Fatalf("expected *MeiliError, got %T", err)
+	}
+	if me.StatusCode != 403 {
+		t.Errorf("StatusCode = %d, want 403", me.StatusCode)
+	}
+}
+
 // --------------------------------------------------------------------------
 // DeleteDocument
 // --------------------------------------------------------------------------
