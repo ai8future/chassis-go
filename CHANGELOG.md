@@ -1,5 +1,36 @@
 # Changelog
 
+## [Unreleased]
+
+### Removed
+
+- **graphkit**: Removed knowledge graph client (graphiti_svc HTTP client). Zero consumers across all codebases. Service was never adopted.
+
+## [10.2.10] - 2026-04-04
+
+### Added
+
+- **meilikit**: Add `GetDocument(ctx, docID)` — retrieves a single document by ID; returns `nil, nil` on 404
+- **meilikit**: Add `DeleteDocument(ctx, docID)` — deletes a single document by ID; returns async `*TaskInfo`
+- **meilikit**: Add `validateDocID` internal helper for document ID validation
+
+(Claude Code:Opus 4.6 (1M context))
+
+## [10.2.9] - 2026-04-04
+
+### Fixed
+
+- **meilikit**: Fix Configure error path discarding original error, returning generic message instead
+- **meilikit**: Fix Configure race — now waits for async index creation task before applying settings
+- **meilikit**: Fix WaitForTask tight 250ms polling loop — now uses exponential backoff (250ms → 5s cap)
+- **meilikit**: Fix WaitForTask leaking `time.After` timers on context cancellation
+- **meilikit**: Cap all success response body reads at 8MB via `io.LimitReader` (error bodies were already capped)
+- **meilikit**: Fix `json.Marshal` error handling consistency — all marshal calls now check errors
+- **meilikit**: Remove duplicate timeout default in struct tag (single source of truth in `New()`)
+- **meilikit**: Eliminate code duplication in requests.go — embed `SearchOptions` instead of copying 14 fields
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.2.8] - 2026-04-03
 
 ### Documentation
