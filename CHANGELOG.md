@@ -2,9 +2,22 @@
 
 ## [Unreleased]
 
+## [10.2.13] - 2026-04-04
+
+### Added
+
+- **meilikit**: Split into multi-file package (`errors.go`, `requests.go`, `types.go`)
+- **ollamakit**: Ollama native LLM client package
+- **posthogkit**: PostHog product analytics client package
+- **qdrantkit**: Qdrant vector database client package
+- **registrykit**: Updated registry client
+- **docs**: Updated INTEGRATING.md, PRODUCT.md, README.md with new package documentation
+
 ### Removed
 
 - **graphkit**: Removed knowledge graph client (graphiti_svc HTTP client). Zero consumers across all codebases. Service was never adopted.
+
+(Claude Code:Opus 4.6 (1M context))
 
 ## [10.2.12] - 2026-04-04
 

@@ -72,7 +72,6 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 | `heartbeatkit` | `.../v10/heartbeatkit` | Auto liveness heartbeats every 30s. Depends on `kafkakit`. Auto-activates with kafkakit |
 | `announcekit` | `.../v10/announcekit` | Service/job lifecycle events. Depends on `kafkakit`. Auto-activates with kafkakit |
 | `registrykit` | `.../v10/registrykit` | HTTP client to registry_svc for entity resolution. Depends on `call` |
-| `graphkit` | `.../v10/graphkit` | HTTP client to graphiti_svc for knowledge graph access. Depends on `call` |
 | `lakekit` | `.../v10/lakekit` | HTTP client to lake_svc for data lake access. Depends on `call` |
 
 **Tier isolation**: If you only use Tier 1 packages, only `golang.org/x/sync` is pulled in — no gRPC, no OTel SDK.

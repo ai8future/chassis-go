@@ -210,17 +210,15 @@ The `tracekit` package provides lightweight trace ID propagation (`tr_` + 12 hex
 
 ### 25. Platform Service Clients
 
-Three client packages provide typed HTTP clients for the organization's core platform services:
+Two client packages provide typed HTTP clients for the organization's core platform services:
 
 - **registrykit**: Client for `registry_svc` (entity registry). Supports entity resolution by CRD, domain, email, slug, or namespaced identifier; relationship traversal; ancestor/descendant queries; graph neighborhood queries; entity creation; identifier management; relationship creation; and entity merging.
 
-- **graphkit**: Client for `graphiti_svc` (knowledge graph). Supports entity search, temporal recall, Cypher query execution, entity graph neighborhood queries, entity timeline history, and path traversal between entities.
-
 - **lakekit**: Client for `lake_svc` (data lake). Supports SQL queries, entity event history, dataset listing, and dataset statistics.
 
-All three clients set standardized `X-Tenant-ID` and `X-Trace-ID` headers on every request.
+Both clients set standardized `X-Tenant-ID` and `X-Trace-ID` headers on every request.
 
-**Business rationale**: These three services (entity registry, knowledge graph, data lake) are shared infrastructure that multiple services need to query. Typed client libraries prevent each consuming service from writing ad-hoc HTTP clients with inconsistent error handling, timeout policies, and header conventions.
+**Business rationale**: These services (entity registry, data lake) are shared infrastructure that multiple services need to query. Typed client libraries prevent each consuming service from writing ad-hoc HTTP clients with inconsistent error handling, timeout policies, and header conventions.
 
 ### 26. XYOps Integration (Operational Management)
 

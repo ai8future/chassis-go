@@ -10,7 +10,7 @@ Practical guide for teams adopting chassis-go into an existing Go codebase.
 
 **What this is not**: An opinionated framework. Chassis doesn't own your dependency injection, routing, or service mesh. It provides building blocks that you wire together explicitly.
 
-**Service modules vs. utility modules**: Chassis modules fall into two categories. *Service modules* (`httpkit`, `grpckit`, `lifecycle`, `registry`) require a running service with `lifecycle.Run()` and an active registry — they crash if used without it. *Utility modules* (`config`, `logz`, `errors`, `call`, `work`, `health`, `secval`, `flagz`, `metrics`, `otel`, `testkit`, `cache`, `seal`, `tick`, `webhook`, `deploy`, `tracekit`, `schemakit`) work anywhere — services, libraries, CLI tools. *Service client kits* (`graphkit`, `registrykit`, `lakekit`) are HTTP clients for internal platform services — they work anywhere but require the target service to be reachable. *Event bus kits* (`kafkakit`, `heartbeatkit`, `announcekit`) require a Kafka/Redpanda broker. A Go module that imports chassis utilities can be consumed by any application that calls `RequireMajor(10)`.
+**Service modules vs. utility modules**: Chassis modules fall into two categories. *Service modules* (`httpkit`, `grpckit`, `lifecycle`, `registry`) require a running service with `lifecycle.Run()` and an active registry — they crash if used without it. *Utility modules* (`config`, `logz`, `errors`, `call`, `work`, `health`, `secval`, `flagz`, `metrics`, `otel`, `testkit`, `cache`, `seal`, `tick`, `webhook`, `deploy`, `tracekit`, `schemakit`) work anywhere — services, libraries, CLI tools. *Service client kits* (`registrykit`, `lakekit`) are HTTP clients for internal platform services — they work anywhere but require the target service to be reachable. *Event bus kits* (`kafkakit`, `heartbeatkit`, `announcekit`) require a Kafka/Redpanda broker. A Go module that imports chassis utilities can be consumed by any application that calls `RequireMajor(10)`.
 
 ## Installation
 
@@ -946,13 +946,17 @@ Before reaching for a third-party library or writing your own implementation, ch
 | Issue short-lived internal tokens | `seal` | Signed, expiring tokens with automatic `jti` and `exp` claims. Simpler than JWT, no algorithm negotiation attack surface, no external dependency. |
 | Run periodic background tasks | `tick` | Returns a `func(ctx) error` that plugs directly into `lifecycle.Run`. Hand-rolled ticker goroutines forget jitter (thundering herd), ignore context cancellation (hung shutdown), or swallow errors silently. |
 | Send outbound webhooks | `webhook` | HMAC-signed delivery with retries, delivery tracking, and receive-side verification. Rolling your own means re-implementing signing, retry backoff, idempotency headers, and status tracking — `webhook` does all four. |
-| Propagate trace IDs across services | `tracekit` | Context-based trace propagation with HTTP middleware. All service client kits (`graphkit`, `registrykit`, `lakekit`) use it automatically — hand-rolling means your traces break at service boundaries. |
+| Propagate trace IDs across services | `tracekit` | Context-based trace propagation with HTTP middleware. Service client kits (`registrykit`, `lakekit`) use it automatically — hand-rolling means your traces break at service boundaries. |
 | Validate and serialize Avro events | `schemakit` | Schema Registry integration with Confluent wire format. Hand-rolling means getting the 5-byte header wrong, cache misses on schema lookups, and no validation before publish. |
-| Query the knowledge graph | `graphkit` | Typed client with tenant isolation, trace propagation, and 404-as-nil semantics. Raw `http.Client` calls require re-implementing header wiring, error mapping, and response parsing for every endpoint. |
 | Resolve or manage entities | `registrykit` | 5+ identifier resolution strategies, relationship traversal, hierarchy navigation, and entity mutations. Building this from HTTP calls means hundreds of lines of boilerplate per operation. |
 | Query the data lake | `lakekit` | SQL queries, entity history, dataset catalog — all with tenant and trace headers. Same boilerplate argument as above. |
 | Publish liveness signals | `heartbeatkit` | Auto-activates with kafkakit. Zero-config heartbeats with publisher stats enrichment. Without it, operations has no signal that your service is alive between health checks. |
 | Announce service/job lifecycle | `announcekit` | Auto-activates with kafkakit. Structured events on well-known subjects. Operations dashboards and alerting rules depend on these — skipping them makes your service invisible to ops. |
+| Product analytics | `posthogkit` (planned) | Batched capture, privacy hashing, no-op when disabled |
+| Full-text search | `meilikit` (planned) | Meilisearch client, replaces searchkit addon |
+| LLM inference | `inferkit` (planned) | OpenAI-compatible, replaces llm addon |
+| Local LLM | `ollamakit` (planned) | Ollama native API, model management |
+| Vector search | `qdrantkit` (planned) | Qdrant REST, filter builder, batch upsert |
 
 ### cache — In-memory TTL/LRU cache
 
@@ -1142,58 +1146,10 @@ These packages provide typed HTTP clients for internal platform services. **If y
 
 ```go
 import (
-    "github.com/ai8future/chassis-go/v10/graphkit"
     "github.com/ai8future/chassis-go/v10/registrykit"
     "github.com/ai8future/chassis-go/v10/lakekit"
 )
 ```
-
-### graphkit — Knowledge graph client (graphiti_svc)
-
-**When to use**: Your service needs to search, query, or traverse the knowledge graph. Provides entity search, temporal recall, Cypher queries, entity graph traversal, timelines, and path finding.
-
-```go
-graph := graphkit.NewClient("http://graphiti-svc:8080",
-    graphkit.WithTenant("tenant-123"),
-    graphkit.WithTimeout(10*time.Second),
-)
-
-// Semantic search
-results, err := graph.Search(ctx, "infrastructure deployment events")
-
-// Temporal recall — what was known at a specific point in time
-t := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
-results, err := graph.Recall(ctx, "deployment status", &t)
-
-// Cypher query
-cypher, err := graph.Cypher(ctx,
-    "MATCH (n)-[r]->(m) WHERE n.name = $name RETURN n, r, m",
-    map[string]any{"name": "prod-cluster"},
-)
-// cypher.Columns, cypher.Rows
-
-// Entity neighborhood (configurable depth)
-neighborhood, err := graph.EntityGraph(ctx, "prod-cluster", graphkit.Depth(2))
-
-// Entity timeline
-events, err := graph.EntityTimeline(ctx, "prod-cluster")
-
-// Shortest paths between entities
-paths, err := graph.Paths(ctx, "service-a", "service-b", graphkit.MaxHops(5))
-```
-
-**Available methods**:
-
-| Method | Description |
-|--------|-------------|
-| `Search(ctx, query)` | Semantic entity search |
-| `Recall(ctx, query, *time)` | Temporal recall at a point in time |
-| `Cypher(ctx, query, params)` | Raw Cypher query execution |
-| `EntityGraph(ctx, name, ...opts)` | Entity neighborhood traversal |
-| `EntityTimeline(ctx, name)` | Temporal event history for an entity |
-| `Paths(ctx, from, to, ...opts)` | Path traversal between two entities |
-
----
 
 ### registrykit — Entity registry client (registry_svc)
 
@@ -1310,13 +1266,194 @@ for _, col := range stats.Schema {
 
 ---
 
+## Planned Service Client Kits
+
+These modules are planned but **do not exist yet**. They are documented here to establish API intent and naming conventions. Do not attempt to import them — the packages have not been implemented.
+
+### posthogkit — Product analytics event capture (planned)
+
+**When to use**: Every service should capture analytics events. posthogkit buffers events and flushes to PostHog periodically via tick. No-op when `POSTHOG_ENABLED=false`.
+
+```go
+cfg := config.MustLoad[struct{
+    PostHog posthogkit.Config
+}]()
+ph := posthogkit.New(cfg.PostHog)
+defer ph.Close()
+
+// Non-blocking — buffers internally, flushes every 30s or 100 events
+ph.Capture(ph.HashID(userID), "api_request", map[string]any{
+    "endpoint": "/search",
+    "latency_ms": elapsed.Milliseconds(),
+})
+```
+
+**Env vars**: `POSTHOG_API_KEY`, `POSTHOG_HOST` (default `https://us.i.posthog.com`), `POSTHOG_FLUSH_INTERVAL` (default `30s`), `POSTHOG_FLUSH_SIZE` (default `100`), `POSTHOG_ENABLED` (default `true`), `POSTHOG_HMAC_SECRET`.
+
+**Behavior**:
+- Events are buffered in memory and flushed either on interval or when the buffer reaches the configured size, whichever comes first.
+- `HashID` applies HMAC-SHA256 hashing using `POSTHOG_HMAC_SECRET` for privacy-safe user identification.
+- When `POSTHOG_ENABLED=false`, all capture calls are no-ops — zero overhead, no network calls.
+- `Close()` flushes any remaining buffered events before returning.
+
+---
+
+### meilikit — Meilisearch search client (planned)
+
+**When to use**: Any service needing full-text search. Replaces the searchkit addon.
+
+```go
+meili, _ := meilikit.New(cfg.Meili,
+    meilikit.WithRetry(3, 500*time.Millisecond),
+    meilikit.WithCircuitBreaker("meilisearch", 5, 30*time.Second),
+)
+
+idx, _ := meili.Index("products")
+idx.Configure(ctx, meilikit.IndexConfig{
+    PrimaryKey: "uuid",
+    Searchable: []string{"name", "description"},
+    Filterable: []string{"category", "price"},
+})
+
+result, _ := idx.Search(ctx, "wireless headphones", meilikit.SearchOptions{
+    Filter: "category = electronics",
+    Limit:  20,
+})
+```
+
+**Env vars**: `MEILI_URL`, `MEILI_API_KEY`, `MEILI_TIMEOUT` (default `5s`).
+
+**Behavior**:
+- Index configuration is idempotent — safe to call on every startup.
+- Supports retry and circuit breaker patterns consistent with `call` package conventions.
+- Search results include hit count, processing time, and facet distributions when requested.
+
+---
+
+### inferkit — OpenAI-compatible LLM inference (planned)
+
+**When to use**: Any service calling LLM APIs (OpenAI, DeepInfra, Groq, or any `/v1/` compatible server). Replaces the llm addon.
+
+```go
+client := inferkit.New(inferkit.Config{
+    BaseURL: inferkit.DeepInfra,
+    APIKey:  cfg.APIKey,
+    Model:   "Qwen/Qwen3-Next-80B-A3B-Instruct",
+},
+    inferkit.WithRetry(4, 5*time.Second),
+    inferkit.WithCircuitBreaker("llm", 5, 60*time.Second),
+)
+
+resp, _ := client.Chat(ctx, inferkit.ChatRequest{
+    Messages: []inferkit.Message{
+        {Role: "system", Content: systemPrompt},
+        {Role: "user", Content: userQuery},
+    },
+    ResponseFormat: &inferkit.ResponseFormat{Type: "json_object"},
+})
+
+embeddings, _ := client.Embed(ctx, inferkit.EmbedRequest{
+    Input: []string{"text to embed"},
+})
+```
+
+**Env vars**: `INFER_BASE_URL` (default `https://api.openai.com/v1`), `INFER_API_KEY`, `INFER_MODEL`, `INFER_TIMEOUT` (default `120s`).
+
+**Behavior**:
+- Supports chat completions and embeddings via the standard OpenAI `/v1/` API surface.
+- Provider constants (`inferkit.DeepInfra`, `inferkit.Groq`, `inferkit.OpenAI`) for common base URLs.
+- Retry and circuit breaker protect against transient API failures and provider outages.
+- Respects context cancellation for long-running inference requests.
+
+---
+
+### ollamakit — Ollama native LLM client (planned)
+
+**When to use**: Services talking directly to a local Ollama instance. Use inferkit instead if you need to swap between cloud/local providers.
+
+```go
+ollama := ollamakit.New(ollamakit.Config{
+    Host:  "http://localhost:11434",
+    Model: "llama3.2",
+})
+
+// Streaming chat
+stream, _ := ollama.ChatStream(ctx, ollamakit.ChatRequest{
+    Messages: []ollamakit.Message{
+        {Role: "user", Content: "Explain quantum computing"},
+    },
+})
+for chunk := range stream {
+    fmt.Print(chunk.Content)
+}
+
+// Embeddings
+emb, _ := ollama.Embed(ctx, ollamakit.EmbedRequest{
+    Input: []string{"document text"},
+})
+
+// Model management
+models, _ := ollama.ListModels(ctx)
+```
+
+**Env vars**: `OLLAMA_HOST` (default `http://localhost:11434`), `OLLAMA_MODEL` (default `llama3.2`), `OLLAMA_TIMEOUT` (default `120s`), `OLLAMA_AUTO_PULL` (default `false`).
+
+**Behavior**:
+- Native Ollama REST API client — not OpenAI-compatible, uses Ollama-specific endpoints.
+- Streaming chat returns a Go channel that yields chunks as they arrive from the model.
+- `OLLAMA_AUTO_PULL=true` automatically pulls a model before first use if it is not already available locally.
+- Model management includes listing, pulling, and checking model availability.
+
+---
+
+### qdrantkit — Qdrant vector database client (planned)
+
+**When to use**: Services needing vector similarity search. Natural pair with inferkit/ollamakit embeddings.
+
+```go
+qd, _ := qdrantkit.New(cfg.Qdrant,
+    qdrantkit.WithRetry(3, 500*time.Millisecond),
+)
+
+// Create collection
+qd.CreateCollection(ctx, "documents", qdrantkit.CollectionConfig{
+    VectorSize: 1024,
+    Distance:   "Cosine",
+})
+
+// Upsert vectors
+qd.Upsert(ctx, "documents", []qdrantkit.Point{{
+    ID:      "doc-123",
+    Vector:  embeddings.Vectors[0],
+    Payload: map[string]any{"title": "My Document"},
+}})
+
+// Search with filters
+results, _ := qd.Search(ctx, "documents", queryVector, qdrantkit.SearchOptions{
+    Filter: qdrantkit.Filter{Must: []qdrantkit.Condition{
+        qdrantkit.Match("tenant_id", tenantID),
+    }},
+    Limit: 10,
+})
+```
+
+**Env vars**: `QDRANT_URL` (default `http://localhost:6333`), `QDRANT_API_KEY`, `QDRANT_TIMEOUT` (default `10s`).
+
+**Behavior**:
+- Qdrant REST API client with typed filter builder for constructing search queries.
+- Collection creation is idempotent — safe to call on every startup.
+- Batch upsert for efficient bulk vector ingestion.
+- Retry support for transient network failures against the Qdrant instance.
+
+---
+
 ## Event bus kits
 
 These packages support publishing and subscribing to the Redpanda event bus. For the full cross-language integration guide, see **[chassis-docs/07-event-bus-integration.md](../chassis-docs/07-event-bus-integration.md)**. **If your service publishes or consumes events, these kits are mandatory — they enforce naming conventions, schema validation, and operational visibility.**
 
 ### tracekit — Cross-service trace propagation
 
-**When to use**: You need to propagate trace IDs across HTTP calls and event bus messages for end-to-end request tracing. **Every service that handles HTTP requests or publishes/consumes events should use tracekit.** The service client kits (`graphkit`, `registrykit`, `lakekit`) already use it automatically.
+**When to use**: You need to propagate trace IDs across HTTP calls and event bus messages for end-to-end request tracing. **Every service that handles HTTP requests or publishes/consumes events should use tracekit.** The service client kits (`registrykit`, `lakekit`) already use it automatically.
 
 ```go
 import "github.com/ai8future/chassis-go/v10/tracekit"
@@ -1339,7 +1476,7 @@ handler := tracekit.Middleware(mux)
 
 **Integration notes**:
 - `tracekit` operates independently of OTel. It uses a simple `X-Trace-ID` header for lightweight trace correlation. Use it alongside `httpkit.Tracing()` (OTel spans) or as a standalone alternative for services that don't need full distributed tracing.
-- All service client kits (`graphkit`, `registrykit`, `lakekit`) read `tracekit.TraceID(ctx)` and set the `X-Trace-ID` header automatically. Wire `tracekit.Middleware` at your HTTP ingress to complete the chain.
+- Service client kits (`registrykit`, `lakekit`) read `tracekit.TraceID(ctx)` and set the `X-Trace-ID` header automatically. Wire `tracekit.Middleware` at your HTTP ingress to complete the chain.
 
 ### schemakit — Avro schema management and validation
 

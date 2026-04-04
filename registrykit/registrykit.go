@@ -14,6 +14,7 @@ import (
 	"time"
 
 	chassis "github.com/ai8future/chassis-go/v10"
+	"github.com/ai8future/chassis-go/v10/call"
 	"github.com/ai8future/chassis-go/v10/tracekit"
 )
 
@@ -72,38 +73,60 @@ type CreateRelationshipRequest struct {
 // Client
 // --------------------------------------------------------------------------
 
-// Client is an HTTP client for registry_svc.
+// Client is an HTTP client for registry_svc backed by call.Client.
 type Client struct {
 	baseURL  string
 	tenantID string
-	http     *http.Client
+	http     *call.Client
+}
+
+// clientOptions collects configuration before building the call.Client.
+type clientOptions struct {
+	tenantID    string
+	callOptions []call.Option
 }
 
 // ClientOption configures a Client.
-type ClientOption func(*Client)
+type ClientOption func(*clientOptions)
 
 // WithTenant sets the tenant ID for all requests.
 func WithTenant(id string) ClientOption {
-	return func(c *Client) { c.tenantID = id }
+	return func(o *clientOptions) { o.tenantID = id }
 }
 
-// WithTimeout sets the HTTP client timeout.
+// WithTimeout sets the per-request timeout.
 func WithTimeout(d time.Duration) ClientOption {
-	return func(c *Client) { c.http.Timeout = d }
+	return func(o *clientOptions) { o.callOptions = append(o.callOptions, call.WithTimeout(d)) }
+}
+
+// WithRetry enables automatic retries for transient (5xx) errors.
+func WithRetry(maxAttempts int, baseDelay time.Duration) ClientOption {
+	return func(o *clientOptions) { o.callOptions = append(o.callOptions, call.WithRetry(maxAttempts, baseDelay)) }
+}
+
+// WithCircuitBreaker protects the client with a named circuit breaker.
+func WithCircuitBreaker(name string, threshold int, cooldown time.Duration) ClientOption {
+	return func(o *clientOptions) {
+		o.callOptions = append(o.callOptions, call.WithCircuitBreaker(name, threshold, cooldown))
+	}
 }
 
 // NewClient creates a new registry_svc client.
 func NewClient(baseURL string, opts ...ClientOption) *Client {
 	chassis.AssertVersionChecked()
-	c := &Client{
+	o := &clientOptions{}
+	for _, opt := range opts {
+		opt(o)
+	}
+
+	callOpts := []call.Option{call.WithTimeout(5 * time.Second)}
+	callOpts = append(callOpts, o.callOptions...)
+
+	return &Client{
 		baseURL:  strings.TrimRight(baseURL, "/"),
-		tenantID: "",
-		http:     &http.Client{Timeout: 5 * time.Second},
+		tenantID: o.tenantID,
+		http:     call.New(callOpts...),
 	}
-	for _, o := range opts {
-		o(c)
-	}
-	return c
 }
 
 // --------------------------------------------------------------------------
@@ -483,13 +506,16 @@ func (c *Client) setHeaders(ctx context.Context, req *http.Request) {
 	}
 }
 
+// maxErrorBody caps how much of an error response we read (64 KB).
+const maxErrorBody = 64 << 10
+
 // checkStatus inspects the HTTP response status and returns an appropriate error.
 func checkStatus(resp *http.Response) error {
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	}
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
 	detail := strings.TrimSpace(string(body))
 
 	switch resp.StatusCode {
