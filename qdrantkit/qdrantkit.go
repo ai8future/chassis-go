@@ -29,7 +29,7 @@ import (
 // Config holds Qdrant connection settings.
 type Config struct {
 	BaseURL string        `env:"QDRANT_URL" default:"http://localhost:6333"`
-	APIKey  string        `env:"QDRANT_API_KEY"`
+	APIKey  string        `env:"QDRANT_API_KEY" required:"false"`
 	Timeout time.Duration `env:"QDRANT_TIMEOUT" default:"10s"`
 }
 

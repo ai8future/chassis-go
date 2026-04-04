@@ -15,8 +15,8 @@ import (
 type Config struct {
 	MasterURL    string `env:"XYOPS_WORKER_MASTER_URL" required:"true"`
 	SecretKey    string `env:"XYOPS_WORKER_SECRET_KEY" required:"true"`
-	Hostname     string `env:"XYOPS_WORKER_HOSTNAME"`
-	Groups       string `env:"XYOPS_WORKER_GROUPS"`
+	Hostname     string `env:"XYOPS_WORKER_HOSTNAME"     required:"false"`
+	Groups       string `env:"XYOPS_WORKER_GROUPS"       required:"false"`
 	ShellEnabled bool   `env:"XYOPS_WORKER_SHELL_ENABLED" default:"false"`
 }
 

@@ -35,8 +35,8 @@ const (
 // Config holds the client configuration.
 type Config struct {
 	BaseURL string        `env:"INFER_BASE_URL" default:"https://api.openai.com/v1"`
-	APIKey  string        `env:"INFER_API_KEY"`
-	Model   string        `env:"INFER_MODEL"`
+	APIKey  string        `env:"INFER_API_KEY" required:"false"`
+	Model   string        `env:"INFER_MODEL"   required:"false"`
 	Timeout time.Duration `env:"INFER_TIMEOUT" default:"120s"`
 }
 
@@ -184,6 +184,7 @@ type options struct {
 	cbName      string
 	cbThreshold int
 	cbCooldown  time.Duration
+	httpClient  *http.Client
 }
 
 // WithRetry enables retry with exponential backoff and jitter for transient
@@ -206,6 +207,16 @@ func WithCircuitBreaker(name string, threshold int, cooldown time.Duration) Opti
 		o.cbName = name
 		o.cbThreshold = threshold
 		o.cbCooldown = cooldown
+	}
+}
+
+// WithHTTPClient replaces the underlying *http.Client used by the inference
+// client. This is useful when you need a custom Transport (e.g. SSRF-safe
+// dialer, proxy routing). The custom client is used for both the call.Client
+// (Chat, Embed, Ping) and the streaming HTTP client (ChatStream).
+func WithHTTPClient(hc *http.Client) Option {
+	return func(o *options) {
+		o.httpClient = hc
 	}
 }
 
@@ -260,10 +271,18 @@ func New(cfg Config, opts ...Option) *Client {
 	if o.cbName != "" {
 		callOpts = append(callOpts, call.WithCircuitBreaker(o.cbName, o.cbThreshold, o.cbCooldown))
 	}
+	if o.httpClient != nil {
+		callOpts = append(callOpts, call.WithHTTPClient(o.httpClient))
+	}
 
 	maxAttempts := 1
 	if o.maxAttempts > 1 {
 		maxAttempts = o.maxAttempts
+	}
+
+	streamHTTP := &http.Client{}
+	if o.httpClient != nil {
+		streamHTTP = o.httpClient
 	}
 
 	return &Client{
@@ -271,7 +290,7 @@ func New(cfg Config, opts ...Option) *Client {
 		apiKey:      cfg.APIKey,
 		model:       cfg.Model,
 		caller:      call.New(callOpts...),
-		streamHTTP:  &http.Client{},
+		streamHTTP:  streamHTTP,
 		maxAttempts: maxAttempts,
 		baseDelay:   o.baseDelay,
 	}

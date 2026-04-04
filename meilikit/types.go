@@ -8,9 +8,9 @@ import (
 
 // Config holds the Meilisearch connection settings, loaded via chassis config.
 type Config struct {
-	BaseURL string        `env:"MEILI_URL"`
-	APIKey  string        `env:"MEILI_API_KEY"`
-	Timeout time.Duration `env:"MEILI_TIMEOUT"`
+	BaseURL string        `env:"MEILI_URL" default:"http://localhost:7700"`
+	APIKey  string        `env:"MEILI_API_KEY" required:"false"`
+	Timeout time.Duration `env:"MEILI_TIMEOUT" default:"5s"`
 }
 
 // IndexConfig defines index creation and settings.

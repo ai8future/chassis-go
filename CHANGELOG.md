@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [10.2.15] - 2026-04-04
+
+### Fixed
+
+- **qdrantkit**: Mark `APIKey` config field as `required:"false"` — deployments without API keys no longer panic at startup
+- **meilikit**: Mark `APIKey` config field as `required:"false"` and add sensible defaults for `BaseURL` (`http://localhost:7700`) and `Timeout` (`5s`)
+- **inferkit**: Mark `APIKey` and `Model` config fields as `required:"false"` — local inference servers (e.g. Ollama compat mode) no longer require these
+- **xyopsworker**: Mark `Hostname` and `Groups` config fields as `required:"false"` — both already have runtime fallbacks
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.2.14] - 2026-04-04
 
 ### Added
