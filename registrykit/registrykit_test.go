@@ -3,12 +3,15 @@ package registrykit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	chassis "github.com/ai8future/chassis-go/v10"
+	"github.com/ai8future/chassis-go/v10/call"
 	"github.com/ai8future/chassis-go/v10/tracekit"
 )
 
@@ -472,5 +475,98 @@ func TestCreateRelationship(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// --------------------------------------------------------------------------
+// 15. AsOf encodes RFC3339 in query string
+// --------------------------------------------------------------------------
+
+func TestRelated_AsOfEncodesRFC3339(t *testing.T) {
+	asOf := time.Date(2026, 4, 5, 7, 0, 0, 0, time.UTC)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := r.URL.Query().Get("as_of")
+		want := asOf.Format(time.RFC3339)
+		if got != want {
+			t.Errorf("expected as_of=%q, got %q", want, got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, WithTenant("tenant-abc"))
+	_, err := client.Related(context.Background(), "ent_001", AsOf(asOf))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// --------------------------------------------------------------------------
+// 16. WithRetry retries transient failures
+// --------------------------------------------------------------------------
+
+func TestResolve_WithRetryRetriesTransientFailures(t *testing.T) {
+	var attempts atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := attempts.Add(1)
+		if n < 3 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Entity{
+			ID:            "ent_retry",
+			Types:         []string{"organization"},
+			CanonicalName: "Retry Co",
+		})
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, WithRetry(3, time.Millisecond))
+
+	entity, err := client.Resolve(context.Background(), "organization", ByCRD("CRD-RETRY"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entity == nil || entity.ID != "ent_retry" {
+		t.Fatalf("expected retried entity, got %+v", entity)
+	}
+	if attempts.Load() != 3 {
+		t.Fatalf("expected 3 attempts, got %d", attempts.Load())
+	}
+}
+
+// --------------------------------------------------------------------------
+// 17. WithCircuitBreaker rejects after threshold
+// --------------------------------------------------------------------------
+
+func TestResolve_WithCircuitBreakerRejectsSecondCall(t *testing.T) {
+	const breakerName = "registrykit-test-breaker"
+	t.Cleanup(func() { call.RemoveBreaker(breakerName) })
+
+	var attempts atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, WithCircuitBreaker(breakerName, 1, time.Hour))
+
+	_, err := client.Resolve(context.Background(), "organization", ByCRD("CRD-CB"))
+	if err == nil {
+		t.Fatal("expected first call to fail with service unavailable")
+	}
+
+	_, err = client.Resolve(context.Background(), "organization", ByCRD("CRD-CB"))
+	if !errors.Is(err, call.ErrCircuitOpen) {
+		t.Fatalf("expected circuit-open error, got %v", err)
+	}
+	if attempts.Load() != 1 {
+		t.Fatalf("expected second call to be rejected before hitting server, got %d server hits", attempts.Load())
 	}
 }

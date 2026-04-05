@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [10.3.0] - 2026-04-05
+
+### Added
+
+- **xyops**: Add tests for `CancelJob`, `SearchJobs`, `GetEvent`, `AckAlert` — fills 0% coverage gap on public API methods, including cache-invalidation verification for CancelJob
+- **deploy**: Add tests for `RunHook` — covers script execution, missing-hook noop, path traversal rejection, and exec error propagation (security-relevant code at 0% coverage)
+- **tick**: Add internal tests for `Jitter`, `Label`, `Immediate`, `OnError` option constructors and non-positive interval guard
+- **xyopsworker**: Add internal tests for `Job` callback invocation and `Run` context cancellation
+- **registrykit**: Add tests for `AsOf` RFC3339 encoding, `WithRetry` transient failure retry behavior, and `WithCircuitBreaker` open-circuit rejection
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.2.15] - 2026-04-04
 
 ### Fixed

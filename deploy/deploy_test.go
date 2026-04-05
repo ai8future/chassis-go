@@ -526,6 +526,94 @@ func TestDependenciesDefaultProtocol(t *testing.T) {
 	}
 }
 
+func TestRunHookExecutesScript(t *testing.T) {
+	dir := t.TempDir()
+	hooksDir := filepath.Join(dir, "hooks")
+	if err := os.MkdirAll(hooksDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	markerPath := filepath.Join(hooksDir, "hook-ran.txt")
+	script := "#!/bin/sh\nprintf 'ok' > " + markerPath + "\n"
+	hookPath := filepath.Join(hooksDir, "post-start")
+	if err := os.WriteFile(hookPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+
+	if err := d.RunHook("post-start"); err != nil {
+		t.Fatalf("RunHook: %v", err)
+	}
+
+	data, err := os.ReadFile(markerPath)
+	if err != nil {
+		t.Fatalf("expected hook side effect file: %v", err)
+	}
+	if string(data) != "ok" {
+		t.Fatalf("expected hook output 'ok', got %q", string(data))
+	}
+}
+
+func TestRunHookMissingIsNoop(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "hooks"), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+
+	if err := d.RunHook("does-not-exist"); err != nil {
+		t.Fatalf("expected missing hook to be a no-op, got %v", err)
+	}
+}
+
+func TestRunHookRejectsTraversal(t *testing.T) {
+	dir := t.TempDir()
+	hooksDir := filepath.Join(dir, "hooks")
+	if err := os.MkdirAll(hooksDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	evilPath := filepath.Join(dir, "evil")
+	evilScript := "#!/bin/sh\nprintf 'bad' > " + filepath.Join(dir, "traversal-ran.txt") + "\n"
+	if err := os.WriteFile(evilPath, []byte(evilScript), 0o755); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+
+	// Path traversal attempt should be silently rejected.
+	_ = d.RunHook("../evil")
+
+	if _, err := os.Stat(filepath.Join(dir, "traversal-ran.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected traversal hook not to execute, stat err=%v", err)
+	}
+}
+
+func TestRunHookReturnsExecError(t *testing.T) {
+	dir := t.TempDir()
+	hooksDir := filepath.Join(dir, "hooks")
+	if err := os.MkdirAll(hooksDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	hookPath := filepath.Join(hooksDir, "pre-stop")
+	if err := os.WriteFile(hookPath, []byte("#!/bin/sh\nexit 7\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
+	d := deploy.Discover("test-svc")
+
+	if err := d.RunHook("pre-stop"); err == nil {
+		t.Fatal("expected exec error from failing hook")
+	}
+}
+
 func TestHealthNoDeployJSON(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CHASSIS_DEPLOY_DIR", dir)

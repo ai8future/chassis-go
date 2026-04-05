@@ -43,6 +43,31 @@ func mux() http.Handler {
 		json.NewEncoder(w).Encode(resp)
 	})
 
+	m.HandleFunc("POST /api/jobs/{jobID}/cancel", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	m.HandleFunc("GET /api/jobs", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode([]map[string]any{
+			{"id": "job-search-1", "event_id": "evt-1", "state": "running", "progress": 90},
+		})
+	})
+
+	m.HandleFunc("GET /api/events/{eventID}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]string{
+			"id":   r.PathValue("eventID"),
+			"name": "deploy",
+		})
+	})
+
+	m.HandleFunc("POST /api/alerts/{alertID}/ack", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	m.HandleFunc("POST /api/webhooks/{hookID}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(200)
@@ -307,6 +332,105 @@ func TestRawEscapeHatch(t *testing.T) {
 	json.Unmarshal(resp, &result)
 	if result["status"] != "ok" {
 		t.Fatalf("expected status=ok, got %v", result)
+	}
+}
+
+func TestCancelJobInvalidatesCache(t *testing.T) {
+	srv := testkit.NewHTTPServer(t, mux())
+	client := xyops.New(xyops.Config{
+		BaseURL: srv.URL,
+		APIKey:  "test-key",
+	})
+	ctx := context.Background()
+
+	// Prime the cache.
+	if _, err := client.GetJobStatus(ctx, "job-99"); err != nil {
+		t.Fatalf("GetJobStatus (prime cache): %v", err)
+	}
+	if err := client.CancelJob(ctx, "job-99"); err != nil {
+		t.Fatalf("CancelJob: %v", err)
+	}
+
+	// After cancel the cache should be cleared — next get should hit server.
+	firstCount := len(srv.Requests())
+	if _, err := client.GetJobStatus(ctx, "job-99"); err != nil {
+		t.Fatalf("GetJobStatus (after cancel): %v", err)
+	}
+
+	var getCount, cancelCount int
+	for _, r := range srv.Requests() {
+		switch {
+		case r.Method == "GET" && r.Path == "/api/jobs/job-99":
+			getCount++
+		case r.Method == "POST" && r.Path == "/api/jobs/job-99/cancel":
+			cancelCount++
+		}
+	}
+	if getCount != 2 {
+		t.Fatalf("expected 2 GET /api/jobs/job-99 requests, got %d (total before=%d after=%d)", getCount, firstCount, len(srv.Requests()))
+	}
+	if cancelCount != 1 {
+		t.Fatalf("expected 1 cancel request, got %d", cancelCount)
+	}
+}
+
+func TestSearchJobs(t *testing.T) {
+	srv := testkit.NewHTTPServer(t, mux())
+	client := xyops.New(xyops.Config{
+		BaseURL: srv.URL,
+		APIKey:  "test-key",
+	})
+
+	jobs, err := client.SearchJobs(context.Background(), "status:running")
+	if err != nil {
+		t.Fatalf("SearchJobs: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	if jobs[0].ID != "job-search-1" {
+		t.Fatalf("expected job-search-1, got %q", jobs[0].ID)
+	}
+}
+
+func TestGetEvent(t *testing.T) {
+	srv := testkit.NewHTTPServer(t, mux())
+	client := xyops.New(xyops.Config{
+		BaseURL: srv.URL,
+		APIKey:  "test-key",
+	})
+
+	event, err := client.GetEvent(context.Background(), "evt-42")
+	if err != nil {
+		t.Fatalf("GetEvent: %v", err)
+	}
+	if event.ID != "evt-42" {
+		t.Fatalf("expected evt-42, got %q", event.ID)
+	}
+	if event.Name != "deploy" {
+		t.Fatalf("expected deploy, got %q", event.Name)
+	}
+}
+
+func TestAckAlert(t *testing.T) {
+	srv := testkit.NewHTTPServer(t, mux())
+	client := xyops.New(xyops.Config{
+		BaseURL: srv.URL,
+		APIKey:  "test-key",
+	})
+
+	if err := client.AckAlert(context.Background(), "alert-1"); err != nil {
+		t.Fatalf("AckAlert: %v", err)
+	}
+
+	found := false
+	for _, r := range srv.Requests() {
+		if r.Method == "POST" && r.Path == "/api/alerts/alert-1/ack" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected POST /api/alerts/alert-1/ack request")
 	}
 }
 
