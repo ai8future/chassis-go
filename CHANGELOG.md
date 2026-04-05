@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [10.3.3] - 2026-04-05
+
+### Fixed
+
+- **webhook**: Fix data race on `Delivery.Attempts`, `.Status`, `.LastError` — wrap mutations in `s.mu.Lock()`/`Unlock()` so `Status()` reads consistent state
+- **webhook**: Return delivery ID (not `""`) on 4xx client-error and exhausted-retries failure paths
+- **webhook**: Panic on `crypto/rand.Read` error in `generateID()` instead of silently using zero bytes
+- **registry**: `redactArgs` now handles `--flag value` (space-separated) form in addition to `--flag=value`
+- **registry**: `appendLogLocked` logs to stderr when `logFile.Write` fails instead of silently discarding the error
+- **registry**: `ShutdownCLI` logs to stderr when final PID-file `atomicWrite` fails instead of ignoring the error
+- **tracekit**: Panic on `crypto/rand.Read` error in `GenerateID()` instead of silently using zero bytes
+- **logz**: Remove redundant `if spanID != ""` guards — after `sc.IsValid()`, `SpanID().String()` never returns empty
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.3.2] - 2026-04-05
 
 ### Fixed

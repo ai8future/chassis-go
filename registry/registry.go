@@ -530,7 +530,9 @@ func ShutdownCLI(exitCode int) {
 		ec := exitCode
 		reg.ExitCode = &ec
 		reg.Summary = lastProgress
-		atomicWrite(pidPath, reg)
+		if err := atomicWrite(pidPath, reg); err != nil {
+			fmt.Fprintf(os.Stderr, "registry: failed to write final PID file: %v\n", err)
+		}
 	}
 
 	if logFile != nil {
@@ -608,6 +610,23 @@ func redactArgs(args []string) []string {
 	for i, arg := range args {
 		out[i] = redactArg(arg)
 	}
+	// Handle --flag value (space-separated) form: if a flag is sensitive and
+	// was not handled by the =value path, redact the following argument.
+	for i := 0; i < len(out)-1; i++ {
+		arg := out[i]
+		if !strings.HasPrefix(arg, "-") || strings.Contains(arg, "=") {
+			continue
+		}
+		name := strings.TrimLeft(arg, "-")
+		if name == "" {
+			continue
+		}
+		// Next arg is a value (doesn't start with "-") — redact if sensitive.
+		if !strings.HasPrefix(out[i+1], "-") && isSensitiveFlag(name) {
+			out[i+1] = "REDACTED"
+			i++ // skip the redacted value
+		}
+	}
 	return out
 }
 
@@ -665,7 +684,9 @@ func appendLogLocked(entry map[string]any) {
 	if err != nil {
 		return
 	}
-	logFile.Write(append(data, '\n'))
+	if _, err := logFile.Write(append(data, '\n')); err != nil {
+		fmt.Fprintf(os.Stderr, "registry: log write failed: %v\n", err)
+	}
 }
 
 // killPreviousInstances sends SIGTERM to any running instances of the same

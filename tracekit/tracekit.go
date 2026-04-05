@@ -17,7 +17,9 @@ type contextKey struct{}
 func GenerateID() string {
 	chassis.AssertVersionChecked()
 	b := make([]byte, 6)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("tracekit: crypto/rand.Read failed: " + err.Error())
+	}
 	return "tr_" + hex.EncodeToString(b)
 }
 

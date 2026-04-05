@@ -78,9 +78,7 @@ func (h *traceHandler) Handle(ctx context.Context, r slog.Record) error {
 
 	if len(h.groups) == 0 {
 		r.AddAttrs(slog.String("trace_id", traceID))
-		if spanID != "" {
-			r.AddAttrs(slog.String("span_id", spanID))
-		}
+		r.AddAttrs(slog.String("span_id", spanID))
 		return h.inner.Handle(ctx, r)
 	}
 
@@ -112,9 +110,7 @@ func (h *traceHandler) Handle(ctx context.Context, r slog.Record) error {
 
 	newRecord := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
 	newRecord.AddAttrs(slog.String("trace_id", traceID))
-	if spanID != "" {
-		newRecord.AddAttrs(slog.String("span_id", spanID))
-	}
+	newRecord.AddAttrs(slog.String("span_id", spanID))
 	newRecord.AddAttrs(grouped)
 
 	return h.base.Handle(ctx, newRecord)

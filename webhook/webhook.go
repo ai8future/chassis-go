@@ -80,7 +80,9 @@ func (s *Sender) Send(url string, payload any, secret string) (string, error) {
 
 	var lastErr error
 	for attempt := 1; attempt <= s.maxAttempts; attempt++ {
+		s.mu.Lock()
 		delivery.Attempts = attempt
+		s.mu.Unlock()
 
 		req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 		if err != nil {
@@ -103,14 +105,18 @@ func (s *Sender) Send(url string, payload any, secret string) (string, error) {
 		resp.Body.Close()
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			s.mu.Lock()
 			delivery.Status = "delivered"
+			s.mu.Unlock()
 			return id, nil
 		}
 
 		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			s.mu.Lock()
 			delivery.Status = "failed"
 			delivery.LastError = fmt.Sprintf("HTTP %d", resp.StatusCode)
-			return "", fmt.Errorf("%w: HTTP %d", ErrClientError, resp.StatusCode)
+			s.mu.Unlock()
+			return id, fmt.Errorf("%w: HTTP %d", ErrClientError, resp.StatusCode)
 		}
 
 		// 5xx — retry
@@ -120,9 +126,11 @@ func (s *Sender) Send(url string, payload any, secret string) (string, error) {
 		}
 	}
 
+	s.mu.Lock()
 	delivery.Status = "failed"
 	delivery.LastError = lastErr.Error()
-	return "", fmt.Errorf("%w: %v", ErrServerError, lastErr)
+	s.mu.Unlock()
+	return id, fmt.Errorf("%w: %v", ErrServerError, lastErr)
 }
 
 func (s *Sender) Status(id string) (Delivery, bool) {
@@ -158,6 +166,8 @@ func VerifyPayload(headers http.Header, body []byte, secret string) ([]byte, err
 
 func generateID() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("webhook: crypto/rand.Read failed: " + err.Error())
+	}
 	return hex.EncodeToString(b)
 }
