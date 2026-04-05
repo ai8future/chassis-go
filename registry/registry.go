@@ -211,7 +211,6 @@ func Init(cancel context.CancelFunc, chassisVersion string) error {
 			return fmt.Errorf("registry: directory %s has unsafe permissions %o (want 0700)", svcDir, perm)
 		}
 	}
-	killPreviousInstances(svcDir, pid)
 	cleanStale(svcDir)
 
 	ps := strconv.Itoa(pid)
@@ -338,7 +337,6 @@ func InitCLI(chassisVersion string) error {
 			return fmt.Errorf("registry: directory %s has unsafe permissions %o (want 0700)", svcDir, perm)
 		}
 	}
-	killPreviousInstances(svcDir, pid)
 	cleanStale(svcDir)
 
 	ps := strconv.Itoa(pid)
@@ -583,11 +581,12 @@ func resolveName() string {
 	if n := os.Getenv("CHASSIS_SERVICE_NAME"); n != "" {
 		return n
 	}
+	bin := filepath.Base(os.Args[0])
 	wd, err := os.Getwd()
 	if err != nil {
-		return "unknown"
+		return bin
 	}
-	return filepath.Base(wd)
+	return bin + "-" + filepath.Base(wd)
 }
 
 func readVersion() string {

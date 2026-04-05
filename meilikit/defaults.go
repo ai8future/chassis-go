@@ -45,10 +45,15 @@ func validateIndexName(name string) error {
 	return nil
 }
 
-// validateDocID checks that a document ID is non-empty.
+// validateDocID checks that a document ID is non-empty and contains only safe characters.
 func validateDocID(id string) error {
 	if id == "" {
 		return fmt.Errorf("meilikit: document ID must not be empty")
+	}
+	for _, c := range id {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
+			return fmt.Errorf("meilikit: document ID %q contains invalid character", id)
+		}
 	}
 	return nil
 }

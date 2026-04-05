@@ -87,6 +87,7 @@ type ChatChunk struct {
 	Content      string
 	FinishReason string
 	Done         bool
+	Err          error
 }
 
 // EmbedRequest is the payload for an embeddings call.
@@ -441,6 +442,10 @@ func (c *Client) ChatStream(ctx context.Context, req ChatRequest) (*ResponseMeta
 
 			var chunk apiStreamChunk
 			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+				select {
+				case ch <- ChatChunk{Err: fmt.Errorf("inferkit: parse chunk: %w", err)}:
+				case <-ctx.Done():
+				}
 				return
 			}
 			if len(chunk.Choices) == 0 {

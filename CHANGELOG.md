@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+## [10.3.4] - 2026-04-05
+
+### Fixed (rcodegen batch — Claude:Opus 4.6)
+- otel: give trace and metric providers separate 5s shutdown timeouts
+- metrics: log Counter()/Histogram() meter creation errors instead of silently discarding
+- config: provide field name context in regexp.MustCompile panic messages
+- health: check and log w.Write error in health handler
+- webhook: fix data race on Delivery fields during Send retry loop
+- webhook: panic on crypto/rand.Read failure instead of silently producing zero IDs
+- webhook: return delivery ID on failure paths for delivery tracking
+- registry: redact space-separated `--flag value` sensitive arguments in PID file
+- registry: log appendLogLocked write errors to stderr
+- registry: log ShutdownCLI atomicWrite errors to stderr
+- tracekit: panic on crypto/rand.Read failure in GenerateID
+- logz: remove redundant spanID empty-string guards
+- heartbeatkit: fix goroutine leak on double-Start by closing previous stopCh
+- lifecycle: pass signalCtx to heartbeatkit.Start so heartbeat stops on SIGTERM
+- work: capture span context in Stream so child spans are properly parented
+- guard/timeout: fix false-success when handler writes headers but timeout fires before body
+- meilikit: return error from WaitForTask for failed/canceled tasks
+- meilikit: validate document IDs to prevent path-injection characters
+- announcekit: synchronize serviceName reads/writes with RWMutex
+- announcekit: guard against nil error in Failed/JobFailed
+- schemakit: add RWMutex to Registry cache for concurrent safety
+- schemakit: replace http.DefaultClient with timeout-configured client
+- kafkakit: fix data race on subscriber s.client field
+- inferkit: send error to channel on ChatStream malformed chunk instead of silently dropping
+- ollamakit: add missing return after ChatStream unmarshal error
+- posthogkit: requeue batch on flush failure instead of dropping analytics
+- xyopsworker: add warning log when Run() stub is invoked
+
 ## [10.3.3] - 2026-04-05
 
 ### Fixed

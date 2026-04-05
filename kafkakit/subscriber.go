@@ -128,7 +128,9 @@ func (s *Subscriber) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("kafkakit: create subscriber client: %w", err)
 	}
+	s.mu.Lock()
 	s.client = client
+	s.mu.Unlock()
 	s.healthy.Store(true)
 
 	// Determine max records per poll: use config if set, otherwise scale with
@@ -263,8 +265,11 @@ func (s *Subscriber) handleRecord(ctx context.Context, record *kgo.Record) {
 // Close shuts down the subscriber.
 func (s *Subscriber) Close() error {
 	s.healthy.Store(false)
-	if s.client != nil {
-		s.client.Close()
+	s.mu.Lock()
+	cl := s.client
+	s.mu.Unlock()
+	if cl != nil {
+		cl.Close()
 	}
 	return nil
 }
@@ -277,7 +282,10 @@ func (s *Subscriber) Healthy() bool {
 // routeToDLQ publishes a failed event to the dead letter queue topic.
 // DLQ topic format: ai8._dlq.{original_subject}
 func (s *Subscriber) routeToDLQ(evt Event, handlerErr error) {
-	if s.client == nil {
+	s.mu.RLock()
+	cl := s.client
+	s.mu.RUnlock()
+	if cl == nil {
 		slog.Error("kafkakit: cannot route to DLQ, no client")
 		return
 	}
@@ -300,7 +308,7 @@ func (s *Subscriber) routeToDLQ(evt Event, handlerErr error) {
 	}
 
 	// Fire-and-forget to DLQ
-	s.client.Produce(context.Background(), record, func(_ *kgo.Record, err error) {
+	cl.Produce(context.Background(), record, func(_ *kgo.Record, err error) {
 		if err != nil {
 			slog.Error("kafkakit: DLQ produce failed", "topic", dlq, "err", err)
 		}

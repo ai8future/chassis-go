@@ -504,8 +504,11 @@ func TestWaitForTask_Failed(t *testing.T) {
 	c, _ := New(Config{BaseURL: srv.URL})
 	idx, _ := c.Index("test")
 	task, err := idx.WaitForTask(context.Background(), 42)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected error for failed task")
+	}
+	if task == nil {
+		t.Fatal("expected task to be returned even on failure")
 	}
 	if task.Status != "failed" {
 		t.Fatalf("status = %q, want failed", task.Status)

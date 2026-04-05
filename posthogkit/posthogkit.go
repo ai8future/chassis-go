@@ -237,12 +237,19 @@ func (c *Client) flush(ctx context.Context) error {
 	c.buf = make([]event, 0, c.cfg.FlushSize)
 	c.mu.Unlock()
 
+	requeue := func() {
+		c.mu.Lock()
+		c.buf = append(batch, c.buf...)
+		c.mu.Unlock()
+	}
+
 	payload := map[string]any{
 		"api_key": c.cfg.APIKey,
 		"batch":   batch,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
+		requeue()
 		return fmt.Errorf("posthogkit: marshal batch: %w", err)
 	}
 
@@ -250,12 +257,14 @@ func (c *Client) flush(ctx context.Context) error {
 		strings.TrimRight(c.cfg.Host, "/")+"/batch",
 		bytes.NewReader(body))
 	if err != nil {
+		requeue()
 		return fmt.Errorf("posthogkit: build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.http.Do(req)
 	if err != nil {
+		requeue()
 		return fmt.Errorf("posthogkit: send batch: %w", err)
 	}
 	defer resp.Body.Close()
@@ -264,6 +273,7 @@ func (c *Client) flush(ctx context.Context) error {
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		requeue()
 		detail := strings.TrimSpace(string(respBody))
 		if detail != "" {
 			return fmt.Errorf("posthogkit: unexpected status %d: %s", resp.StatusCode, detail)

@@ -400,8 +400,16 @@ func (idx *Index) WaitForTask(ctx context.Context, taskUID int64) (*Task, error)
 		}
 
 		switch task.Status {
-		case "succeeded", "failed", "canceled":
+		case "succeeded":
 			return &task, nil
+		case "failed":
+			msg := "unknown error"
+			if task.Error != nil {
+				msg = task.Error.Message
+			}
+			return &task, fmt.Errorf("meilikit: task %d failed: %s", taskUID, msg)
+		case "canceled":
+			return &task, fmt.Errorf("meilikit: task %d was canceled", taskUID)
 		}
 
 		timer := time.NewTimer(delay)

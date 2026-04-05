@@ -5,6 +5,7 @@ package xyopsworker
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"sync"
 
@@ -122,6 +123,7 @@ func (w *Worker) Run(ctx context.Context) error {
 	// 5. On context cancellation: stop accepting, wait for in-flight, disconnect
 
 	// For now, block until context is cancelled
+	slog.WarnContext(ctx, "xyopsworker: Run() is a stub — no WebSocket connection to "+w.config.MasterURL)
 	<-ctx.Done()
 	return nil
 }

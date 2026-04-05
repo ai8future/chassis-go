@@ -13,6 +13,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/hamba/avro/v2"
 )
@@ -29,8 +31,10 @@ type Schema struct {
 
 // Registry manages schema registration and validation.
 type Registry struct {
-	url   string
-	cache map[string]*Schema
+	url    string
+	cache  map[string]*Schema
+	mu     sync.RWMutex
+	client *http.Client
 }
 
 // NewRegistry creates a new schema registry client. The schemaRegistryURL is
@@ -40,13 +44,16 @@ func NewRegistry(schemaRegistryURL string) (*Registry, error) {
 		return nil, fmt.Errorf("schemakit: schema registry URL must not be empty")
 	}
 	return &Registry{
-		url:   strings.TrimRight(schemaRegistryURL, "/"),
-		cache: make(map[string]*Schema),
+		url:    strings.TrimRight(schemaRegistryURL, "/"),
+		cache:  make(map[string]*Schema),
+		client: &http.Client{Timeout: 10 * time.Second},
 	}, nil
 }
 
 // GetSchema returns a previously loaded schema by subject key, or nil if not found.
 func (r *Registry) GetSchema(subject string) *Schema {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.cache[subject]
 }
 
@@ -99,7 +106,9 @@ func (r *Registry) LoadSchemas(schemasDir string) error {
 			SchemaID: 0,
 			parsed:   parsed,
 		}
+		r.mu.Lock()
 		r.cache[subject] = schema
+		r.mu.Unlock()
 		return nil
 	})
 }
@@ -154,6 +163,7 @@ func (r *Registry) Deserialize(raw []byte) (map[string]any, error) {
 	schemaID := int(binary.BigEndian.Uint32(raw[1:5]))
 
 	// Find schema by ID in cache
+	r.mu.RLock()
 	var schema *Schema
 	for _, s := range r.cache {
 		if s.SchemaID == schemaID {
@@ -161,6 +171,7 @@ func (r *Registry) Deserialize(raw []byte) (map[string]any, error) {
 			break
 		}
 	}
+	r.mu.RUnlock()
 	if schema == nil {
 		return nil, fmt.Errorf("schemakit: no cached schema for ID %d", schemaID)
 	}
@@ -196,7 +207,7 @@ func (r *Registry) Register(ctx context.Context, schema *Schema) error {
 	}
 	req.Header.Set("Content-Type", "application/vnd.schemaregistry.v1+json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := r.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("schemakit: register %s: %w", schema.Subject, err)
 	}
@@ -218,6 +229,8 @@ func (r *Registry) Register(ctx context.Context, schema *Schema) error {
 		return fmt.Errorf("schemakit: decode register response: %w", err)
 	}
 
+	r.mu.Lock()
 	schema.SchemaID = result.ID
+	r.mu.Unlock()
 	return nil
 }
