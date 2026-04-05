@@ -43,14 +43,14 @@ func RequireMajor(required int) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr,
 			"FATAL: Invalid VERSION format %q — expected semver like \"5.0.0\".\n", Version)
-		os.Exit(1)
+		osExit(1)
 	}
 	if actual != required {
 		fmt.Fprintf(os.Stderr,
 			"FATAL: Service requires chassis v%d but v%s is installed.\n"+
 				"Review the v%d migration guide and update your RequireMajor(%d) call.\n",
 			required, Version, actual, actual)
-		os.Exit(1)
+		osExit(1)
 	}
 }
 
@@ -62,7 +62,7 @@ func AssertVersionChecked() {
 		fmt.Fprintf(os.Stderr,
 			"FATAL: chassis.RequireMajor() must be called before using any chassis module.\n"+
 				"Add chassis.RequireMajor(%s) to main() before any other chassis calls.\n", parts[0])
-		os.Exit(1)
+		osExit(1)
 	}
 }
 

@@ -57,7 +57,10 @@ func TestFromJSONReadsFile(t *testing.T) {
 	path := filepath.Join(dir, "flags.json")
 	os.WriteFile(path, []byte(`{"new-ui": "true", "old-api": "false"}`), 0644)
 
-	src := flagz.FromJSON(path)
+	src, err := flagz.FromJSON(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	f := flagz.New(src)
 
 	if !f.Enabled("new-ui") {
@@ -68,26 +71,22 @@ func TestFromJSONReadsFile(t *testing.T) {
 	}
 }
 
-func TestFromJSONPanicsOnMissingFile(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected panic for missing JSON file")
-		}
-	}()
-	flagz.FromJSON("/nonexistent/path.json")
+func TestFromJSONErrorOnMissingFile(t *testing.T) {
+	_, err := flagz.FromJSON("/nonexistent/path.json")
+	if err == nil {
+		t.Fatal("expected error for missing JSON file")
+	}
 }
 
-func TestFromJSONPanicsOnInvalidJSON(t *testing.T) {
+func TestFromJSONErrorOnInvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bad.json")
 	os.WriteFile(path, []byte(`not json`), 0644)
 
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected panic for invalid JSON")
-		}
-	}()
-	flagz.FromJSON(path)
+	_, err := flagz.FromJSON(path)
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
 }
 
 func TestMultiLayering(t *testing.T) {

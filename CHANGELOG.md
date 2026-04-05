@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [10.3.5] - 2026-04-05
+
+### Fixed (rcodegen review — Claude:Opus 4.6)
+- chassis: use mockable osExit instead of os.Exit in RequireMajor and AssertVersionChecked for testability
+- flagz: change FromJSON to return (Source, error) instead of panicking on I/O errors
+
 ## [10.3.4] - 2026-04-05
 
 ### Fixed (rcodegen batch — Claude:Opus 4.6)

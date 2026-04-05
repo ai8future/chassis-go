@@ -2,6 +2,7 @@ package flagz
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 )
@@ -67,17 +68,17 @@ type jsonSource struct {
 
 // FromJSON creates a Source that reads flag key-value pairs from a JSON file.
 // The file must contain a flat JSON object: {"flag-name": "value", ...}.
-// Panics if the file cannot be read or parsed.
-func FromJSON(path string) Source {
+// Returns an error if the file cannot be read or parsed.
+func FromJSON(path string) (Source, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		panic("flagz: failed to read JSON file: " + err.Error())
+		return nil, fmt.Errorf("flagz: failed to read JSON file: %w", err)
 	}
 	var flags map[string]string
 	if err := json.Unmarshal(data, &flags); err != nil {
-		panic("flagz: failed to parse JSON file: " + err.Error())
+		return nil, fmt.Errorf("flagz: failed to parse JSON file: %w", err)
 	}
-	return &jsonSource{flags: flags}
+	return &jsonSource{flags: flags}, nil
 }
 
 func (s *jsonSource) Lookup(name string) (string, bool) {
