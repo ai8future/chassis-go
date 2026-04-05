@@ -46,7 +46,12 @@ func Start(ctx context.Context, pub publisher, cfg Config) {
 	if cfg.Interval == 0 {
 		cfg.Interval = 30 * time.Second
 	}
+	// If a previous goroutine is still running, stop it first to prevent a leak.
+	if stopCh != nil {
+		close(stopCh)
+	}
 	stopCh = make(chan struct{})
+	localStop := stopCh // capture into local var for the goroutine
 	startTime := time.Now()
 	hostname, _ := os.Hostname()
 	pid := os.Getpid()
@@ -77,7 +82,7 @@ func Start(ctx context.Context, pub publisher, cfg Config) {
 				_ = pub.Publish(ctx, "ai8.infra.heartbeat", payload)
 			case <-ctx.Done():
 				return
-			case <-stopCh:
+			case <-localStop:
 				return
 			}
 		}

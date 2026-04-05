@@ -118,10 +118,14 @@ func Init(cfg Config) ShutdownFunc {
 	otel.SetMeterProvider(mp)
 
 	return func(ctx context.Context) error {
-		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		tErr := tp.Shutdown(shutdownCtx)
-		mErr := mp.Shutdown(shutdownCtx)
+		tCtx, tCancel := context.WithTimeout(ctx, 5*time.Second)
+		defer tCancel()
+		tErr := tp.Shutdown(tCtx)
+
+		mCtx, mCancel := context.WithTimeout(ctx, 5*time.Second)
+		defer mCancel()
+		mErr := mp.Shutdown(mCtx)
+
 		return errors.Join(tErr, mErr)
 	}
 }

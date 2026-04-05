@@ -43,6 +43,8 @@ func Handler(checks map[string]Check) http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(code)
-		w.Write(buf.Bytes())
+		if _, err := w.Write(buf.Bytes()); err != nil {
+			slog.ErrorContext(r.Context(), "health: failed to write response", "error", err)
+		}
 	})
 }

@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+## [10.3.2] - 2026-04-05
+
+### Fixed
+
+- **heartbeatkit**: Fix double-start goroutine leak — `Start()` now closes any existing `stopCh` before creating a new one, and captures it into a local variable for the goroutine to prevent reading the mutable package-level variable
+- **lifecycle**: Pass `signalCtx` (not parent `ctx`) to `heartbeatkit.Start()` so heartbeat stops when SIGTERM fires
+- **work**: Capture span context in `Stream` — change `_, span` to `ctx, span` in `tracer.Start` so child spans are properly parented under the Stream span
+- **guard**: Fix false-success on partial write then timeout — `timeout()` now only short-circuits on `tw.written` (not `tw.started`); when the handler wrote headers but not body, discard the buffered partial response and send a clean 504
+
+(Claude Code:Opus 4.6 (1M context))
+
+## [10.3.1] - 2026-04-05
+
+### Fixed
+
+- **otel**: Give trace and metric shutdown each their own 5s timeout context instead of sharing one (prevents metric shutdown from getting a partially-expired context)
+- **metrics**: Log warnings via `r.logger` when `Counter()` or `Histogram()` meter creation fails instead of silently discarding the error
+- **config**: Replace `regexp.MustCompile` with `regexp.Compile` in the "pattern" validate tag case to produce a descriptive panic message instead of a bare runtime error
+- **health**: Check and log the error from `w.Write(buf.Bytes())` instead of silently discarding it
+
+(Claude Code:Opus 4.6 (1M context))
+
 ## [10.3.0] - 2026-04-05
 
 ### Added

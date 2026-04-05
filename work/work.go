@@ -273,7 +273,7 @@ func Stream[T, R any](ctx context.Context, in <-chan T, fn func(context.Context,
 		defer close(out)
 
 		tracer := otelapi.GetTracerProvider().Tracer(tracerName)
-		_, span := tracer.Start(ctx, "work.Stream", trace.WithAttributes(
+		ctx, span := tracer.Start(ctx, "work.Stream", trace.WithAttributes(
 			attribute.String("work.pattern", "stream"),
 		))
 		defer span.End()

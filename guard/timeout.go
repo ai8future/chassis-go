@@ -152,8 +152,15 @@ func (tw *timeoutWriter) flush() {
 func (tw *timeoutWriter) timeout() {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
-	if tw.written || tw.started {
+	if tw.written {
 		return
+	}
+	// If the handler started (wrote headers/partial body) but didn't finish,
+	// discard the buffered partial response so we can send a clean 504.
+	if tw.started {
+		tw.headers = nil
+		tw.buf = nil
+		tw.code = 0
 	}
 	tw.written = true
 	writeProblem(tw.w, tw.req, errors.TimeoutError("request timed out"))

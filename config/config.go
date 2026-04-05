@@ -188,7 +188,10 @@ func validateField(name string, val reflect.Value, tag string) {
 				panic(fmt.Sprintf("config: field %s value %q not in allowed set [%s]", name, actual, value))
 			}
 		case "pattern":
-			re := regexp.MustCompile(value)
+			re, err := regexp.Compile(value)
+			if err != nil {
+				panic(fmt.Sprintf("config: field %s has invalid pattern %q in validate tag: %v", name, value, err))
+			}
 			actual := fmt.Sprintf("%v", val.Interface())
 			if !re.MatchString(actual) {
 				panic(fmt.Sprintf("config: field %s value %q does not match pattern %s", name, actual, value))

@@ -131,7 +131,7 @@ func Run(ctx context.Context, args ...any) error {
 		}
 
 		// Start heartbeatkit.
-		heartbeatkit.Start(ctx, pub, heartbeatkit.Config{
+		heartbeatkit.Start(signalCtx, pub, heartbeatkit.Config{
 			ServiceName: svcName,
 			Version:     chassis.Version,
 		})
