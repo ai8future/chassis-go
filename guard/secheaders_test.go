@@ -1,6 +1,7 @@
 package guard_test
 
 import (
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -62,9 +63,9 @@ func TestSecurityHeadersHSTSFormat(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	// HSTS should only be set over HTTPS (via X-Forwarded-Proto).
+	// HSTS should only be set over HTTPS (actual TLS, not header-based).
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-Forwarded-Proto", "https")
+	req.TLS = &tls.ConnectionState{}
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 

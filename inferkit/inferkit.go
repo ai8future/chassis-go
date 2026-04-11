@@ -462,6 +462,12 @@ func (c *Client) ChatStream(ctx context.Context, req ChatRequest) (*ResponseMeta
 				return
 			}
 		}
+		if err := scanner.Err(); err != nil {
+			select {
+			case ch <- ChatChunk{Err: fmt.Errorf("inferkit: read stream: %w", err)}:
+			case <-ctx.Done():
+			}
+		}
 	}()
 
 	return meta, ch, nil

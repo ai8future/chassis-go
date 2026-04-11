@@ -193,7 +193,7 @@ func (c *Client) Resolve(ctx context.Context, entityType string, opts ...Resolve
 	}
 
 	var entity Entity
-	if err := json.NewDecoder(resp.Body).Decode(&entity); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&entity); err != nil {
 		return nil, fmt.Errorf("registrykit: decode entity: %w", err)
 	}
 	return &entity, nil
@@ -253,7 +253,7 @@ func (c *Client) Related(ctx context.Context, entityID string, opts ...RelatedOp
 	}
 
 	var rels []Relationship
-	if err := json.NewDecoder(resp.Body).Decode(&rels); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&rels); err != nil {
 		return nil, fmt.Errorf("registrykit: decode relationships: %w", err)
 	}
 	return rels, nil
@@ -295,7 +295,7 @@ func (c *Client) Descendants(ctx context.Context, entityID string, opts ...Relat
 	}
 
 	var entities []Entity
-	if err := json.NewDecoder(resp.Body).Decode(&entities); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&entities); err != nil {
 		return nil, fmt.Errorf("registrykit: decode entities: %w", err)
 	}
 	return entities, nil
@@ -325,7 +325,7 @@ func (c *Client) Ancestors(ctx context.Context, entityID string) ([]Entity, erro
 	}
 
 	var entities []Entity
-	if err := json.NewDecoder(resp.Body).Decode(&entities); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&entities); err != nil {
 		return nil, fmt.Errorf("registrykit: decode entities: %w", err)
 	}
 	return entities, nil
@@ -375,7 +375,7 @@ func (c *Client) Graph(ctx context.Context, entityID string, opts ...GraphOption
 	}
 
 	var node GraphNode
-	if err := json.NewDecoder(resp.Body).Decode(&node); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&node); err != nil {
 		return nil, fmt.Errorf("registrykit: decode graph: %w", err)
 	}
 	return &node, nil
@@ -410,7 +410,7 @@ func (c *Client) CreateEntity(ctx context.Context, req CreateEntityRequest) (*En
 	}
 
 	var entity Entity
-	if err := json.NewDecoder(resp.Body).Decode(&entity); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&entity); err != nil {
 		return nil, fmt.Errorf("registrykit: decode entity: %w", err)
 	}
 	return &entity, nil
@@ -505,6 +505,9 @@ func (c *Client) setHeaders(ctx context.Context, req *http.Request) {
 		req.Header.Set("X-Trace-ID", tid)
 	}
 }
+
+// maxResponseBody is the maximum bytes read from a successful response body.
+const maxResponseBody = 32 << 20
 
 // maxErrorBody caps how much of an error response we read (64 KB).
 const maxErrorBody = 64 << 10

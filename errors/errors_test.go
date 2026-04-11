@@ -173,8 +173,8 @@ func TestFromErrorGenericError(t *testing.T) {
 	if got.HTTPCode != http.StatusInternalServerError {
 		t.Errorf("HTTPCode = %d, want %d", got.HTTPCode, http.StatusInternalServerError)
 	}
-	if got.Message != "something broke" {
-		t.Errorf("Message = %q, want %q", got.Message, "something broke")
+	if got.Message != "an internal error occurred" {
+		t.Errorf("Message = %q, want %q", got.Message, "an internal error occurred")
 	}
 	if !errors.Is(got, original) {
 		t.Error("FromError should chain original via Unwrap")

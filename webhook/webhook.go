@@ -2,11 +2,12 @@ package webhook
 
 import (
 	"bytes"
-	"crypto/rand"
+	crand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net/http"
 	"strconv"
 	"sync"
@@ -15,6 +16,8 @@ import (
 	chassis "github.com/ai8future/chassis-go/v11"
 	"github.com/ai8future/chassis-go/v11/seal"
 )
+
+const maxDeliveries = 10000
 
 var (
 	ErrBadSignature = errors.New("webhook: signature verification failed")
@@ -35,6 +38,7 @@ type Sender struct {
 	mu          sync.Mutex
 	maxAttempts int
 	deliveries  map[string]*Delivery
+	order       []string // insertion order for LRU eviction
 	httpClient  *http.Client
 }
 
@@ -76,6 +80,11 @@ func (s *Sender) Send(url string, payload any, secret string) (string, error) {
 	}
 	s.mu.Lock()
 	s.deliveries[id] = delivery
+	s.order = append(s.order, id)
+	for len(s.deliveries) > maxDeliveries {
+		delete(s.deliveries, s.order[0])
+		s.order = s.order[1:]
+	}
 	s.mu.Unlock()
 
 	var lastErr error
@@ -98,7 +107,11 @@ func (s *Sender) Send(url string, payload any, secret string) (string, error) {
 		if err != nil {
 			lastErr = err
 			if attempt < s.maxAttempts {
-				time.Sleep(time.Duration(attempt*100) * time.Millisecond)
+				delay := 100 * time.Millisecond
+			for i := 1; i < attempt; i++ {
+				delay *= 2
+			}
+			time.Sleep(delay + time.Duration(rand.Int64N(int64(delay/2))))
 			}
 			continue
 		}
@@ -122,7 +135,11 @@ func (s *Sender) Send(url string, payload any, secret string) (string, error) {
 		// 5xx — retry
 		lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
 		if attempt < s.maxAttempts {
-			time.Sleep(time.Duration(attempt*100) * time.Millisecond)
+			delay := 100 * time.Millisecond
+			for i := 1; i < attempt; i++ {
+				delay *= 2
+			}
+			time.Sleep(delay + time.Duration(rand.Int64N(int64(delay/2))))
 		}
 	}
 
@@ -144,11 +161,25 @@ func (s *Sender) Status(id string) (Delivery, bool) {
 }
 
 // VerifyPayload verifies a webhook payload signature on the receive side.
+// Rejects payloads with timestamps older than 5 minutes to prevent replay attacks.
 func VerifyPayload(headers http.Header, body []byte, secret string) ([]byte, error) {
 	sig := headers.Get("X-Webhook-Signature")
 	timestamp := headers.Get("X-Webhook-Timestamp")
 	if sig == "" || timestamp == "" {
 		return nil, ErrBadSignature
+	}
+
+	// Reject stale timestamps to prevent replay attacks.
+	ts, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return nil, ErrBadSignature
+	}
+	age := time.Since(time.Unix(ts, 0))
+	if age < 0 {
+		age = -age
+	}
+	if age > 5*time.Minute {
+		return nil, fmt.Errorf("%w: timestamp expired", ErrBadSignature)
 	}
 
 	// Strip "sha256=" prefix
@@ -166,7 +197,7 @@ func VerifyPayload(headers http.Header, body []byte, secret string) ([]byte, err
 
 func generateID() string {
 	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
+	if _, err := crand.Read(b); err != nil {
 		panic("webhook: crypto/rand.Read failed: " + err.Error())
 	}
 	return hex.EncodeToString(b)

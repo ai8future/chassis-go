@@ -2,6 +2,44 @@
 
 ## [Unreleased]
 
+## [11.1.0] - 2026-04-11
+
+### Security
+- **kafkakit**: Fix double-close race condition in Subscriber via sync.Once (CRITICAL)
+- **chassis**: Fix data race on appVersion using atomic.Value
+- **freshness**: Change auto-rebuild from opt-out (CHASSIS_NO_REBUILD) to opt-in (CHASSIS_AUTO_REBUILD=1)
+- **lifecycle**: Use os.Executable() instead of os.Args[0] for restart exec
+- **webhook**: Add 5-minute timestamp replay protection to VerifyPayload
+- **webhook**: Cap deliveries map at 10,000 entries with LRU eviction
+- **tracekit**: Increase ID entropy from 48-bit to 128-bit (6 -> 16 bytes)
+- **tracekit**: Validate external trace IDs to prevent log injection
+- **kafkakit**: Increase event ID entropy from 48-bit to 128-bit
+- **kafkakit**: Switch DLQ produce from async to synchronous
+- **deploy**: Validate hook names contain only [a-zA-Z0-9_-]
+- **schemakit**: URL-escape schema subject to prevent path injection
+- **registry**: Use Lstat instead of Stat to avoid symlink TOCTOU
+- **registry**: Validate CHASSIS_SERVICE_NAME characters
+- **guard**: Remove unauthenticated X-Forwarded-Proto trust from HSTS
+- **guard**: Case-insensitive CORS origin matching per RFC 6454
+- **seal**: Validate envelope version and algorithm before decryption
+
+### Fixed
+- **errors**: FromError no longer leaks internal error messages to HTTP clients
+- **health**: Add Cache-Control: no-store header to health endpoint
+- **chassis**: Port() panics on out-of-range values (> 65535)
+- **webhook**: Replace linear backoff with exponential + jitter
+- **kafkakit**: Rename misleading Stats fields from *1h to *Total
+- **kafkakit**: Check all batch produce results, not just FirstErr()
+- **schemakit**: Fix SchemaID data race between Register and Serialize
+- **metrics**: Add nil guards for instruments that fail creation
+- **otelutil**: Return noop histogram instead of nil on creation error
+- **posthogkit**: Cap event buffer at 10,000 and use single flush goroutine
+- **heartbeatkit**: Log publish errors instead of silently discarding
+- **announcekit**: Return "unknown" instead of empty string for unset service name
+- **inferkit**: Check scanner.Err() after SSE stream loop exits
+- **tick**: Fix timer leak on context cancellation during jitter delay
+- **qdrantkit/registrykit/lakekit**: Bound all response body reads with io.LimitReader
+
 ## [11.0.2] - 2026-04-11
 
 ### Fixed

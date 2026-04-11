@@ -34,9 +34,9 @@ func TestWrapUnwrapEnvelope(t *testing.T) {
 	if !strings.HasPrefix(env.ID, "evt_") {
 		t.Fatalf("expected ID to start with evt_, got %s", env.ID)
 	}
-	// evt_ + 12 hex chars = 16 total
-	if len(env.ID) != 16 {
-		t.Fatalf("expected ID length 16 (evt_ + 12 hex), got %d: %s", len(env.ID), env.ID)
+	// evt_ + 32 hex chars = 36 total
+	if len(env.ID) != 36 {
+		t.Fatalf("expected ID length 36 (evt_ + 32 hex), got %d: %s", len(env.ID), env.ID)
 	}
 
 	// Verify source
@@ -132,11 +132,11 @@ func TestPublisherStats(t *testing.T) {
 	stats.incErrors()
 
 	s := stats.snapshot()
-	if s.EventsPublished1h != 3 {
-		t.Fatalf("expected 3 published, got %d", s.EventsPublished1h)
+	if s.EventsPublishedTotal != 3 {
+		t.Fatalf("expected 3 published, got %d", s.EventsPublishedTotal)
 	}
-	if s.Errors1h != 1 {
-		t.Fatalf("expected 1 error, got %d", s.Errors1h)
+	if s.ErrorsTotal != 1 {
+		t.Fatalf("expected 1 error, got %d", s.ErrorsTotal)
 	}
 	if s.LastEventPublished.IsZero() {
 		t.Fatal("expected non-zero LastEventPublished")

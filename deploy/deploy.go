@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -315,6 +316,11 @@ func (d *Deploy) FlagSource() *FlagLookup {
 func (d *Deploy) RunHook(name string) error {
 	if !d.found {
 		return nil
+	}
+	for _, c := range name {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
+			return fmt.Errorf("deploy: invalid hook name %q", name)
+		}
 	}
 	hooksDir := filepath.Join(d.dir, "hooks")
 	hookPath := filepath.Join(hooksDir, name)

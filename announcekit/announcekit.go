@@ -25,6 +25,9 @@ var (
 func svcName() string {
 	serviceNameMu.RLock()
 	defer serviceNameMu.RUnlock()
+	if serviceNameVal == "" {
+		return "unknown"
+	}
 	return serviceNameVal
 }
 

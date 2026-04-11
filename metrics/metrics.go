@@ -88,7 +88,7 @@ func (r *Recorder) RecordRequest(ctx context.Context, method, status string, dur
 
 	// Check cardinality for requests_total (method+status)
 	comboKey := method + "\x00" + status
-	if r.checkCardinality("requests_total", comboKey) {
+	if r.requestsTotal != nil && r.checkCardinality("requests_total", comboKey) {
 		r.requestsTotal.Add(ctx, 1,
 			metric.WithAttributes(
 				attribute.String("method", method),
@@ -98,13 +98,13 @@ func (r *Recorder) RecordRequest(ctx context.Context, method, status string, dur
 	}
 
 	// Duration and content use method only
-	if r.checkCardinality("request_duration_seconds", method) {
+	if r.requestDuration != nil && r.checkCardinality("request_duration_seconds", method) {
 		r.requestDuration.Record(ctx, durationMs/1000,
 			metric.WithAttributes(attribute.String("method", method)),
 		)
 	}
 
-	if r.checkCardinality("content_size_bytes", method) {
+	if r.contentSize != nil && r.checkCardinality("content_size_bytes", method) {
 		r.contentSize.Record(ctx, contentLength,
 			metric.WithAttributes(attribute.String("method", method)),
 		)

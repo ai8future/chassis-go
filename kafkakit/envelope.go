@@ -88,9 +88,9 @@ func envelopeToEvent(env *envelope) Event {
 	return evt
 }
 
-// generateEventID creates a unique event ID in the format "evt_" + 12 hex chars.
+// generateEventID creates a unique event ID in the format "evt_" + 32 hex chars.
 func generateEventID() (string, error) {
-	b := make([]byte, 6) // 6 bytes = 12 hex chars
+	b := make([]byte, 16) // 16 bytes = 32 hex chars
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}

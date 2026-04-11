@@ -51,13 +51,13 @@ var AppVersion = strings.TrimSpace(rawAppVersion)
 ```go
 func main() {
     chassis.SetAppVersion(yourpkg.AppVersion) // enables --version and auto-rebuild
-    chassis.RequireMajor(11)                  // crashes if chassis major version != 10
+    chassis.RequireMajor(11)                  // crashes if chassis major version != 11
     // ... rest of startup
 }
 ```
 
 This gives you:
-- **`--version` flag**: `myservice --version` prints `myservice 1.2.3 (chassis-go 10.x.y)`
+- **`--version` flag**: `myservice --version` prints `myservice 1.2.3 (chassis-go 11.x.y)`
 - **Auto-rebuild**: if the binary's compiled version is older than the VERSION file on disk, it automatically recompiles and re-execs. Opt out with `CHASSIS_NO_REBUILD=1`.
 
 Do NOT copy or symlink VERSION into `cmd/` directories. `go:embed` rejects symlinks, and copies get out of sync. The root-package embed + import pattern above is the correct approach.
@@ -846,7 +846,7 @@ Search order (first match wins):
 
 ```json
 {
-  "chassis": "10.0",
+  "chassis": "11.0",
   "version": "2.4.1",
   "environment": {
     "env": "production",
@@ -869,7 +869,7 @@ Search order (first match wins):
 
 ```go
 // Spec version from deploy.json ("chassis" field, defaults to "8.0" for pre-v9 files)
-spec := d.Spec() // "10.0"
+spec := d.Spec() // "11.0"
 
 // Runtime environment detection + deploy.json env block + env var overrides
 env := d.Environment()

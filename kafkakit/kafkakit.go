@@ -88,8 +88,8 @@ type OutboundEvent struct {
 
 // Stats contains publisher statistics.
 type Stats struct {
-	EventsPublished1h int64
-	Errors1h          int64
+	EventsPublishedTotal int64
+	ErrorsTotal          int64
 	LastEventPublished time.Time
 }
 
@@ -116,8 +116,8 @@ func (s *publisherStats) snapshot() Stats {
 		last = time.Unix(0, ns)
 	}
 	return Stats{
-		EventsPublished1h: s.published.Load(),
-		Errors1h:          s.errors.Load(),
+		EventsPublishedTotal: s.published.Load(),
+		ErrorsTotal:          s.errors.Load(),
 		LastEventPublished: last,
 	}
 }

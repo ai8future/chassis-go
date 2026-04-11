@@ -248,7 +248,7 @@ func checkStatus(resp *http.Response) error {
 		return nil
 	}
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	detail := strings.TrimSpace(string(body))
 
 	switch resp.StatusCode {

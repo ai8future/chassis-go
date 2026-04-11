@@ -144,7 +144,7 @@ func FromError(err error) *ServiceError {
 	if stderrors.As(err, &se) {
 		return se
 	}
-	return InternalError(err.Error()).WithCause(err)
+	return InternalError("an internal error occurred").WithCause(err)
 }
 
 // Errorf creates a formatted ServiceError using the given factory.

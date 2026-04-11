@@ -206,7 +206,8 @@ func Init(cancel context.CancelFunc, chassisVersion string) error {
 	}
 	// Verify the directory has safe permissions. On shared systems (/tmp),
 	// another user could pre-create the directory with open permissions.
-	if info, err := os.Stat(svcDir); err == nil {
+	// Use Lstat to avoid following symlinks (TOCTOU mitigation).
+	if info, err := os.Lstat(svcDir); err == nil {
 		if perm := info.Mode().Perm(); perm&0o077 != 0 {
 			return fmt.Errorf("registry: directory %s has unsafe permissions %o (want 0700)", svcDir, perm)
 		}
@@ -332,7 +333,8 @@ func InitCLI(chassisVersion string) error {
 	if err := os.MkdirAll(svcDir, 0o700); err != nil {
 		return fmt.Errorf("registry: mkdir: %w", err)
 	}
-	if info, err := os.Stat(svcDir); err == nil {
+	// Use Lstat to avoid following symlinks (TOCTOU mitigation).
+	if info, err := os.Lstat(svcDir); err == nil {
 		if perm := info.Mode().Perm(); perm&0o077 != 0 {
 			return fmt.Errorf("registry: directory %s has unsafe permissions %o (want 0700)", svcDir, perm)
 		}
@@ -578,8 +580,14 @@ func djb2Port(name string) int {
 // --- internal helpers ---
 
 func resolveName() string {
-	if n := os.Getenv("CHASSIS_SERVICE_NAME"); n != "" {
-		return n
+	if name := os.Getenv("CHASSIS_SERVICE_NAME"); name != "" {
+		for _, c := range name {
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.') {
+				fmt.Fprintf(os.Stderr, "FATAL: CHASSIS_SERVICE_NAME contains invalid character %q\n", c)
+				os.Exit(1)
+			}
+		}
+		return name
 	}
 	wd, err := os.Getwd()
 	if err != nil {

@@ -75,8 +75,8 @@ func TestGenerateEventID_Format(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generateEventID() error: %v", err)
 	}
-	// "evt_" = 4 chars, 6 bytes = 12 hex chars, total 16
-	if len(id) != 16 {
-		t.Errorf("ID length = %d, want 16: %q", len(id), id)
+	// "evt_" = 4 chars, 16 bytes = 32 hex chars, total 36
+	if len(id) != 36 {
+		t.Errorf("ID length = %d, want 36: %q", len(id), id)
 	}
 }

@@ -148,10 +148,11 @@ func rebuild(moduleRoot, pkgPath, binPath string) error {
 // rebuilds the binary and re-execs. Only active when SetAppVersion() has been
 // called.
 func checkFreshness() {
-	if appVersion == "" {
+	av := getAppVersion()
+	if av == "" {
 		return
 	}
-	if os.Getenv("CHASSIS_NO_REBUILD") != "" {
+	if os.Getenv("CHASSIS_AUTO_REBUILD") != "1" {
 		return
 	}
 	if os.Getenv("CHASSIS_REBUILD_GUARD") != "" {
@@ -195,13 +196,13 @@ func checkFreshness() {
 	}
 	diskVersion := strings.TrimSpace(string(diskVersionBytes))
 
-	if !semverNewer(diskVersion, appVersion) {
+	if !semverNewer(diskVersion, av) {
 		return
 	}
 
 	// Stale! Rebuild.
 	fmt.Fprintf(os.Stderr, "chassis: stale binary (compiled %s, source %s) — rebuilding...\n",
-		appVersion, diskVersion)
+		av, diskVersion)
 
 	pkgPath := resolveMainPackage(info.Path, diskModulePath, moduleRoot, exePath)
 	if pkgPath == "" {

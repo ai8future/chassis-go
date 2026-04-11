@@ -91,6 +91,12 @@ func Encrypt(plaintext []byte, passphrase string) (Envelope, error) {
 
 // Decrypt decrypts an Envelope using the given passphrase.
 func Decrypt(env Envelope, passphrase string) ([]byte, error) {
+	if env.Version != 1 {
+		return nil, fmt.Errorf("%w: unsupported envelope version %d", ErrDecrypt, env.Version)
+	}
+	if env.Algorithm != "aes-256-gcm" {
+		return nil, fmt.Errorf("%w: unsupported algorithm %q", ErrDecrypt, env.Algorithm)
+	}
 	salt, err := base64.StdEncoding.DecodeString(env.Salt)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid salt", ErrDecrypt)

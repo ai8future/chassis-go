@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -143,7 +144,7 @@ func (r *Registry) Serialize(schema *Schema, data map[string]any) ([]byte, error
 	var buf bytes.Buffer
 	buf.WriteByte(0x00)
 	idBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(idBytes, uint32(schema.SchemaID))
+	binary.BigEndian.PutUint32(idBytes, uint32(r.schemaID(schema)))
 	buf.Write(idBytes)
 	buf.Write(payload)
 
@@ -200,8 +201,8 @@ func (r *Registry) Register(ctx context.Context, schema *Schema) error {
 		return fmt.Errorf("schemakit: marshal register body: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/subjects/%s/versions", r.url, schema.Subject)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyJSON))
+	regURL := fmt.Sprintf("%s/subjects/%s/versions", r.url, url.PathEscape(schema.Subject))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, regURL, bytes.NewReader(bodyJSON))
 	if err != nil {
 		return fmt.Errorf("schemakit: create request: %w", err)
 	}
@@ -233,4 +234,13 @@ func (r *Registry) Register(ctx context.Context, schema *Schema) error {
 	schema.SchemaID = result.ID
 	r.mu.Unlock()
 	return nil
+}
+
+// schemaID returns the schema's ID under the registry's read lock to avoid
+// data races with concurrent Register calls.
+func (r *Registry) schemaID(schema *Schema) int {
+	r.mu.RLock()
+	id := schema.SchemaID
+	r.mu.RUnlock()
+	return id
 }

@@ -57,11 +57,12 @@ type event struct {
 
 // Client is a non-blocking, batched PostHog analytics client.
 type Client struct {
-	cfg  Config
-	http *call.Client
-	log  *slog.Logger
-	mu   sync.Mutex
-	buf  []event
+	cfg     Config
+	http    *call.Client
+	log     *slog.Logger
+	mu      sync.Mutex
+	buf     []event
+	flushCh chan struct{}
 }
 
 // New creates a new PostHog client. Defaults are applied for Host
@@ -77,12 +78,21 @@ func New(cfg Config) *Client {
 	if cfg.FlushSize <= 0 {
 		cfg.FlushSize = 100
 	}
-	return &Client{
-		cfg:  cfg,
-		http: call.New(call.WithTimeout(10 * time.Second)),
-		log:  slog.Default(),
-		buf:  make([]event, 0, cfg.FlushSize),
+	c := &Client{
+		cfg:     cfg,
+		http:    call.New(call.WithTimeout(10 * time.Second)),
+		log:     slog.Default(),
+		buf:     make([]event, 0, cfg.FlushSize),
+		flushCh: make(chan struct{}, 1),
 	}
+	go func() {
+		for range c.flushCh {
+			if err := c.flush(context.Background()); err != nil {
+				c.log.Warn("posthogkit: auto-flush failed", "error", err)
+			}
+		}
+	}()
+	return c
 }
 
 // --------------------------------------------------------------------------
@@ -212,17 +222,22 @@ func (c *Client) Check() health.Check {
 
 // enqueue appends an event and triggers an async flush when the buffer
 // reaches FlushSize.
+const maxBuffer = 10000
+
 func (c *Client) enqueue(e event) {
 	c.mu.Lock()
+	if len(c.buf) >= maxBuffer {
+		c.mu.Unlock()
+		return // drop to prevent OOM
+	}
 	c.buf = append(c.buf, e)
 	shouldFlush := len(c.buf) >= c.cfg.FlushSize
 	c.mu.Unlock()
 	if shouldFlush {
-		go func() {
-			if err := c.flush(context.Background()); err != nil {
-				c.log.Warn("posthogkit: auto-flush failed", "error", err)
-			}
-		}()
+		select {
+		case c.flushCh <- struct{}{}:
+		default: // flush already pending
+		}
 	}
 }
 

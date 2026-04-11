@@ -147,26 +147,27 @@ func TestRebuildNoGo(t *testing.T) {
 }
 
 func TestCheckFreshnessSkipsWhenNoAppVersion(t *testing.T) {
-	origAppVersion := appVersion
-	appVersion = ""
-	defer func() { appVersion = origAppVersion }()
+	orig := getAppVersion()
+	SetAppVersion("")
+	defer SetAppVersion(orig)
 
 	checkFreshness()
 }
 
-func TestCheckFreshnessSkipsWithNoRebuildEnv(t *testing.T) {
-	origAppVersion := appVersion
-	appVersion = "1.0.0"
-	defer func() { appVersion = origAppVersion }()
-	t.Setenv("CHASSIS_NO_REBUILD", "1")
+func TestCheckFreshnessSkipsWithAutoRebuildOff(t *testing.T) {
+	orig := getAppVersion()
+	SetAppVersion("1.0.0")
+	defer SetAppVersion(orig)
+	// CHASSIS_AUTO_REBUILD not set — should skip
 
 	checkFreshness()
 }
 
 func TestCheckFreshnessSkipsWithGuardEnv(t *testing.T) {
-	origAppVersion := appVersion
-	appVersion = "1.0.0"
-	defer func() { appVersion = origAppVersion }()
+	orig := getAppVersion()
+	SetAppVersion("1.0.0")
+	defer SetAppVersion(orig)
+	t.Setenv("CHASSIS_AUTO_REBUILD", "1")
 	t.Setenv("CHASSIS_REBUILD_GUARD", "1")
 
 	checkFreshness()

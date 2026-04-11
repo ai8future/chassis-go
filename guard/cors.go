@@ -56,7 +56,7 @@ func CORS(cfg CORSConfig) func(http.Handler) http.Handler {
 		if o == "*" {
 			wildcard = true
 		}
-		origins[o] = struct{}{}
+		origins[strings.ToLower(o)] = struct{}{}
 	}
 
 	return func(next http.Handler) http.Handler {
@@ -71,7 +71,7 @@ func CORS(cfg CORSConfig) func(http.Handler) http.Handler {
 			// Check if origin matches.
 			allowed := wildcard
 			if !allowed {
-				_, allowed = origins[origin]
+				_, allowed = origins[strings.ToLower(origin)]
 			}
 			if !allowed {
 				// Origin not allowed — pass through without CORS headers.

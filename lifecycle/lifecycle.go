@@ -187,7 +187,14 @@ func Run(ctx context.Context, args ...any) error {
 	registry.Shutdown(reason)
 
 	if registry.RestartRequested() {
-		if execErr := syscall.Exec(os.Args[0], os.Args, os.Environ()); execErr != nil {
+		exePath, exeErr := os.Executable()
+		if exeErr != nil {
+			return fmt.Errorf("lifecycle: resolve executable for restart: %w", exeErr)
+		}
+		if resolved, linkErr := filepath.EvalSymlinks(exePath); linkErr == nil {
+			exePath = resolved
+		}
+		if execErr := syscall.Exec(exePath, os.Args, os.Environ()); execErr != nil {
 			return fmt.Errorf("lifecycle: restart exec: %w", execErr)
 		}
 	}

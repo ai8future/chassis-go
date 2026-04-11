@@ -4,6 +4,7 @@ package heartbeatkit
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -79,7 +80,9 @@ func Start(ctx context.Context, pub publisher, cfg Config) {
 						payload["last_event_published"] = stats.LastEventPublished.Format(time.RFC3339)
 					}
 				}
-				_ = pub.Publish(ctx, "ai8.infra.heartbeat", payload)
+				if err := pub.Publish(ctx, "ai8.infra.heartbeat", payload); err != nil {
+					slog.Warn("heartbeatkit: publish failed", "error", err)
+				}
 			case <-ctx.Done():
 				return
 			case <-localStop:

@@ -19,13 +19,18 @@ var rawVersion string
 var Version = strings.TrimSpace(rawVersion)
 
 var majorVersionAsserted atomic.Bool
-var appVersion string
+var appVersionVal atomic.Value // stores string
 
 // SetAppVersion sets the consumer application's own version string.
 // When set, --version output includes both the app version and the chassis
 // version. Call this before RequireMajor if you want it included.
 func SetAppVersion(v string) {
-	appVersion = v
+	appVersionVal.Store(v)
+}
+
+func getAppVersion() string {
+	v, _ := appVersionVal.Load().(string)
+	return v
 }
 
 // RequireMajor crashes the process if the chassis major version does not match
@@ -76,8 +81,8 @@ func checkVersionFlag() {
 	for _, arg := range os.Args[1:] {
 		if arg == "--version" {
 			bin := filepath.Base(os.Args[0])
-			if appVersion != "" {
-				fmt.Printf("%s %s (chassis-go %s)\n", bin, appVersion, Version)
+			if getAppVersion() != "" {
+				fmt.Printf("%s %s (chassis-go %s)\n", bin, getAppVersion(), Version)
 			} else {
 				fmt.Printf("%s chassis-go/%s\n", bin, Version)
 			}
@@ -117,6 +122,9 @@ func Port(name string, offset ...int) int {
 	port := 5000 + int(h%43001)
 	if len(offset) > 0 {
 		port += offset[0]
+	}
+	if port < 1 || port > 65535 {
+		panic(fmt.Sprintf("chassis.Port: computed port %d is outside valid range 1-65535", port))
 	}
 	return port
 }

@@ -252,7 +252,7 @@ func (c *Client) GetCollection(ctx context.Context, name string) (*CollectionInf
 	var wrapper struct {
 		Result CollectionInfo `json:"result"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&wrapper); err != nil {
 		return nil, fmt.Errorf("qdrantkit: decode collection info: %w", err)
 	}
 	return &wrapper.Result, nil
@@ -276,7 +276,7 @@ func (c *Client) ListCollections(ctx context.Context) ([]string, error) {
 			} `json:"collections"`
 		} `json:"result"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&wrapper); err != nil {
 		return nil, fmt.Errorf("qdrantkit: decode collections: %w", err)
 	}
 	names := make([]string, len(wrapper.Result.Collections))
@@ -366,7 +366,7 @@ func (c *Client) Search(ctx context.Context, collection string, vector []float32
 			Vector  []float64      `json:"vector"`
 		} `json:"result"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&wrapper); err != nil {
 		return nil, fmt.Errorf("qdrantkit: decode search: %w", err)
 	}
 
@@ -407,7 +407,7 @@ func (c *Client) GetVectors(ctx context.Context, collection string, ids []string
 			Vector []float64 `json:"vector"`
 		} `json:"result"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&wrapper); err != nil {
 		return nil, fmt.Errorf("qdrantkit: decode get vectors: %w", err)
 	}
 
@@ -459,7 +459,7 @@ func (c *Client) Scroll(ctx context.Context, collection string, opts ScrollOptio
 			NextPageOffset any `json:"next_page_offset"`
 		} `json:"result"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&wrapper); err != nil {
 		return nil, fmt.Errorf("qdrantkit: decode scroll: %w", err)
 	}
 
@@ -556,6 +556,9 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any) (*ht
 	c.setHeaders(ctx, req)
 	return c.http.Do(req)
 }
+
+// maxResponseBody is the maximum bytes read from a successful response body.
+const maxResponseBody = 32 << 20
 
 // maxErrBody is the maximum bytes read from an error response body.
 const maxErrBody = 4096

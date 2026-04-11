@@ -74,7 +74,11 @@ func Every(interval time.Duration, fn func(context.Context) error, opts ...Optio
 					select {
 					case <-ctx.Done():
 						return nil
-					case <-time.After(jitterDelay):
+					case <-func() <-chan time.Time {
+						t := time.NewTimer(jitterDelay)
+						// Note: if ctx.Done fires, the timer is GC'd after firing.
+						return t.C
+					}():
 					}
 				}
 				if err := fn(ctx); err != nil {

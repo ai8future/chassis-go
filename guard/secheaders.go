@@ -70,7 +70,7 @@ func SecurityHeaders(cfg SecurityHeadersConfig) func(http.Handler) http.Handler 
 			if cfg.PermissionsPolicy != "" {
 				w.Header().Set("Permissions-Policy", cfg.PermissionsPolicy)
 			}
-			if hstsValue != "" && (r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https") {
+			if hstsValue != "" && r.TLS != nil {
 				w.Header().Set("Strict-Transport-Security", hstsValue)
 			}
 			if cfg.CrossOriginOpenerPolicy != "" {

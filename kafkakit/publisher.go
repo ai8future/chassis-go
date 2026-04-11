@@ -121,12 +121,11 @@ func (p *Publisher) PublishBatch(ctx context.Context, events []OutboundEvent) er
 	}
 
 	results := p.client.ProduceSync(ctx, records...)
-	if err := results.FirstErr(); err != nil {
-		p.stats.incErrors()
-		return fmt.Errorf("kafkakit: batch produce: %w", err)
-	}
-
-	for range events {
+	for i, r := range results {
+		if r.Err != nil {
+			p.stats.incErrors()
+			return fmt.Errorf("kafkakit: produce record %d failed: %w", i, r.Err)
+		}
 		p.stats.incPublished()
 	}
 	return nil

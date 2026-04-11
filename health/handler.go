@@ -42,6 +42,7 @@ func Handler(checks map[string]Check) http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 		w.WriteHeader(code)
 		if _, err := w.Write(buf.Bytes()); err != nil {
 			slog.ErrorContext(r.Context(), "health: failed to write response", "error", err)

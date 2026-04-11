@@ -22,8 +22,8 @@ func TestGenerateID_Format(t *testing.T) {
 	if !strings.HasPrefix(id, "tr_") {
 		t.Fatalf("expected tr_ prefix, got %q", id)
 	}
-	if len(id) != 15 {
-		t.Fatalf("expected length 15, got %d (%q)", len(id), id)
+	if len(id) != 35 {
+		t.Fatalf("expected length 35, got %d (%q)", len(id), id)
 	}
 	// Verify hex portion is valid hex
 	hexPart := id[3:]
@@ -55,8 +55,8 @@ func TestNewTrace(t *testing.T) {
 	if !strings.HasPrefix(id, "tr_") {
 		t.Fatalf("expected tr_ prefix, got %q", id)
 	}
-	if len(id) != 15 {
-		t.Fatalf("expected length 15, got %d", len(id))
+	if len(id) != 35 {
+		t.Fatalf("expected length 35, got %d", len(id))
 	}
 }
 
@@ -115,8 +115,8 @@ func TestMiddleware_GeneratesIfMissing(t *testing.T) {
 	if !strings.HasPrefix(captured, "tr_") {
 		t.Fatalf("expected generated trace ID with tr_ prefix, got %q", captured)
 	}
-	if len(captured) != 15 {
-		t.Fatalf("expected length 15, got %d", len(captured))
+	if len(captured) != 35 {
+		t.Fatalf("expected length 35, got %d", len(captured))
 	}
 }
 

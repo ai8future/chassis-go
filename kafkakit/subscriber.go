@@ -23,6 +23,7 @@ type Subscriber struct {
 	mu            sync.RWMutex
 	cfg           Config
 	wg            sync.WaitGroup // tracks in-flight handlers; used by AtLeastOnce revoke callback and shutdown drain
+	closeOnce     sync.Once
 }
 
 // concurrency returns the configured concurrency level.
@@ -148,14 +149,7 @@ func (s *Subscriber) Start(ctx context.Context) error {
 	}
 
 	defer func() {
-		s.healthy.Store(false)
-		s.wg.Wait() // drain in-flight workers before closing client
-		// Commit any offsets for successfully processed messages before closing.
-		// In AtLeastOnce mode this is essential; in auto-commit mode it's belt-and-suspenders.
-		if err := s.client.CommitUncommittedOffsets(context.Background()); err != nil {
-			slog.Error("kafkakit: final commit failed", "err", err)
-		}
-		s.client.Close()
+		s.closeOnce.Do(s.doClose)
 	}()
 
 	for {
@@ -262,15 +256,20 @@ func (s *Subscriber) handleRecord(ctx context.Context, record *kgo.Record) {
 	}
 }
 
+// doClose performs the actual shutdown: marks unhealthy, drains in-flight
+// handlers, commits offsets, and closes the client.
+func (s *Subscriber) doClose() {
+	s.healthy.Store(false)
+	s.wg.Wait()
+	if err := s.client.CommitUncommittedOffsets(context.Background()); err != nil {
+		slog.Error("kafkakit: final commit failed", "err", err)
+	}
+	s.client.Close()
+}
+
 // Close shuts down the subscriber.
 func (s *Subscriber) Close() error {
-	s.healthy.Store(false)
-	s.mu.Lock()
-	cl := s.client
-	s.mu.Unlock()
-	if cl != nil {
-		cl.Close()
-	}
+	s.closeOnce.Do(s.doClose)
 	return nil
 }
 
@@ -307,12 +306,10 @@ func (s *Subscriber) routeToDLQ(evt Event, handlerErr error) {
 		Value: data,
 	}
 
-	// Fire-and-forget to DLQ
-	cl.Produce(context.Background(), record, func(_ *kgo.Record, err error) {
-		if err != nil {
-			slog.Error("kafkakit: DLQ produce failed", "topic", dlq, "err", err)
-		}
-	})
+	results := cl.ProduceSync(context.Background(), record)
+	if err := results.FirstErr(); err != nil {
+		slog.Error("kafkakit: DLQ produce failed", "topic", dlq, "err", err)
+	}
 }
 
 // dlqTopic returns the dead letter queue topic for the given subject.

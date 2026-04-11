@@ -8,6 +8,7 @@ import (
 
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/noop"
 )
 
 // LazyHistogram returns a function that lazily initializes and returns a
@@ -26,6 +27,8 @@ func LazyHistogram(meterName, histName string, opts ...metric.Float64HistogramOp
 			hist, err = meter.Float64Histogram(histName, opts...)
 			if err != nil {
 				otelapi.Handle(err)
+				// Return a safe noop histogram so callers never get nil.
+				hist, _ = noop.NewMeterProvider().Meter("noop").Float64Histogram("noop")
 			}
 		})
 		return hist

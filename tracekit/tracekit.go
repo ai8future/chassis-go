@@ -13,14 +13,27 @@ import (
 
 type contextKey struct{}
 
-// GenerateID creates tr_ + 12 hex random chars.
+// GenerateID creates tr_ + 32 hex random chars (16 bytes / 128-bit entropy).
 func GenerateID() string {
 	chassis.AssertVersionChecked()
-	b := make([]byte, 6)
+	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		panic("tracekit: crypto/rand.Read failed: " + err.Error())
 	}
 	return "tr_" + hex.EncodeToString(b)
+}
+
+// isValidTraceID checks that an external trace ID contains only safe characters.
+func isValidTraceID(id string) bool {
+	if len(id) > 128 {
+		return false
+	}
+	for _, c := range id {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // NewTrace creates a new trace ID and sets it on context.
@@ -46,7 +59,7 @@ func Middleware(next http.Handler) http.Handler {
 	chassis.AssertVersionChecked()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		traceID := r.Header.Get("X-Trace-ID")
-		if traceID == "" {
+		if traceID == "" || !isValidTraceID(traceID) {
 			traceID = GenerateID()
 		}
 		ctx := WithTraceID(r.Context(), traceID)
