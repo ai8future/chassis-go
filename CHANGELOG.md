@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [11.1.2] - 2026-04-11
+
+### Security
+- Upgrade Go toolchain to 1.26.2 (fixes GO-2026-4870 TLS DoS, GO-2026-4866 x509 auth bypass, GO-2026-4865 XSS, and 8 more CVEs)
+- Upgrade google.golang.org/grpc from v1.78.0 to v1.79.3 (fixes GO-2026-4762 authorization bypass)
+- `govulncheck ./...` now reports zero vulnerabilities
+
 ## [11.1.1] - 2026-04-11
 
 ### Fixed
