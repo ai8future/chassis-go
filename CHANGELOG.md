@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [11.0.0] - 2026-04-11
+
+### Removed
+- **xyops**: Delete `xyops/` package — client for XYOps operational management platform (never deployed; no server existed in the environment)
+- **xyopsworker**: Delete `xyopsworker/` package — job execution framework stub (Run() blocked on ctx.Done() as a no-op)
+- **XYOPS.md**: Delete 794-line aspirational integration guide
+- **AGENTS.md**: Remove xyops integration mandate ("service without xyops is invisible to operations")
+- **INTEGRATING.md**: Remove xyops client/worker sections (~175 lines)
+- **PRODUCT.md**: Remove XYOps Integration section
+
+### Added
+- **inngestkit**: Thin, opt-in setup glue for self-hosted inngest (155 LOC). Provides Config, Kit, New(), Client(), Mount(), Send(). Does NOT wrap the inngest SDK — consumers use inngestgo directly for function definitions, steps, retries, and concurrency.
+- **INNGEST.md**: Proportional integration guide (113 lines) covering env vars, startup validation, and API surface with links to native SDK docs.
+
 ## [10.3.5] - 2026-04-05
 
 ### Fixed (rcodegen review — Claude:Opus 4.6)

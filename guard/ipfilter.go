@@ -4,8 +4,8 @@ import (
 	"net"
 	"net/http"
 
-	chassis "github.com/ai8future/chassis-go/v10"
-	"github.com/ai8future/chassis-go/v10/errors"
+	chassis "github.com/ai8future/chassis-go/v11"
+	"github.com/ai8future/chassis-go/v11/errors"
 )
 
 // IPFilterConfig configures the IP filter middleware.

@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v10"
+	chassis "github.com/ai8future/chassis-go/v11"
 )
 
 func init() {
-	chassis.RequireMajor(10)
+	chassis.RequireMajor(11)
 }
 
 // --------------------------------------------------------------------------

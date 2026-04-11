@@ -7,7 +7,7 @@ import (
 	"context"
 	"sync"
 
-	chassis "github.com/ai8future/chassis-go/v10"
+	chassis "github.com/ai8future/chassis-go/v11"
 )
 
 // publisher interface for dependency inversion — matches kafkakit.Publisher's Publish method.

@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ai8future/chassis-go/v10/schemakit"
+	"github.com/ai8future/chassis-go/v11/schemakit"
 )
 
 func TestNewRegistry(t *testing.T) {

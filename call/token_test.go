@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ai8future/chassis-go/v10/call"
+	"github.com/ai8future/chassis-go/v11/call"
 )
 
 func TestWithTokenSource(t *testing.T) {

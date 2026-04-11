@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v10"
+	chassis "github.com/ai8future/chassis-go/v11"
 )
 
 type Cache[K comparable, V any] struct {

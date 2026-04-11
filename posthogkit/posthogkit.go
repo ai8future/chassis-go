@@ -15,11 +15,11 @@ import (
 	"sync"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v10"
-	"github.com/ai8future/chassis-go/v10/call"
-	"github.com/ai8future/chassis-go/v10/health"
-	"github.com/ai8future/chassis-go/v10/seal"
-	"github.com/ai8future/chassis-go/v10/tick"
+	chassis "github.com/ai8future/chassis-go/v11"
+	"github.com/ai8future/chassis-go/v11/call"
+	"github.com/ai8future/chassis-go/v11/health"
+	"github.com/ai8future/chassis-go/v11/seal"
+	"github.com/ai8future/chassis-go/v11/tick"
 )
 
 // --------------------------------------------------------------------------

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ai8future/chassis-go/v10/kafkakit"
-	"github.com/ai8future/chassis-go/v10/registry"
+	"github.com/ai8future/chassis-go/v11/kafkakit"
+	"github.com/ai8future/chassis-go/v11/registry"
 )
 
 func resetKafkaTest(t *testing.T) string {

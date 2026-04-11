@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v10"
-	"github.com/ai8future/chassis-go/v10/seal"
+	chassis "github.com/ai8future/chassis-go/v11"
+	"github.com/ai8future/chassis-go/v11/seal"
 )
 
 func init() {
-	chassis.RequireMajor(10)
+	chassis.RequireMajor(11)
 }
 
 // batchRequest is the JSON structure sent to /batch.

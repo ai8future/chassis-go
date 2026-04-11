@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v10"
-	"github.com/ai8future/chassis-go/v10/heartbeatkit"
+	chassis "github.com/ai8future/chassis-go/v11"
+	"github.com/ai8future/chassis-go/v11/heartbeatkit"
 )
 
-func init() { chassis.RequireMajor(10) }
+func init() { chassis.RequireMajor(11) }
 
 // mockPublisher records all Publish calls for verification.
 type mockPublisher struct {

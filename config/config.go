@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v10"
+	chassis "github.com/ai8future/chassis-go/v11"
 )
 
 // MustLoad loads environment variables into a struct of type T based on struct
@@ -37,7 +37,7 @@ func MustLoad[T any]() T {
 }
 
 // loadFields populates struct fields from environment variables, recursing
-// into nested structs so that embedded config types (e.g. xyops.Config) are
+// into nested structs so that embedded config types (e.g. kafkakit.Config) are
 // populated correctly.
 func loadFields(v reflect.Value, t reflect.Type) {
 	for i := range t.NumField() {
@@ -49,7 +49,7 @@ func loadFields(v reflect.Value, t reflect.Type) {
 			continue
 		}
 
-		// Recurse into nested structs (e.g. xyops.Config, kafkakit.Config).
+		// Recurse into nested structs (e.g. kafkakit.Config, meilikit.Config).
 		if field.Type.Kind() == reflect.Struct && field.Type != reflect.TypeOf(time.Duration(0)) {
 			loadFields(fieldVal, field.Type)
 			continue

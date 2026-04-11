@@ -7,7 +7,7 @@ import (
 	"math/rand/v2"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v10"
+	chassis "github.com/ai8future/chassis-go/v11"
 )
 
 type ErrorBehavior int

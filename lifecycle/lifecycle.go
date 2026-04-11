@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v10"
-	"github.com/ai8future/chassis-go/v10/announcekit"
-	"github.com/ai8future/chassis-go/v10/heartbeatkit"
-	"github.com/ai8future/chassis-go/v10/kafkakit"
-	"github.com/ai8future/chassis-go/v10/registry"
+	chassis "github.com/ai8future/chassis-go/v11"
+	"github.com/ai8future/chassis-go/v11/announcekit"
+	"github.com/ai8future/chassis-go/v11/heartbeatkit"
+	"github.com/ai8future/chassis-go/v11/kafkakit"
+	"github.com/ai8future/chassis-go/v11/registry"
 	"golang.org/x/sync/errgroup"
 )
 

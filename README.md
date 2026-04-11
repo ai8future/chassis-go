@@ -3,10 +3,10 @@
 A composable Go service toolkit for building production-grade microservices. Toolkit, not framework — chassis never owns `main()`, never hides wiring behind magic, and every package is independently importable.
 
 ```
-go get github.com/ai8future/chassis-go/v10
+go get github.com/ai8future/chassis-go/v11
 ```
 
-**Current version:** 10.2.4 &middot; **Go:** 1.25.5+ &middot; **License:** MIT
+**Current version:** 11.0.0 &middot; **Go:** 1.25.5+ &middot; **License:** MIT
 
 ---
 
@@ -24,7 +24,7 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 
 | Package | Import | Purpose |
 |---------|--------|---------|
-| `chassis` | `github.com/ai8future/chassis-go/v10` | Version gate (`RequireMajor(10)`) and deterministic port assignment (`Port(name, offset)` via djb2) |
+| `chassis` | `github.com/ai8future/chassis-go/v11` | Version gate (`RequireMajor(11)`) and deterministic port assignment (`Port(name, offset)` via djb2) |
 | `config` | `.../v10/config` | Generic env-to-struct config loader via struct tags. Panics on missing required vars |
 | `logz` | `.../v10/logz` | Structured JSON logging wrapping `log/slog` with automatic OTel `trace_id`/`span_id` injection |
 | `lifecycle` | `.../v10/lifecycle` | Signal-aware graceful shutdown orchestration via `errgroup` |
@@ -90,13 +90,13 @@ import (
     "net/http"
     "time"
 
-    chassis "github.com/ai8future/chassis-go/v10"
-    "github.com/ai8future/chassis-go/v10/config"
-    "github.com/ai8future/chassis-go/v10/guard"
-    "github.com/ai8future/chassis-go/v10/health"
-    "github.com/ai8future/chassis-go/v10/httpkit"
-    "github.com/ai8future/chassis-go/v10/lifecycle"
-    "github.com/ai8future/chassis-go/v10/logz"
+    chassis "github.com/ai8future/chassis-go/v11"
+    "github.com/ai8future/chassis-go/v11/config"
+    "github.com/ai8future/chassis-go/v11/guard"
+    "github.com/ai8future/chassis-go/v11/health"
+    "github.com/ai8future/chassis-go/v11/httpkit"
+    "github.com/ai8future/chassis-go/v11/lifecycle"
+    "github.com/ai8future/chassis-go/v11/logz"
 )
 
 type AppConfig struct {
@@ -107,7 +107,7 @@ type AppConfig struct {
 func main() {
     // Version gate — must be first
     chassis.SetAppVersion(myapp.AppVersion) // enables --version flag and auto-rebuild
-    chassis.RequireMajor(10)
+    chassis.RequireMajor(11)
 
     cfg := config.MustLoad[AppConfig]()
     logger := logz.New(cfg.LogLevel)
@@ -225,7 +225,7 @@ Every service automatically registers itself at `/tmp/chassis/<service-name>/` w
 
 **Module-level API** — no object to pass around:
 ```go
-import "github.com/ai8future/chassis-go/v10/registry"
+import "github.com/ai8future/chassis-go/v11/registry"
 
 // Report status (written to the service log)
 registry.Status("processing batch 42")
@@ -507,7 +507,7 @@ chassis-go enforces a mandatory version compatibility contract. Every service mu
 ```go
 func main() {
     chassis.SetAppVersion(myapp.AppVersion) // from appversion.go at repo root
-    chassis.RequireMajor(10)                // must be called before any chassis module
+    chassis.RequireMajor(11)                // must be called before any chassis module
     // ...
 }
 ```

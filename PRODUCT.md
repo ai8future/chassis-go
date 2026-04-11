@@ -26,7 +26,7 @@ Specifically:
 
 2. **Faster onboarding**: A new developer can spin up a production-grade service by importing chassis packages and wiring them in `main()`. They do not need to learn how to set up OpenTelemetry, how to build a circuit breaker, or how to write a rate limiter.
 
-3. **Operational visibility**: Every service that uses chassis automatically registers itself, publishes heartbeats, reports status, accepts operational commands, and (when integrated with xyops) pushes metrics to a centralized monitoring system. There are no invisible services.
+3. **Operational visibility**: Every service that uses chassis automatically registers itself, publishes heartbeats, reports status, and accepts operational commands. There are no invisible services.
 
 4. **Fail-fast safety**: Configuration errors, version mismatches, and initialization ordering mistakes crash the process immediately at startup with clear messages. This prevents services from running in degraded or undefined states that are far harder to diagnose in production.
 
@@ -38,7 +38,7 @@ Specifically:
 
 ### 1. Version Compatibility Contract
 
-chassis-go enforces a mandatory version gate. Every service must declare at the top of `main()` which major version of chassis it expects (`chassis.RequireMajor(10)`). If the installed library's major version does not match, the process exits immediately. Every chassis package also checks that `RequireMajor` was called before it runs.
+chassis-go enforces a mandatory version gate. Every service must declare at the top of `main()` which major version of chassis it expects (`chassis.RequireMajor(11)`). If the installed library's major version does not match, the process exits immediately. Every chassis package also checks that `RequireMajor` was called before it runs.
 
 **Business rationale**: This prevents silent behavioral changes when the toolkit is upgraded without review. A version mismatch produces a clear, actionable error message rather than subtle bugs. It also creates an upgrade checkpoint — teams must consciously acknowledge major version changes.
 
@@ -220,23 +220,15 @@ Both clients set standardized `X-Tenant-ID` and `X-Trace-ID` headers on every re
 
 **Business rationale**: These services (entity registry, data lake) are shared infrastructure that multiple services need to query. Typed client libraries prevent each consuming service from writing ad-hoc HTTP clients with inconsistent error handling, timeout policies, and header conventions.
 
-### 26. XYOps Integration (Operational Management)
-
-The `xyops` package provides a client for the XYOps operational management platform with curated API methods (trigger events, poll job status, cancel jobs, search job history, list/acknowledge alerts, fire webhooks), a monitoring bridge that pushes bridged application metrics to XYOps on a configurable interval, response caching, and a raw escape hatch for custom API endpoints.
-
-The `xyopsworker` package provides a job execution framework where services can register handlers for specific job types and act as XYOps satellite workers, receiving and executing jobs dispatched from the central orchestrator with progress reporting, live logging, and output capture.
-
-**Business rationale**: XYOps is the operational control plane. A service that uses chassis but not XYOps is "invisible to operations" -- it cannot be monitored, alerted on, or managed through the standard operational workflows. The monitoring bridge is considered the single most important integration because it makes services visible to the operations team. The worker framework enables automation (deployments, migrations, batch processing, cleanup) to be orchestrated centrally while executing distributed.
-
 ---
 
 ## Who Are the Target Users?
 
 1. **Service developers** building new Go microservices for the ai8future ecosystem. They import chassis, wire the packages together in `main()`, and get a production-ready service with consistent observability, error handling, and operational visibility.
 
-2. **Platform engineers** maintaining the shared infrastructure (entity registry, knowledge graph, data lake, event bus, XYOps). They use the integration packages to ensure consistent cross-service communication patterns.
+2. **Platform engineers** maintaining the shared infrastructure (entity registry, knowledge graph, data lake, event bus). They use the integration packages to ensure consistent cross-service communication patterns.
 
-3. **Operations teams** who monitor and manage the fleet. The registry, heartbeat, lifecycle events, and XYOps integration give them visibility into what is running, what state it is in, and the ability to issue commands to running services.
+3. **Operations teams** who monitor and manage the fleet. The registry, heartbeat, and lifecycle events give them visibility into what is running, what state it is in, and the ability to issue commands to running services.
 
 ---
 
@@ -263,4 +255,4 @@ HTTP middleware uses the standard `func(http.Handler) http.Handler` signature. g
 
 The toolkit is at version 10.0.10 as of March 2026. It has gone through 10 major versions since its initial release in February 2026, reflecting rapid iteration driven by real-world adoption across the ai8future service fleet. The first planned consumers were `pricing-cli` (CLI tool validating Tier 1 packages) and `serp_svc` (full-stack service validating all tiers).
 
-The changelog shows a progression from foundational packages (config, logging, lifecycle, HTTP, gRPC, health, call) through security hardening (registry permissions, credential redaction, safe file writes), operational tooling (registry, CLI mode, deploy directories, XYOps), cross-cutting concerns (feature flags, guards, structured concurrency, cryptography, webhooks), and platform connectivity (event bus, schema management, service clients).
+The changelog shows a progression from foundational packages (config, logging, lifecycle, HTTP, gRPC, health, call) through security hardening (registry permissions, credential redaction, safe file writes), operational tooling (registry, CLI mode, deploy directories), cross-cutting concerns (feature flags, guards, structured concurrency, cryptography, webhooks), and platform connectivity (event bus, schema management, service clients).

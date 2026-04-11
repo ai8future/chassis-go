@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	chassis "github.com/ai8future/chassis-go/v10"
+	chassis "github.com/ai8future/chassis-go/v11"
 )
 
 // response is the JSON envelope returned by the health handler.

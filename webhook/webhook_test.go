@@ -8,11 +8,11 @@ import (
 	"sync/atomic"
 	"testing"
 
-	chassis "github.com/ai8future/chassis-go/v10"
-	"github.com/ai8future/chassis-go/v10/webhook"
+	chassis "github.com/ai8future/chassis-go/v11"
+	"github.com/ai8future/chassis-go/v11/webhook"
 )
 
-func init() { chassis.RequireMajor(10) }
+func init() { chassis.RequireMajor(11) }
 
 func TestSendAndVerify(t *testing.T) {
 	secret := "test-webhook-secret"

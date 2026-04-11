@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	chassis "github.com/ai8future/chassis-go/v10"
+	chassis "github.com/ai8future/chassis-go/v11"
 )
 
 // HSTSConfig configures the Strict-Transport-Security header.

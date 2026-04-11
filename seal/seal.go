@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v10"
+	chassis "github.com/ai8future/chassis-go/v11"
 	"golang.org/x/crypto/scrypt"
 )
 

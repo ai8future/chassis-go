@@ -162,7 +162,7 @@ Then in every `cmd/*/main.go`:
 ```go
 func main() {
     chassis.SetAppVersion(yourpkg.AppVersion)
-    chassis.RequireMajor(10)
+    chassis.RequireMajor(11)
     // ...
 }
 ```

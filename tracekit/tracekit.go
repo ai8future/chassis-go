@@ -8,7 +8,7 @@ import (
 	"encoding/hex"
 	"net/http"
 
-	chassis "github.com/ai8future/chassis-go/v10"
+	chassis "github.com/ai8future/chassis-go/v11"
 )
 
 type contextKey struct{}

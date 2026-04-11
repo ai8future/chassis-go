@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v10"
-	"github.com/ai8future/chassis-go/v10/errors"
+	chassis "github.com/ai8future/chassis-go/v11"
+	"github.com/ai8future/chassis-go/v11/errors"
 )
 
 // Timeout returns middleware that sets a context deadline on the request and

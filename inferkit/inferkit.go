@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	chassis "github.com/ai8future/chassis-go/v10"
-	"github.com/ai8future/chassis-go/v10/call"
+	chassis "github.com/ai8future/chassis-go/v11"
+	"github.com/ai8future/chassis-go/v11/call"
 )
 
 // Provider base URLs for common OpenAI-compatible services.
