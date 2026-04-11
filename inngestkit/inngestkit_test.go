@@ -11,6 +11,9 @@ import (
 	"github.com/inngest/inngestgo"
 )
 
+// testKey is a valid 64-char hex signing key used across tests.
+const testKey = "ce2293cb10997f4516b045c4d869ed733e78ad9a48dd1f16a3690376a4c10577"
+
 func init() {
 	// Satisfy chassis version check for all tests.
 	chassis.ResetVersionCheck()
@@ -26,7 +29,7 @@ func TestValidateConfig_Valid(t *testing.T) {
 		BaseURL:    "http://inngest.lan:8288",
 		AppID:      "test-app",
 		EventKey:   "abc123",
-		SigningKey: "ce2293cb10997f4516b045c4d869ed733e78ad9a48dd1f16a3690376a4c10577",
+		SigningKey: testKey,
 		ServePath:  "/api/inngest",
 	}
 	if err := validateConfig(cfg); err != nil {
@@ -35,28 +38,28 @@ func TestValidateConfig_Valid(t *testing.T) {
 }
 
 func TestValidateConfig_MissingBaseURL(t *testing.T) {
-	cfg := Config{AppID: "x", EventKey: "x", SigningKey: "aabb"}
+	cfg := Config{AppID: "x", EventKey: "x", SigningKey: testKey}
 	if err := validateConfig(cfg); err == nil {
 		t.Fatal("expected error for missing BaseURL")
 	}
 }
 
 func TestValidateConfig_BadBaseURL(t *testing.T) {
-	cfg := Config{BaseURL: "ftp://bad", AppID: "x", EventKey: "x", SigningKey: "aabb"}
+	cfg := Config{BaseURL: "ftp://bad", AppID: "x", EventKey: "x", SigningKey: testKey}
 	if err := validateConfig(cfg); err == nil {
 		t.Fatal("expected error for non-http BaseURL")
 	}
 }
 
 func TestValidateConfig_MissingAppID(t *testing.T) {
-	cfg := Config{BaseURL: "http://x", EventKey: "x", SigningKey: "aabb"}
+	cfg := Config{BaseURL: "http://x", EventKey: "x", SigningKey: testKey}
 	if err := validateConfig(cfg); err == nil {
 		t.Fatal("expected error for missing AppID")
 	}
 }
 
 func TestValidateConfig_MissingEventKey(t *testing.T) {
-	cfg := Config{BaseURL: "http://x", AppID: "x", SigningKey: "aabb"}
+	cfg := Config{BaseURL: "http://x", AppID: "x", SigningKey: testKey}
 	if err := validateConfig(cfg); err == nil {
 		t.Fatal("expected error for missing EventKey")
 	}
@@ -70,16 +73,33 @@ func TestValidateConfig_MissingSigningKey(t *testing.T) {
 }
 
 func TestValidateConfig_OddLengthSigningKey(t *testing.T) {
-	cfg := Config{BaseURL: "http://x", AppID: "x", EventKey: "x", SigningKey: "abc"}
+	// 33 hex chars — passes min length but fails even-length check
+	cfg := Config{BaseURL: "http://x", AppID: "x", EventKey: "x", SigningKey: "ce2293cb10997f4516b045c4d869ed73a"}
 	if err := validateConfig(cfg); err == nil {
 		t.Fatal("expected error for odd-length SigningKey")
 	}
 }
 
 func TestValidateConfig_NonHexSigningKey(t *testing.T) {
-	cfg := Config{BaseURL: "http://x", AppID: "x", EventKey: "x", SigningKey: "zzzz"}
+	// 32 chars, not valid hex
+	cfg := Config{BaseURL: "http://x", AppID: "x", EventKey: "x", SigningKey: "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"}
 	if err := validateConfig(cfg); err == nil {
 		t.Fatal("expected error for non-hex SigningKey")
+	}
+}
+
+func TestValidateConfig_ShortSigningKey(t *testing.T) {
+	cfg := Config{BaseURL: "http://x", AppID: "x", EventKey: "x", SigningKey: "aabbccdd"}
+	if err := validateConfig(cfg); err == nil {
+		t.Fatal("expected error for short SigningKey")
+	}
+}
+
+func TestValidateConfig_MinLengthSigningKey(t *testing.T) {
+	// Exactly 32 hex chars — the minimum
+	cfg := Config{BaseURL: "http://x", AppID: "x", EventKey: "x", SigningKey: "ce2293cb10997f4516b045c4d869ed73"}
+	if err := validateConfig(cfg); err != nil {
+		t.Fatalf("expected 32-char key to pass, got: %v", err)
 	}
 }
 
@@ -88,11 +108,37 @@ func TestValidateConfig_BadServePath(t *testing.T) {
 		BaseURL:   "http://x",
 		AppID:     "x",
 		EventKey:  "x",
-		SigningKey: "aabb",
+		SigningKey: testKey,
 		ServePath: "no-leading-slash",
 	}
 	if err := validateConfig(cfg); err == nil {
 		t.Fatal("expected error for ServePath without leading /")
+	}
+}
+
+func TestValidateConfig_BadServeOrigin(t *testing.T) {
+	cfg := Config{
+		BaseURL:     "http://x",
+		AppID:       "x",
+		EventKey:    "x",
+		SigningKey:  testKey,
+		ServeOrigin: "ftp://bad",
+	}
+	if err := validateConfig(cfg); err == nil {
+		t.Fatal("expected error for non-http ServeOrigin")
+	}
+}
+
+func TestValidateConfig_ValidServeOrigin(t *testing.T) {
+	cfg := Config{
+		BaseURL:     "http://x",
+		AppID:       "x",
+		EventKey:    "x",
+		SigningKey:  testKey,
+		ServeOrigin: "https://myapp.lan:8080",
+	}
+	if err := validateConfig(cfg); err != nil {
+		t.Fatalf("expected valid config with ServeOrigin, got: %v", err)
 	}
 }
 
@@ -101,11 +147,66 @@ func TestValidateConfig_FallbackValidation(t *testing.T) {
 		BaseURL:            "http://x",
 		AppID:              "x",
 		EventKey:           "x",
-		SigningKey:         "aabb",
-		SigningKeyFallback: "xyz", // odd length, invalid hex
+		SigningKey:         testKey,
+		SigningKeyFallback: "aabb", // too short
 	}
 	if err := validateConfig(cfg); err == nil {
 		t.Fatal("expected error for invalid fallback key")
+	}
+}
+
+// --------------------------------------------------------------------------
+// Signing key prefix stripping
+// --------------------------------------------------------------------------
+
+func TestStripKeyPrefix(t *testing.T) {
+	cases := []struct {
+		name, in, want string
+	}{
+		{"raw hex", testKey, testKey},
+		{"signkey-prod-", "signkey-prod-" + testKey, testKey},
+		{"signkey-test-", "signkey-test-" + testKey, testKey},
+		{"signkey-branch-", "signkey-branch-" + testKey, testKey},
+		{"no second hyphen", "signkey-orphan", "signkey-orphan"},
+		{"empty", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := stripKeyPrefix(tc.in)
+			if got != tc.want {
+				t.Fatalf("stripKeyPrefix(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNew_PrefixedSigningKey(t *testing.T) {
+	cfg := Config{
+		BaseURL:    "http://inngest.lan:8288",
+		AppID:      "test-app",
+		EventKey:   "testkey",
+		SigningKey: "signkey-test-" + testKey,
+	}
+	kit, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New should accept prefixed signing key, got: %v", err)
+	}
+	if kit.Client() == nil {
+		t.Fatal("Client() returned nil")
+	}
+}
+
+func TestNew_PrefixedFallbackKey(t *testing.T) {
+	cfg := Config{
+		BaseURL:            "http://inngest.lan:8288",
+		AppID:              "test-app",
+		EventKey:           "testkey",
+		SigningKey:         testKey,
+		SigningKeyFallback: "signkey-prod-" + testKey,
+	}
+	_, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New should accept prefixed fallback key, got: %v", err)
 	}
 }
 
@@ -118,7 +219,7 @@ func TestNew_ValidConfig(t *testing.T) {
 		BaseURL:    "http://inngest.lan:8288",
 		AppID:      "test-app",
 		EventKey:   "testkey",
-		SigningKey: "aabbccdd",
+		SigningKey: testKey,
 	}
 	kit, err := New(cfg)
 	if err != nil {
@@ -142,7 +243,7 @@ func TestNew_DefaultServePath(t *testing.T) {
 		BaseURL:    "http://inngest.lan:8288",
 		AppID:      "test-app",
 		EventKey:   "testkey",
-		SigningKey: "aabbccdd",
+		SigningKey: testKey,
 	}
 	kit, err := New(cfg)
 	if err != nil {
@@ -162,7 +263,7 @@ func TestMount_RegistersHandler(t *testing.T) {
 		BaseURL:    "http://localhost:8288",
 		AppID:      "mount-test",
 		EventKey:   "testkey",
-		SigningKey: "aabbccdd",
+		SigningKey: testKey,
 		ServePath:  "/api/inngest",
 	}
 	kit, err := New(cfg)
@@ -200,7 +301,7 @@ func TestSend_EmptyEvents(t *testing.T) {
 		BaseURL:    "http://localhost:8288",
 		AppID:      "send-test",
 		EventKey:   "testkey",
-		SigningKey: "aabbccdd",
+		SigningKey: testKey,
 	}
 	kit, err := New(cfg)
 	if err != nil {
@@ -231,7 +332,7 @@ func TestSend_SingleEvent_AgainstMock(t *testing.T) {
 		BaseURL:    srv.URL,
 		AppID:      "send-test",
 		EventKey:   "testkey",
-		SigningKey: "aabbccdd",
+		SigningKey: testKey,
 	}
 	kit, err := New(cfg)
 	if err != nil {
@@ -264,7 +365,7 @@ func TestSend_BatchEvents_AgainstMock(t *testing.T) {
 		BaseURL:    srv.URL,
 		AppID:      "batch-test",
 		EventKey:   "testkey",
-		SigningKey: "aabbccdd",
+		SigningKey: testKey,
 	}
 	kit, err := New(cfg)
 	if err != nil {

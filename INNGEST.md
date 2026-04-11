@@ -77,9 +77,9 @@ func main() {
 | `INNGEST_BASE_URL` | yes | — | Self-hosted inngest server (e.g. `http://inngest.lan:8288`) |
 | `INNGEST_APP_ID` | yes | — | Stable app identity, typically matches service name |
 | `INNGEST_EVENT_KEY` | yes | — | Authenticates Send calls (app -> inngest) |
-| `INNGEST_SIGNING_KEY` | yes | — | Verifies callback signatures (inngest -> app). Must be even-length hex. Generate with `openssl rand -hex 32` |
-| `INNGEST_SIGNING_KEY_FALLBACK` | no | — | Previous signing key for zero-downtime rotation |
-| `INNGEST_SERVE_ORIGIN` | no | — | App's own URL for inngest callbacks (e.g. `http://myservice.lan:8080`). If unset, SDK infers from incoming requests. Set when behind a reverse proxy or when the app's external URL differs from what it sees. |
+| `INNGEST_SIGNING_KEY` | yes | — | Verifies callback signatures (inngest -> app). Must be at least 32 hex chars. Generate with `openssl rand -hex 32`. Accepts both raw hex and the full prefixed form (`signkey-prod-<hex>`) — the prefix is stripped automatically. |
+| `INNGEST_SIGNING_KEY_FALLBACK` | no | — | Previous signing key for zero-downtime rotation. Same format rules as `INNGEST_SIGNING_KEY`. |
+| `INNGEST_SERVE_ORIGIN` | no | — | App's own URL for inngest callbacks (e.g. `http://myservice.lan:8080`). Must start with `http://` or `https://`. If unset, SDK infers from incoming requests. Set when behind a reverse proxy or when the app's external URL differs from what it sees. |
 | `INNGEST_SERVE_PATH` | no | `/api/inngest` | Path where the serve handler is mounted |
 
 All required fields are required. There is no dev-mode fallback. If a required field is missing, `inngestkit.New` fails at startup.
@@ -90,9 +90,10 @@ All required fields are required. There is no dev-mode fallback. If a required f
 1. `BaseURL` is present and starts with `http://` or `https://`
 2. `AppID` is present and non-empty
 3. `EventKey` is present and non-empty
-4. `SigningKey` is present, non-empty, and valid even-length hex
-5. `SigningKeyFallback`, if present, is also valid even-length hex
-6. `ServePath` starts with `/`
+4. `SigningKey` is present, non-empty, at least 32 hex chars, and valid hex (any `signkey-<env>-` prefix is stripped first)
+5. `SigningKeyFallback`, if present, also meets the same hex requirements
+6. `ServeOrigin`, if present, starts with `http://` or `https://`
+7. `ServePath` starts with `/`
 
 Fail-fast: if any check fails, `New` returns an error and the service refuses to start.
 

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [11.0.1] - 2026-04-11
+
+### Fixed
+- **inngestkit**: Auto-strip `signkey-<env>-` prefix from signing keys so users can paste either raw hex or full prefixed keys from the inngest server config
+- **inngestkit**: Enforce minimum 32 hex char (16 byte) signing key length to prevent weak HMAC keys
+- **inngestkit**: Validate `INNGEST_SERVE_ORIGIN` starts with `http://` or `https://`
+- **inngestkit**: Remove redundant `RegisterURL` override — the SDK already computes it from `APIBaseURL`
+
 ## [11.0.0] - 2026-04-11
 
 ### Removed

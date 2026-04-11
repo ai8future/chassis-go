@@ -12,11 +12,14 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	chassis "github.com/ai8future/chassis-go/v11"
 	"github.com/inngest/inngestgo"
 )
+
+var signingKeyPrefix = regexp.MustCompile(`^signkey-\w+-`)
 
 // Config holds environment-driven configuration for the inngest client.
 // Embed this in your service config struct for automatic population via
@@ -47,6 +50,13 @@ func New(cfg Config) (*Kit, error) {
 		cfg.ServePath = "/api/inngest"
 	}
 
+	// Strip inngest's standard prefix (e.g. "signkey-prod-", "signkey-test-")
+	// so users can paste either raw hex or full prefixed keys.
+	cfg.SigningKey = stripKeyPrefix(cfg.SigningKey)
+	if cfg.SigningKeyFallback != "" {
+		cfg.SigningKeyFallback = stripKeyPrefix(cfg.SigningKeyFallback)
+	}
+
 	if err := validateConfig(cfg); err != nil {
 		return nil, fmt.Errorf("inngestkit: %w", err)
 	}
@@ -61,7 +71,6 @@ func New(cfg Config) (*Kit, error) {
 		SigningKey:      &signingKey,
 		APIBaseURL:      &baseURL,
 		EventAPIBaseURL: &baseURL,
-		RegisterURL:     inngestgo.StrPtr(baseURL + "/fn/register"),
 		Dev:             &dev,
 	}
 
@@ -145,14 +154,25 @@ func validateConfig(cfg Config) error {
 			return err
 		}
 	}
+	if cfg.ServeOrigin != "" {
+		if !strings.HasPrefix(cfg.ServeOrigin, "http://") && !strings.HasPrefix(cfg.ServeOrigin, "https://") {
+			return fmt.Errorf("INNGEST_SERVE_ORIGIN must start with http:// or https://")
+		}
+	}
 	if cfg.ServePath != "" && !strings.HasPrefix(cfg.ServePath, "/") {
 		return fmt.Errorf("INNGEST_SERVE_PATH must start with /")
 	}
 	return nil
 }
 
-// validateHexKey checks that a signing key is a valid even-length hex string.
+const minSigningKeyHexLen = 32 // 16 bytes minimum for HMAC-SHA256
+
+// validateHexKey checks that a signing key is a valid hex string with
+// sufficient length for cryptographic use.
 func validateHexKey(name, key string) error {
+	if len(key) < minSigningKeyHexLen {
+		return fmt.Errorf("%s must be at least %d hex chars (got %d); generate with: openssl rand -hex 32", name, minSigningKeyHexLen, len(key))
+	}
 	if len(key)%2 != 0 {
 		return fmt.Errorf("%s must be even-length hex (got %d chars)", name, len(key))
 	}
@@ -160,4 +180,11 @@ func validateHexKey(name, key string) error {
 		return fmt.Errorf("%s must be valid hex: %w", name, err)
 	}
 	return nil
+}
+
+// stripKeyPrefix removes the inngest signing key prefix (e.g. "signkey-prod-",
+// "signkey-test-") so users can paste either the raw hex or the full prefixed
+// key from the inngest server config.
+func stripKeyPrefix(key string) string {
+	return signingKeyPrefix.ReplaceAllString(key, "")
 }
