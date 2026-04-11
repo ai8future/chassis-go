@@ -132,15 +132,17 @@ func (c *Cache[K, V]) Prune() int {
 	}
 
 	now := time.Now()
-	removed := 0
+	var expired []*list.Element
 	for _, elem := range c.items {
 		e := elem.Value.(*entry[K, V])
 		if !e.expiresAt.IsZero() && now.After(e.expiresAt) {
-			c.removeLocked(elem)
-			removed++
+			expired = append(expired, elem)
 		}
 	}
-	return removed
+	for _, elem := range expired {
+		c.removeLocked(elem)
+	}
+	return len(expired)
 }
 
 func (c *Cache[K, V]) evictLocked() {

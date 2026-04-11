@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [11.1.1] - 2026-04-11
+
+### Fixed
+- **posthogkit**: Close flushCh on Close() to prevent goroutine leak; use sync.Once for double-close safety; cap requeue buffer at maxBuffer
+- **schemakit**: Bound Register response body with io.LimitReader (1MB)
+- **cache**: Fix Prune to collect-then-remove instead of mutating map during iteration
+- **webhook**: Compact order slice backing array to prevent slow memory leak; use context-aware HTTP requests
+
 ## [11.1.0] - 2026-04-11
 
 ### Security

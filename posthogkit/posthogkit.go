@@ -57,12 +57,13 @@ type event struct {
 
 // Client is a non-blocking, batched PostHog analytics client.
 type Client struct {
-	cfg     Config
-	http    *call.Client
-	log     *slog.Logger
-	mu      sync.Mutex
-	buf     []event
-	flushCh chan struct{}
+	cfg       Config
+	http      *call.Client
+	log       *slog.Logger
+	mu        sync.Mutex
+	buf       []event
+	flushCh   chan struct{}
+	closeOnce sync.Once
 }
 
 // New creates a new PostHog client. Defaults are applied for Host
@@ -195,11 +196,15 @@ func (c *Client) Flusher() func(context.Context) error {
 	return tick.Every(c.cfg.FlushInterval, c.flush)
 }
 
-// Close performs a final synchronous flush of any buffered events.
+// Close stops the flush goroutine and performs a final synchronous flush.
+// Safe to call multiple times.
 func (c *Client) Close() {
-	if err := c.flush(context.Background()); err != nil {
-		c.log.Warn("posthogkit: final flush failed", "error", err)
-	}
+	c.closeOnce.Do(func() {
+		close(c.flushCh)
+		if err := c.flush(context.Background()); err != nil {
+			c.log.Warn("posthogkit: final flush failed", "error", err)
+		}
+	})
 }
 
 // Check returns a health.Check that reports healthy when the client is
@@ -255,6 +260,9 @@ func (c *Client) flush(ctx context.Context) error {
 	requeue := func() {
 		c.mu.Lock()
 		c.buf = append(batch, c.buf...)
+		if len(c.buf) > maxBuffer {
+			c.buf = c.buf[:maxBuffer]
+		}
 		c.mu.Unlock()
 	}
 

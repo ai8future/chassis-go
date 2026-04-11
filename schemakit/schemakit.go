@@ -214,7 +214,7 @@ func (r *Registry) Register(ctx context.Context, schema *Schema) error {
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1 MB
 	if err != nil {
 		return fmt.Errorf("schemakit: read response: %w", err)
 	}

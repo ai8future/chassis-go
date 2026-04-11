@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"bytes"
+	"context"
 	crand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -83,7 +84,13 @@ func (s *Sender) Send(url string, payload any, secret string) (string, error) {
 	s.order = append(s.order, id)
 	for len(s.deliveries) > maxDeliveries {
 		delete(s.deliveries, s.order[0])
+		s.order[0] = "" // allow GC of evicted string
 		s.order = s.order[1:]
+	}
+	if cap(s.order) > 2*len(s.order) && cap(s.order) > maxDeliveries {
+		compacted := make([]string, len(s.order))
+		copy(compacted, s.order)
+		s.order = compacted
 	}
 	s.mu.Unlock()
 
@@ -93,7 +100,7 @@ func (s *Sender) Send(url string, payload any, secret string) (string, error) {
 		delivery.Attempts = attempt
 		s.mu.Unlock()
 
-		req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewReader(body))
 		if err != nil {
 			lastErr = err
 			continue
