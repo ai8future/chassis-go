@@ -17,6 +17,16 @@ import (
 	"github.com/ai8future/chassis-go/v11/registry"
 )
 
+// testSvcDir mirrors registry.resolveName() so tests look in the correct directory.
+func testSvcDir(base string) string {
+	name := os.Getenv("CHASSIS_SERVICE_NAME")
+	if name == "" {
+		wd, _ := os.Getwd()
+		name = filepath.Base(wd)
+	}
+	return filepath.Join(base, name)
+}
+
 // helper: initialise registry with a temp dir and return the service dir path.
 func initRegistry(t *testing.T) string {
 	t.Helper()
@@ -32,14 +42,7 @@ func initRegistry(t *testing.T) string {
 	t.Cleanup(func() { registry.Shutdown("test-done") })
 
 	_ = ctx // cancel is passed to Init
-
-	// Determine the service directory name (cwd basename or env var).
-	name := os.Getenv("CHASSIS_SERVICE_NAME")
-	if name == "" {
-		wd, _ := os.Getwd()
-		name = filepath.Base(wd)
-	}
-	return filepath.Join(tmp, name)
+	return testSvcDir(tmp)
 }
 
 func TestInitCreatesDirectoryAndFiles(t *testing.T) {
@@ -204,9 +207,7 @@ func TestShutdownRemovesPIDFileButLeavesLog(t *testing.T) {
 		t.Fatalf("Init failed: %v", err)
 	}
 
-	wd, _ := os.Getwd()
-	name := filepath.Base(wd)
-	svcDir := filepath.Join(tmp, name)
+	svcDir := testSvcDir(tmp)
 	pid := strconv.Itoa(os.Getpid())
 	pidFile := filepath.Join(svcDir, pid+".json")
 	logFile := filepath.Join(svcDir, pid+".log.jsonl")
@@ -240,9 +241,7 @@ func TestShutdownWritesShutdownEvent(t *testing.T) {
 		t.Fatalf("Init failed: %v", err)
 	}
 
-	wd, _ := os.Getwd()
-	name := filepath.Base(wd)
-	svcDir := filepath.Join(tmp, name)
+	svcDir := testSvcDir(tmp)
 	pid := strconv.Itoa(os.Getpid())
 	logFile := filepath.Join(svcDir, pid+".log.jsonl")
 
@@ -283,9 +282,7 @@ func TestHandleRegistersCustomCommands(t *testing.T) {
 	}
 	t.Cleanup(func() { registry.Shutdown("test-done") })
 
-	wd, _ := os.Getwd()
-	name := filepath.Base(wd)
-	svcDir := filepath.Join(tmp, name)
+	svcDir := testSvcDir(tmp)
 	pid := strconv.Itoa(os.Getpid())
 	pidFile := filepath.Join(svcDir, pid+".json")
 
@@ -350,9 +347,7 @@ func TestStaleCleanupRemovesDeadPIDFiles(t *testing.T) {
 	tmp := t.TempDir()
 	registry.ResetForTest(tmp)
 
-	wd, _ := os.Getwd()
-	name := filepath.Base(wd)
-	svcDir := filepath.Join(tmp, name)
+	svcDir := testSvcDir(tmp)
 	if err := os.MkdirAll(svcDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -465,9 +460,7 @@ func TestPollOnceStopCommand(t *testing.T) {
 	t.Cleanup(func() { registry.Shutdown("test-done") })
 
 	// Write a stop command file.
-	wd, _ := os.Getwd()
-	name := filepath.Base(wd)
-	svcDir := filepath.Join(tmp, name)
+	svcDir := testSvcDir(tmp)
 	pid := strconv.Itoa(os.Getpid())
 	cmdFile := filepath.Join(svcDir, pid+".cmd.json")
 
@@ -504,9 +497,7 @@ func TestPollOnceRestartCommand(t *testing.T) {
 	}
 	t.Cleanup(func() { registry.Shutdown("test-done") })
 
-	wd, _ := os.Getwd()
-	name := filepath.Base(wd)
-	svcDir := filepath.Join(tmp, name)
+	svcDir := testSvcDir(tmp)
 	pid := strconv.Itoa(os.Getpid())
 	cmdFile := filepath.Join(svcDir, pid+".cmd.json")
 
@@ -541,9 +532,7 @@ func TestPortDeclarationAppearsInPIDFile(t *testing.T) {
 	}
 	t.Cleanup(func() { registry.Shutdown("test-done") })
 
-	wd, _ := os.Getwd()
-	name := filepath.Base(wd)
-	svcDir := filepath.Join(tmp, name)
+	svcDir := testSvcDir(tmp)
 	pid := strconv.Itoa(os.Getpid())
 	pidFile := filepath.Join(svcDir, pid+".json")
 
@@ -595,9 +584,7 @@ func TestPortProtoOverride(t *testing.T) {
 	}
 	t.Cleanup(func() { registry.Shutdown("test-done") })
 
-	wd, _ := os.Getwd()
-	name := filepath.Base(wd)
-	svcDir := filepath.Join(tmp, name)
+	svcDir := testSvcDir(tmp)
 	pid := strconv.Itoa(os.Getpid())
 	pidFile := filepath.Join(svcDir, pid+".json")
 
@@ -667,9 +654,7 @@ func TestCustomRolePort(t *testing.T) {
 	}
 	t.Cleanup(func() { registry.Shutdown("test-done") })
 
-	wd, _ := os.Getwd()
-	name := filepath.Base(wd)
-	svcDir := filepath.Join(tmp, name)
+	svcDir := testSvcDir(tmp)
 	pid := strconv.Itoa(os.Getpid())
 	pidFile := filepath.Join(svcDir, pid+".json")
 
@@ -710,9 +695,7 @@ func TestNoPortsEmptySlice(t *testing.T) {
 	}
 	t.Cleanup(func() { registry.Shutdown("test-done") })
 
-	wd, _ := os.Getwd()
-	name := filepath.Base(wd)
-	svcDir := filepath.Join(tmp, name)
+	svcDir := testSvcDir(tmp)
 	pid := strconv.Itoa(os.Getpid())
 	pidFile := filepath.Join(svcDir, pid+".json")
 
@@ -747,9 +730,7 @@ func TestInitCLI(t *testing.T) {
 	}
 	t.Cleanup(func() { registry.ShutdownCLI(0) })
 
-	wd, _ := os.Getwd()
-	name := filepath.Base(wd)
-	svcDir := filepath.Join(tmp, name)
+	svcDir := testSvcDir(tmp)
 	pid := strconv.Itoa(os.Getpid())
 	pidFile := filepath.Join(svcDir, pid+".json")
 
@@ -815,9 +796,7 @@ func TestProgress(t *testing.T) {
 
 	registry.Progress(50, 100, 3)
 
-	wd, _ := os.Getwd()
-	name := filepath.Base(wd)
-	svcDir := filepath.Join(tmp, name)
+	svcDir := testSvcDir(tmp)
 	pid := strconv.Itoa(os.Getpid())
 	logFile := filepath.Join(svcDir, pid+".log.jsonl")
 
@@ -857,9 +836,7 @@ func TestShutdownCLI(t *testing.T) {
 	// Record some progress before shutdown
 	registry.Progress(10, 20, 1)
 
-	wd, _ := os.Getwd()
-	name := filepath.Base(wd)
-	svcDir := filepath.Join(tmp, name)
+	svcDir := testSvcDir(tmp)
 	pid := strconv.Itoa(os.Getpid())
 	pidFile := filepath.Join(svcDir, pid+".json")
 
@@ -922,9 +899,7 @@ func TestShutdownCLIFailed(t *testing.T) {
 
 	registry.ShutdownCLI(1)
 
-	wd, _ := os.Getwd()
-	name := filepath.Base(wd)
-	svcDir := filepath.Join(tmp, name)
+	svcDir := testSvcDir(tmp)
 	pid := strconv.Itoa(os.Getpid())
 	pidFile := filepath.Join(svcDir, pid+".json")
 
@@ -961,9 +936,7 @@ func TestStopRequested(t *testing.T) {
 	t.Cleanup(func() { registry.ShutdownCLI(0) })
 
 	// Write a stop command file.
-	wd, _ := os.Getwd()
-	name := filepath.Base(wd)
-	svcDir := filepath.Join(tmp, name)
+	svcDir := testSvcDir(tmp)
 	pid := strconv.Itoa(os.Getpid())
 	cmdFile := filepath.Join(svcDir, pid+".cmd.json")
 

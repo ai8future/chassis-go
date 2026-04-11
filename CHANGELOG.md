@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [11.0.2] - 2026-04-11
+
+### Fixed
+- **registry**: Fix `resolveName()` to use `filepath.Base(wd)` instead of `binary+"-"+cwd`, matching lifecycle's version. The mismatch caused all registry tests to look in the wrong directory for PID files.
+- **registry**: Extract `testSvcDir` helper to mirror `resolveName()` and replace 16 broken inline path computations in tests.
+
 ## [11.0.1] - 2026-04-11
 
 ### Fixed

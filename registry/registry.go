@@ -581,12 +581,11 @@ func resolveName() string {
 	if n := os.Getenv("CHASSIS_SERVICE_NAME"); n != "" {
 		return n
 	}
-	bin := filepath.Base(os.Args[0])
 	wd, err := os.Getwd()
 	if err != nil {
-		return bin
+		return filepath.Base(os.Args[0])
 	}
-	return bin + "-" + filepath.Base(wd)
+	return filepath.Base(wd)
 }
 
 func readVersion() string {
