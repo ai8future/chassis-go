@@ -52,3 +52,4 @@ dist/
 
 # Claude
 .claude/settings.local.json
+.claude/worktrees/

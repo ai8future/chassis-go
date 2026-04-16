@@ -484,7 +484,7 @@ Registration file structure:
   "started_at": "2026-03-07T14:22:01Z",
   "version": "2.4.1",
   "language": "go",
-  "chassis_version": "10.0.1",
+  "chassis_version": "11.0.0",
   "args": ["./serp_svc"],
   "base_port": 12847,
   "ports": [

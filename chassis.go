@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+
+	"github.com/ai8future/chassis-go/v11/registry"
 )
 
 //go:embed VERSION
@@ -26,6 +28,7 @@ var appVersionVal atomic.Value // stores string
 // version. Call this before RequireMajor if you want it included.
 func SetAppVersion(v string) {
 	appVersionVal.Store(v)
+	registry.SetAppVersion(v)
 }
 
 func getAppVersion() string {

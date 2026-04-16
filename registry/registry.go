@@ -596,7 +596,19 @@ func resolveName() string {
 	return filepath.Base(wd)
 }
 
+var appVersion atomic.Value // stores string; set by SetAppVersion
+
+// SetAppVersion sets the application version for the registry manifest.
+// When set, this takes priority over reading a VERSION file from the CWD.
+// Typically called by chassis.SetAppVersion which forwards here.
+func SetAppVersion(v string) {
+	appVersion.Store(v)
+}
+
 func readVersion() string {
+	if v, ok := appVersion.Load().(string); ok && v != "" {
+		return v
+	}
 	b, err := os.ReadFile("VERSION")
 	if err != nil {
 		return "unknown"

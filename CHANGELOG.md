@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [11.1.3] - 2026-04-16
+
+### Fixed
+- **registry**: Go services wrote `"unknown"` as their version in `/tmp/chassis/<svc>/<pid>.json` because `readVersion()` read from CWD at runtime (no VERSION file in `/opt/ai8/bin/`). Now `registry.SetAppVersion()` accepts the embedded version, and `chassis.SetAppVersion()` forwards to it. All Go services that already call `chassis.SetAppVersion()` get the fix automatically.
+
+### Changed
+- **docs**: update chassis_version example in INTEGRATING.md to v11
+
 ## [11.1.2] - 2026-04-11
 
 ### Security
