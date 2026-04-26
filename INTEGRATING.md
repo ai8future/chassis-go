@@ -10,7 +10,7 @@ Practical guide for teams adopting chassis-go into an existing Go codebase.
 
 **What this is not**: An opinionated framework. Chassis doesn't own your dependency injection, routing, or service mesh. It provides building blocks that you wire together explicitly.
 
-**Service modules vs. utility modules**: Chassis modules fall into two categories. *Service modules* (`httpkit`, `grpckit`, `lifecycle`, `registry`) require a running service with `lifecycle.Run()` and an active registry — they crash if used without it. *Utility modules* (`config`, `logz`, `errors`, `call`, `work`, `health`, `secval`, `flagz`, `metrics`, `otel`, `testkit`, `cache`, `seal`, `tick`, `webhook`, `deploy`, `tracekit`, `schemakit`) work anywhere — services, libraries, CLI tools. *Service client kits* (`registrykit`, `lakekit`) are HTTP clients for internal platform services — they work anywhere but require the target service to be reachable. *Event bus kits* (`kafkakit`, `heartbeatkit`, `announcekit`) require a Kafka/Redpanda broker. A Go module that imports chassis utilities can be consumed by any application that calls `RequireMajor(11)`.
+**Service modules vs. utility modules**: Chassis modules fall into two categories. *Service modules* (`httpkit`, `grpckit`, `lifecycle`, `registry`) require a running service with `lifecycle.Run()` and an active registry — they crash if used without it. *Utility modules* (`config`, `logz`, `errors`, `call`, `work`, `health`, `secval`, `flagz`, `metrics`, `otel`, `testkit`, `cache`, `seal`, `tick`, `webhook`, `deploy`, `tracekit`, `schemakit`, `phasekit`) work anywhere — services, libraries, CLI tools. *Service client kits* (`registrykit`, `lakekit`) are HTTP clients for internal platform services — they work anywhere but require the target service to be reachable. *Event bus kits* (`kafkakit`, `heartbeatkit`, `announcekit`) require a Kafka/Redpanda broker. A Go module that imports chassis utilities can be consumed by any application that calls `RequireMajor(11)`.
 
 ## Installation
 
@@ -145,6 +145,39 @@ cfg := config.MustLoad[AppConfig]()
 - Call `MustLoad` early in `main()`, before any goroutines. The panic-on-missing design means configuration errors surface immediately at startup, not minutes later under load.
 - If you already have a config library (viper, envconfig, etc.), you don't need to migrate all at once. Chassis config is a standalone function — use it alongside your existing setup.
 - For testing, use `testkit.SetEnv(t, map[string]string{...})` to set env vars with automatic cleanup, then call `config.MustLoad[T]()` as usual.
+
+---
+
+### phasekit - Phase-backed environment hydration
+
+**When to use**: Your service already uses `config.MustLoad`, but secrets live
+in Phase and should be fetched at startup instead of stored in `.env` files or
+copied into the runtime image.
+
+Call `phasekit.MustHydrate` after `chassis.RequireMajor(11)` and before
+`config.MustLoad`:
+
+```go
+phasekit.MustHydrate(ctx, phasekit.Config{
+    ServiceToken: os.Getenv("PHASE_SERVICE_TOKEN"),
+    Host:         os.Getenv("PHASE_HOST"),
+    App:          "myservice",
+    Env:          "Production",
+    RequiredKeys: []string{"DATABASE_URL", "JWT_SIGNING_KEY"},
+})
+
+cfg := config.MustLoad[AppConfig]()
+```
+
+Important behavior:
+- Existing environment variables win by default. Set `OverwriteExisting: true`
+  only when Phase should replace local or orchestrator-provided values.
+- `Path` is exact-match. Use `AllPaths: true` to fetch every Phase path.
+- Dynamic secret lease generation is disabled in v1.
+- Literal `[REDACTED]` values fail startup unless `AllowRedacted` is true.
+- The runtime image must include the external `phase` CLI binary.
+
+See `INTEGRATING_PHASE.md` for Docker, CI, path, and troubleshooting guidance.
 
 ---
 

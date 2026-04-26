@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [11.1.4] - 2026-04-26
+
+### Added
+- **phasekit**: Hydrate environment variables from Phase secrets via the external `phase` CLI before `config.MustLoad` runs. Existing env vars win by default, redacted values fail startup, and dynamic secret leases are disabled in v1.
+- **phasekit/phasetest**: Fake Phase CLI test helper for verifying argv, subprocess environment, stdout/stderr, exit codes, and timeout behavior without live network calls.
+- **INTEGRATING_PHASE.md**: Phase setup, Docker, CI, path semantics, troubleshooting, and security guidance.
+
+*(Codex:GPT-5)*
+
 ## [11.1.3] - 2026-04-16
 
 ### Fixed

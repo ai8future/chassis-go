@@ -6,7 +6,7 @@ A composable Go service toolkit for building production-grade microservices. Too
 go get github.com/ai8future/chassis-go/v11
 ```
 
-**Current version:** 11.0.0 &middot; **Go:** 1.25.5+ &middot; **License:** MIT
+**Current version:** 11.1.4 &middot; **Go:** 1.25.5+ &middot; **License:** MIT
 
 ---
 
@@ -73,6 +73,7 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 | `announcekit` | `.../v10/announcekit` | Service/job lifecycle events. Depends on `kafkakit`. Auto-activates with kafkakit |
 | `registrykit` | `.../v10/registrykit` | HTTP client to registry_svc for entity resolution. Depends on `call` |
 | `lakekit` | `.../v10/lakekit` | HTTP client to lake_svc for data lake access. Depends on `call` |
+| `phasekit` | `.../v11/phasekit` | Startup secret hydration from Phase via the `phase` CLI before `config.MustLoad` |
 
 **Tier isolation**: If you only use Tier 1 packages, only `golang.org/x/sync` is pulled in — no gRPC, no OTel SDK.
 
@@ -175,6 +176,26 @@ cfg := config.MustLoad[AppConfig]()
 ```
 
 **Supported types:** `string`, `int`, `int64`, `float64`, `bool`, `time.Duration`, `[]string` (comma-separated)
+
+### `phasekit` - Phase Secret Hydration
+
+Hydrate environment variables from Phase before `config.MustLoad` runs:
+
+```go
+phasekit.MustHydrate(ctx, phasekit.Config{
+    ServiceToken: os.Getenv("PHASE_SERVICE_TOKEN"),
+    Host:         os.Getenv("PHASE_HOST"),
+    App:          "myservice",
+    Env:          "Production",
+    RequiredKeys: []string{"DATABASE_URL"},
+})
+
+cfg := config.MustLoad[AppConfig]()
+```
+
+Existing environment variables win by default, dynamic secret leases are
+disabled in v1, and `[REDACTED]` values fail startup. See
+[`INTEGRATING_PHASE.md`](INTEGRATING_PHASE.md) for Docker and CI guidance.
 
 ### `logz` — Structured JSON Logging
 
