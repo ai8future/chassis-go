@@ -265,6 +265,9 @@ func parseSecrets(out []byte, allowRedacted bool) (map[string]string, error) {
 	if err := json.Unmarshal(out, &raw); err != nil {
 		return nil, fmt.Errorf("phasekit: parse phase JSON: %w", err)
 	}
+	if raw == nil {
+		return nil, fmt.Errorf("phasekit: phase JSON must be an object")
+	}
 
 	secrets := make(map[string]string, len(raw))
 	for key, rawVal := range raw {

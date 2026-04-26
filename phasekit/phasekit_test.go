@@ -124,6 +124,16 @@ func TestParseSecrets(t *testing.T) {
 			wantErr: "parse phase JSON",
 		},
 		{
+			name:    "top level null",
+			out:     []byte(`null`),
+			wantErr: "phase JSON must be an object",
+		},
+		{
+			name:    "top level array",
+			out:     []byte(`[]`),
+			wantErr: "parse phase JSON",
+		},
+		{
 			name:    "non string",
 			out:     []byte(`{"PORT": 8080}`),
 			wantErr: `key "PORT" has non-string value`,
@@ -231,6 +241,27 @@ func TestHydrateHappyPath(t *testing.T) {
 	}
 	if env["PHASE_HOST"] != defaultHost {
 		t.Fatalf("expected host %q, got %q", defaultHost, env["PHASE_HOST"])
+	}
+}
+
+func TestHydrateExplicitBinaryPathDoesNotRequirePATH(t *testing.T) {
+	fake := phasetest.WithFakeBinary(t, phasetest.FakeOptions{
+		Secrets: map[string]string{"PHASEKIT_EXPLICIT_BINARY": "ok"},
+	})
+	t.Setenv("PATH", t.TempDir())
+
+	cfg := validConfig()
+	cfg.BinaryPath = fake.Path
+	result, err := Hydrate(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("Hydrate returned error: %v", err)
+	}
+
+	if result.Source != SourcePhaseCLI {
+		t.Fatalf("expected source %q, got %q", SourcePhaseCLI, result.Source)
+	}
+	if got := os.Getenv("PHASEKIT_EXPLICIT_BINARY"); got != "ok" {
+		t.Fatalf("expected explicit binary path to hydrate env, got %q", got)
 	}
 }
 
@@ -405,6 +436,21 @@ func TestHydrateMissingBinaryFallsBackToExistingEnv(t *testing.T) {
 	}
 }
 
+func TestHydrateDefaultMissingBinaryFallsBackBeforeBootstrapValidation(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	result, err := Hydrate(context.Background(), Config{})
+	if err != nil {
+		t.Fatalf("expected default missing CLI fallback, got error: %v", err)
+	}
+	if result.Source != SourceEnvFallback {
+		t.Fatalf("expected source %q, got %q", SourceEnvFallback, result.Source)
+	}
+	if len(result.Set) != 0 || len(result.Skipped) != 0 {
+		t.Fatalf("expected fallback not to mutate env, got %#v", result)
+	}
+}
+
 func TestMustHydrateMissingBinaryDoesNotPanic(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -431,6 +477,44 @@ func TestHydrateMissingBinaryFallsBackBeforeBootstrapValidation(t *testing.T) {
 	}
 	if result.Source != SourceEnvFallback {
 		t.Fatalf("expected source %q, got %q", SourceEnvFallback, result.Source)
+	}
+}
+
+func TestHydrateExistingCLIKeepsBootstrapValidation(t *testing.T) {
+	phasetest.WithFakeBinary(t, phasetest.FakeOptions{Secrets: map[string]string{}})
+
+	tests := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{
+			name: "missing app",
+			cfg:  Config{},
+			want: "App is required",
+		},
+		{
+			name: "missing env",
+			cfg:  Config{App: "example-app"},
+			want: "Env is required",
+		},
+		{
+			name: "missing service token",
+			cfg:  Config{App: "example-app", Env: "Production"},
+			want: "ServiceToken is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Hydrate(context.Background(), tt.cfg)
+			if err == nil {
+				t.Fatal("expected bootstrap validation error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected error containing %q, got %v", tt.want, err)
+			}
+		})
 	}
 }
 
@@ -462,7 +546,7 @@ func TestHydrateInvalidEnvKeyDoesNotPartiallyApply(t *testing.T) {
 	phasetest.WithFakeBinary(t, phasetest.FakeOptions{
 		Secrets: map[string]string{
 			"PHASEKIT_VALID_BEFORE_BAD": "value",
-			"BAD=KEY":                   "bad",
+			"ZZZ=BAD":                   "bad",
 		},
 	})
 
@@ -479,7 +563,7 @@ func TestHydrateInvalidEnvValueDoesNotPartiallyApply(t *testing.T) {
 	phasetest.WithFakeBinary(t, phasetest.FakeOptions{
 		Secrets: map[string]string{
 			"PHASEKIT_VALID_BEFORE_NUL": "value",
-			"PHASEKIT_NUL_VALUE":        "bad\x00value",
+			"ZZZ_NUL_VALUE":             "bad\x00value",
 		},
 	})
 
@@ -489,6 +573,20 @@ func TestHydrateInvalidEnvValueDoesNotPartiallyApply(t *testing.T) {
 	}
 	if _, ok := os.LookupEnv("PHASEKIT_VALID_BEFORE_NUL"); ok {
 		t.Fatal("expected valid key not to be applied after invalid value failure")
+	}
+}
+
+func TestHydrateEmptyEnvKeyErrors(t *testing.T) {
+	phasetest.WithFakeBinary(t, phasetest.FakeOptions{
+		Secrets: map[string]string{"": "value"},
+	})
+
+	_, err := Hydrate(context.Background(), validConfig())
+	if err == nil {
+		t.Fatal("expected empty env key error")
+	}
+	if !strings.Contains(err.Error(), "env key is empty") {
+		t.Fatalf("expected empty env key error, got %v", err)
 	}
 }
 

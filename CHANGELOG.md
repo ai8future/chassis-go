@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [11.1.7] - 2026-04-26
+
+### Fixed
+- **phasekit**: Reject top-level `null` Phase JSON responses instead of treating them as an empty secret set.
+
+### Tests
+- **phasekit**: Cover default missing-CLI fallback, CLI-present bootstrap validation, explicit absolute `BinaryPath`, non-object Phase JSON, and empty env keys. Tightened invalid-key/value mutation regressions so the valid key sorts before the invalid response.
+
+*(Codex:GPT-5)*
+
 ## [11.1.6] - 2026-04-26
 
 ### Added
