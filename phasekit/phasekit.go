@@ -12,7 +12,7 @@
 // caller explicitly opts in to overwriting them.
 //
 // If the phase CLI binary is missing, Hydrate falls back to the existing
-// process environment and returns Result.Source "env-fallback".
+// process environment and returns Result.Source SourceEnvFallback.
 package phasekit
 
 import (
@@ -35,9 +35,13 @@ const (
 	defaultHost    = "https://console.phase.dev"
 	defaultPath    = "/"
 	defaultTimeout = 10 * time.Second
-	sourcePhaseCLI = "phase-cli"
-	sourceEnv      = "env-fallback"
 	redactedValue  = "[REDACTED]"
+)
+
+// Source values returned in Result.Source.
+const (
+	SourcePhaseCLI    = "phase-cli"
+	SourceEnvFallback = "env-fallback"
 )
 
 var errPhaseBinaryMissing = errors.New("phasekit: phase binary not found in PATH")
@@ -94,7 +98,8 @@ type Result struct {
 	// Skipped lists keys preserved because OverwriteExisting is false.
 	Skipped []string
 
-	// Source identifies the hydration source: "phase-cli" or "env-fallback".
+	// Source identifies the hydration source.
+	// It is either SourcePhaseCLI or SourceEnvFallback.
 	Source string
 }
 
@@ -118,14 +123,11 @@ func Hydrate(ctx context.Context, cfg Config) (Result, error) {
 	}
 
 	cfg = applyDefaults(cfg)
-	if err := validate(cfg); err != nil {
-		return Result{}, err
-	}
 
 	out, err := exportSecrets(ctx, cfg)
 	if err != nil {
 		if errors.Is(err, errPhaseBinaryMissing) {
-			result := Result{Source: sourceEnv}
+			result := Result{Source: SourceEnvFallback}
 			slog.Default().Warn("phasekit: phase CLI not found, using existing environment")
 			return result, nil
 		}
@@ -176,6 +178,9 @@ func validate(cfg Config) error {
 func exportSecrets(ctx context.Context, cfg Config) ([]byte, error) {
 	binaryPath, err := resolveBinary(cfg.BinaryPath)
 	if err != nil {
+		return nil, err
+	}
+	if err := validate(cfg); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(cfg.ServiceToken) == "" {
@@ -296,7 +301,7 @@ func applyEnv(secrets map[string]string, overwriteExisting bool) (Result, error)
 	}
 	sort.Strings(keys)
 
-	result := Result{Source: sourcePhaseCLI}
+	result := Result{Source: SourcePhaseCLI}
 	for _, key := range keys {
 		if !overwriteExisting {
 			if _, exists := os.LookupEnv(key); exists {
@@ -304,10 +309,29 @@ func applyEnv(secrets map[string]string, overwriteExisting bool) (Result, error)
 				continue
 			}
 		}
-		if err := os.Setenv(key, secrets[key]); err != nil {
-			return Result{}, fmt.Errorf("phasekit: set env %q: %w", key, err)
+		if err := validateEnvPair(key, secrets[key]); err != nil {
+			return Result{}, err
 		}
 		result.Set = append(result.Set, key)
 	}
+
+	for _, key := range result.Set {
+		if err := os.Setenv(key, secrets[key]); err != nil {
+			return Result{}, fmt.Errorf("phasekit: set env %q: %w", key, err)
+		}
+	}
 	return result, nil
+}
+
+func validateEnvPair(key, value string) error {
+	if key == "" {
+		return fmt.Errorf("phasekit: env key is empty")
+	}
+	if strings.Contains(key, "=") {
+		return fmt.Errorf("phasekit: env key %q contains '='", key)
+	}
+	if strings.IndexByte(value, 0) >= 0 {
+		return fmt.Errorf("phasekit: env value for %q contains NUL byte", key)
+	}
+	return nil
 }

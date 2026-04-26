@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [11.1.6] - 2026-04-26
+
+### Added
+- **phasekit**: Export `SourcePhaseCLI` and `SourceEnvFallback` constants for `Result.Source` checks.
+
+### Fixed
+- **phasekit**: Missing `phase` CLI fallback now happens before Phase bootstrap validation, so consumers that rely on platform-provided env vars still start even without `App`, `Env`, or `PHASE_SERVICE_TOKEN` bootstrap values.
+- **phasekit**: Invalid env keys or values returned by the Phase CLI are validated before any `os.Setenv` calls, preventing partial process environment mutation on failure.
+
+*(Codex:GPT-5)*
+
 ## [11.1.5] - 2026-04-26
 
 ### Fixed

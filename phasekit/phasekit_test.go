@@ -205,8 +205,8 @@ func TestHydrateHappyPath(t *testing.T) {
 	if len(result.Skipped) != 0 {
 		t.Fatalf("expected no skipped keys, got %v", result.Skipped)
 	}
-	if result.Source != sourcePhaseCLI {
-		t.Fatalf("expected source %q, got %q", sourcePhaseCLI, result.Source)
+	if result.Source != SourcePhaseCLI {
+		t.Fatalf("expected source %q, got %q", SourcePhaseCLI, result.Source)
 	}
 	for _, key := range wantSet {
 		if got := os.Getenv(key); got == "" {
@@ -394,8 +394,8 @@ func TestHydrateMissingBinaryFallsBackToExistingEnv(t *testing.T) {
 		t.Fatalf("expected missing CLI fallback, got error: %v", err)
 	}
 
-	if result.Source != sourceEnv {
-		t.Fatalf("expected source %q, got %q", sourceEnv, result.Source)
+	if result.Source != SourceEnvFallback {
+		t.Fatalf("expected source %q, got %q", SourceEnvFallback, result.Source)
 	}
 	if len(result.Set) != 0 || len(result.Skipped) != 0 {
 		t.Fatalf("expected fallback not to mutate env, got %#v", result)
@@ -417,8 +417,20 @@ func TestMustHydrateMissingBinaryDoesNotPanic(t *testing.T) {
 		Env:        "Production",
 		BinaryPath: t.TempDir() + "/missing-phase",
 	})
-	if result.Source != sourceEnv {
-		t.Fatalf("expected source %q, got %q", sourceEnv, result.Source)
+	if result.Source != SourceEnvFallback {
+		t.Fatalf("expected source %q, got %q", SourceEnvFallback, result.Source)
+	}
+}
+
+func TestHydrateMissingBinaryFallsBackBeforeBootstrapValidation(t *testing.T) {
+	result, err := Hydrate(context.Background(), Config{
+		BinaryPath: t.TempDir() + "/missing-phase",
+	})
+	if err != nil {
+		t.Fatalf("expected missing CLI fallback, got error: %v", err)
+	}
+	if result.Source != SourceEnvFallback {
+		t.Fatalf("expected source %q, got %q", SourceEnvFallback, result.Source)
 	}
 }
 
@@ -443,6 +455,40 @@ func TestHydrateSubprocessEnvAllowlist(t *testing.T) {
 		if env[key] != "" {
 			t.Fatalf("expected %s to be excluded from subprocess env, got %q", key, env[key])
 		}
+	}
+}
+
+func TestHydrateInvalidEnvKeyDoesNotPartiallyApply(t *testing.T) {
+	phasetest.WithFakeBinary(t, phasetest.FakeOptions{
+		Secrets: map[string]string{
+			"PHASEKIT_VALID_BEFORE_BAD": "value",
+			"BAD=KEY":                   "bad",
+		},
+	})
+
+	_, err := Hydrate(context.Background(), validConfig())
+	if err == nil {
+		t.Fatal("expected invalid env key error")
+	}
+	if _, ok := os.LookupEnv("PHASEKIT_VALID_BEFORE_BAD"); ok {
+		t.Fatal("expected valid key not to be applied after invalid key failure")
+	}
+}
+
+func TestHydrateInvalidEnvValueDoesNotPartiallyApply(t *testing.T) {
+	phasetest.WithFakeBinary(t, phasetest.FakeOptions{
+		Secrets: map[string]string{
+			"PHASEKIT_VALID_BEFORE_NUL": "value",
+			"PHASEKIT_NUL_VALUE":        "bad\x00value",
+		},
+	})
+
+	_, err := Hydrate(context.Background(), validConfig())
+	if err == nil {
+		t.Fatal("expected invalid env value error")
+	}
+	if _, ok := os.LookupEnv("PHASEKIT_VALID_BEFORE_NUL"); ok {
+		t.Fatal("expected valid key not to be applied after invalid value failure")
 	}
 }
 
@@ -479,6 +525,8 @@ func TestHydrateContextTimeout(t *testing.T) {
 }
 
 func TestMustHydratePanics(t *testing.T) {
+	phasetest.WithFakeBinary(t, phasetest.FakeOptions{Secrets: map[string]string{}})
+
 	defer func() {
 		if r := recover(); r == nil {
 			t.Fatal("expected panic")

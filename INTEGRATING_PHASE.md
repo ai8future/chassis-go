@@ -74,9 +74,9 @@ Set `OverwriteExisting: true` only when Phase should replace values that are
 already present in the process environment.
 
 When the `phase` binary is missing, `Hydrate` and `MustHydrate` return
-successfully with `Result.Source == "env-fallback"` and do not mutate the
-environment. In that fallback path, `RequiredKeys` are not enforced by
-phasekit because there is no Phase response to validate. `config.MustLoad`
+successfully with `Result.Source == phasekit.SourceEnvFallback` and do not
+mutate the environment. In that fallback path, `RequiredKeys` are not enforced
+by phasekit because there is no Phase response to validate. `config.MustLoad`
 remains the startup gate for required environment variables.
 
 ## Path Semantics
@@ -149,7 +149,7 @@ output.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `Result.Source == "env-fallback"` | Runtime image lacks the CLI | Install/copy `phase`, or rely on platform-provided env vars |
+| `Result.Source == phasekit.SourceEnvFallback` | Runtime image lacks the CLI | Install/copy `phase`, or rely on platform-provided env vars |
 | `phase CLI exited ... 403` | Invalid or expired token | Rotate `PHASE_SERVICE_TOKEN` |
 | `required keys missing` | Secret absent from the configured app/env/path | Check `App`, `Env`, `Path`, and `AllPaths` |
 | `returned redacted value` | Phase AI redaction is active | Disable Phase AI mode or remove `~/.phase/ai.json` |

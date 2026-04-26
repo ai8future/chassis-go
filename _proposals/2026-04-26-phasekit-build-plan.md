@@ -35,7 +35,7 @@ Add a `phasekit` package to chassis-go that hydrates environment variables from 
 | 8 | Treat `[REDACTED]` values as a hydration error by default | Phase docs state AI mode can redact `secrets export` output. Hydrating literal `[REDACTED]` would be worse than failing fast. | Add `AllowRedacted bool` for explicit opt-out in tests or unusual deployments. |
 | 9 | Do not inherit the full parent environment into the Phase subprocess | Avoids leaking `CODEX`, `CLAUDECODE`, `AGENT`, and unrelated application env vars into the CLI. Pass only `PHASE_SERVICE_TOKEN`, `PHASE_HOST`, and a small network/TLS proxy allowlist. | Reduces AI-redaction and env-leak surprises while preserving service-token auth. |
 | 10 | Disable dynamic leases explicitly | `secrets export` can auto-generate leases by default. Startup hydration has no renewal or revocation lifecycle. | Pass `--generate-leases=false` on every v1 export command. |
-| 11 | Missing CLI falls back to existing env | Services should still start when Phase is not available locally or the runtime image intentionally relies on platform-provided env vars. | `Hydrate`/`MustHydrate` return success with `Result.Source == "env-fallback"` and leave env untouched. |
+| 11 | Missing CLI falls back to existing env | Services should still start when Phase is not available locally or the runtime image intentionally relies on platform-provided env vars. | `Hydrate`/`MustHydrate` return success with `Result.Source == SourceEnvFallback` and leave env untouched. |
 
 ## 4. Verified facts (from live testing on `https://phase.z.secure/`)
 
@@ -161,7 +161,7 @@ type Config struct {
 type Result struct {
     Set     []string  // keys hydrated into env
     Skipped []string  // keys preserved because OverwriteExisting is false
-    Source  string    // "phase-cli" or "env-fallback"
+    Source  string    // SourcePhaseCLI or SourceEnvFallback
 }
 
 // MustHydrate calls Hydrate and panics on any error. Matches the
@@ -222,7 +222,7 @@ Each task is independently testable and commit-worthy.
   - optional network/TLS env copied from the parent if present: `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`, `SSL_CERT_DIR`
   - do **not** copy `CODEX`, `CLAUDECODE`, `CURSOR_AGENT`, `OPENCODE`, `AGENT`, or application secret env vars
 - Resolve `BinaryPath` via `exec.LookPath("phase")` if empty
-- If the binary cannot be resolved, return `Result{Source: "env-fallback"}` with no error and no env mutation; `config.MustLoad` remains responsible for failing on missing required runtime config.
+- If the binary cannot be resolved, return `Result{Source: SourceEnvFallback}` with no error and no env mutation; `config.MustLoad` remains responsible for failing on missing required runtime config.
 - Use `exec.CommandContext` to honor context timeouts
 - Wrap exit errors with stderr context for debuggability:
   ```go
@@ -244,7 +244,7 @@ Each task is independently testable and commit-worthy.
 - Iterate parsed pairs (sort keys for deterministic Result ordering)
 - Preserve existing variables by default: if `OverwriteExisting` is false and `os.LookupEnv(key)` is true, skip
 - Otherwise call `os.Setenv(key, value)`
-- Build `Result{Set, Skipped, Source: "phase-cli"}`
+- Build `Result{Set, Skipped, Source: SourcePhaseCLI}`
 - Tests use `t.Setenv` for automatic cleanup
 
 ### Task 6 — `Hydrate` / `MustHydrate` orchestration
@@ -300,7 +300,7 @@ Each task is independently testable and commit-worthy.
   - `[REDACTED]` value fails by default and is allowed only with `AllowRedacted: true`
   - argv includes `--generate-leases=false`
   - argv path handling: default `/`, custom exact path, and `AllPaths: true` passes empty string
-  - missing phase binary: success with `Source: "env-fallback"`, no env mutation, no `MustHydrate` panic
+  - missing phase binary: success with `Source: SourceEnvFallback`, no env mutation, no `MustHydrate` panic
   - subprocess env includes Phase/proxy allowlist and excludes AI/application env vars
   - Non-zero exit code from CLI: error mentions stderr
   - Context timeout: error wraps `context.DeadlineExceeded`
@@ -440,7 +440,7 @@ Each task is independently testable and commit-worthy.
 | Dynamic leases accidentally generated | High | Always pass `--generate-leases=false` in v1 and verify argv in tests. |
 | AI redaction surprises in dev | Medium | Do not inherit AI env vars into the subprocess and reject literal `[REDACTED]` values unless `AllowRedacted` is explicitly true. |
 | Required-key error leaves partial env mutation | Medium | Validate required keys before calling `os.Setenv`. Add regression test. |
-| `phase` binary not in production image | Low | `Hydrate`/`MustHydrate` fall back to the existing environment with `Source: "env-fallback"`. `config.MustLoad` remains the required-config gate. |
+| `phase` binary not in production image | Low | `Hydrate`/`MustHydrate` fall back to the existing environment with `Source: SourceEnvFallback`. `config.MustLoad` remains the required-config gate. |
 
 ## 13. Dependencies
 
