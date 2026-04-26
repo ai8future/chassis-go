@@ -10,15 +10,20 @@
 // Existing environment variables win by default. This lets local .env files,
 // shell exports, and orchestrator-provided secrets override Phase unless the
 // caller explicitly opts in to overwriting them.
+//
+// If the phase CLI binary is missing, Hydrate falls back to the existing
+// process environment and returns Result.Source "env-fallback".
 package phasekit
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -31,13 +36,17 @@ const (
 	defaultPath    = "/"
 	defaultTimeout = 10 * time.Second
 	sourcePhaseCLI = "phase-cli"
+	sourceEnv      = "env-fallback"
 	redactedValue  = "[REDACTED]"
 )
+
+var errPhaseBinaryMissing = errors.New("phasekit: phase binary not found in PATH")
 
 // Config holds bootstrap parameters for hydrating env from Phase.
 type Config struct {
 	// ServiceToken is the Phase service token. Required.
 	// Typically read from os.Getenv("PHASE_SERVICE_TOKEN") by the caller.
+	// Required only when the phase CLI is available.
 	ServiceToken string
 
 	// App is the application name in Phase. Required.
@@ -55,7 +64,8 @@ type Config struct {
 	AllPaths bool
 
 	// RequiredKeys makes Hydrate fail if any listed key is missing from the
-	// Phase response.
+	// Phase response. RequiredKeys are not enforced when the phase CLI is
+	// missing and phasekit falls back to the existing process environment.
 	RequiredKeys []string
 
 	// OverwriteExisting allows Phase values to replace variables already present
@@ -84,7 +94,7 @@ type Result struct {
 	// Skipped lists keys preserved because OverwriteExisting is false.
 	Skipped []string
 
-	// Source identifies the hydration source. Currently always "phase-cli".
+	// Source identifies the hydration source: "phase-cli" or "env-fallback".
 	Source string
 }
 
@@ -114,6 +124,11 @@ func Hydrate(ctx context.Context, cfg Config) (Result, error) {
 
 	out, err := exportSecrets(ctx, cfg)
 	if err != nil {
+		if errors.Is(err, errPhaseBinaryMissing) {
+			result := Result{Source: sourceEnv}
+			slog.Default().Warn("phasekit: phase CLI not found, using existing environment")
+			return result, nil
+		}
 		return Result{}, err
 	}
 
@@ -149,9 +164,6 @@ func applyDefaults(cfg Config) Config {
 }
 
 func validate(cfg Config) error {
-	if strings.TrimSpace(cfg.ServiceToken) == "" {
-		return fmt.Errorf("phasekit: ServiceToken is required")
-	}
 	if strings.TrimSpace(cfg.App) == "" {
 		return fmt.Errorf("phasekit: App is required")
 	}
@@ -165,6 +177,9 @@ func exportSecrets(ctx context.Context, cfg Config) ([]byte, error) {
 	binaryPath, err := resolveBinary(cfg.BinaryPath)
 	if err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(cfg.ServiceToken) == "" {
+		return nil, fmt.Errorf("phasekit: ServiceToken is required")
 	}
 
 	args := []string{
@@ -198,11 +213,24 @@ func exportSecrets(ctx context.Context, cfg Config) ([]byte, error) {
 
 func resolveBinary(binaryPath string) (string, error) {
 	if binaryPath != "" {
+		if !strings.ContainsRune(binaryPath, filepath.Separator) {
+			path, err := exec.LookPath(binaryPath)
+			if err != nil {
+				return "", errPhaseBinaryMissing
+			}
+			return path, nil
+		}
+		if _, err := os.Stat(binaryPath); err != nil {
+			if os.IsNotExist(err) {
+				return "", errPhaseBinaryMissing
+			}
+			return "", fmt.Errorf("phasekit: phase binary %q unavailable: %w", binaryPath, err)
+		}
 		return binaryPath, nil
 	}
 	path, err := exec.LookPath("phase")
 	if err != nil {
-		return "", fmt.Errorf("phasekit: phase binary not found in PATH")
+		return "", errPhaseBinaryMissing
 	}
 	return path, nil
 }

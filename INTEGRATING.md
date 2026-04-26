@@ -172,10 +172,14 @@ cfg := config.MustLoad[AppConfig]()
 Important behavior:
 - Existing environment variables win by default. Set `OverwriteExisting: true`
   only when Phase should replace local or orchestrator-provided values.
+- If the `phase` binary is missing, phasekit returns `Source: "env-fallback"`
+  and leaves the existing environment untouched. `config.MustLoad` then decides
+  whether required env vars are present.
 - `Path` is exact-match. Use `AllPaths: true` to fetch every Phase path.
 - Dynamic secret lease generation is disabled in v1.
 - Literal `[REDACTED]` values fail startup unless `AllowRedacted` is true.
-- The runtime image must include the external `phase` CLI binary.
+- The runtime image must include the external `phase` CLI binary to hydrate
+  from Phase.
 
 See `INTEGRATING_PHASE.md` for Docker, CI, path, and troubleshooting guidance.
 

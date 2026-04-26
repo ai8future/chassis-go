@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [11.1.5] - 2026-04-26
+
+### Fixed
+- **phasekit**: Missing `phase` CLI binary now falls back to the existing process environment instead of causing `MustHydrate` to panic. The fallback returns `Result.Source == "env-fallback"` and leaves required config enforcement to `config.MustLoad`.
+
+*(Codex:GPT-5)*
+
 ## [11.1.4] - 2026-04-26
 
 ### Added

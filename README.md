@@ -6,7 +6,7 @@ A composable Go service toolkit for building production-grade microservices. Too
 go get github.com/ai8future/chassis-go/v11
 ```
 
-**Current version:** 11.1.4 &middot; **Go:** 1.25.5+ &middot; **License:** MIT
+**Current version:** 11.1.5 &middot; **Go:** 1.25.5+ &middot; **License:** MIT
 
 ---
 
@@ -193,8 +193,9 @@ phasekit.MustHydrate(ctx, phasekit.Config{
 cfg := config.MustLoad[AppConfig]()
 ```
 
-Existing environment variables win by default, dynamic secret leases are
-disabled in v1, and `[REDACTED]` values fail startup. See
+Existing environment variables win by default, missing `phase` binaries fall
+back to the existing process environment, dynamic secret leases are disabled in
+v1, and `[REDACTED]` values fail startup. See
 [`INTEGRATING_PHASE.md`](INTEGRATING_PHASE.md) for Docker and CI guidance.
 
 ### `logz` — Structured JSON Logging

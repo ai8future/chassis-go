@@ -25,7 +25,7 @@ Add a `phasekit` package to chassis-go that hydrates environment variables from 
 
 | # | Decision | Rationale | Evidence |
 |---|---|---|---|
-| 1 | Shell out to `phase secrets export --format=json` | Keeps chassis free of new Go dependencies. JavaScript Object Notation (JSON) gives proper escaping for any value content. Runtime images must include the `phase` binary. | Live-verified against `phase.z.secure`. JSON round-trips multi-line / quoted / backslash-containing values correctly via stdlib `json.Unmarshal`. Dotenv format proved broken (see §4.3). |
+| 1 | Shell out to `phase secrets export --format=json` | Keeps chassis free of new Go dependencies. JavaScript Object Notation (JSON) gives proper escaping for any value content. Runtime images need the `phase` binary to hydrate from Phase; if absent, phasekit falls back to existing env. | Live-verified against `phase.z.secure`. JSON round-trips multi-line / quoted / backslash-containing values correctly via stdlib `json.Unmarshal`. Dotenv format proved broken (see §4.3). |
 | 2 | Hydrate via `os.Setenv` before `config.MustLoad` | Minimal coupling, mirrors 12-factor patterns for Vault/Doppler/etc. No API change to existing `config` package. | — |
 | 3 | Preserve existing env vars by default with `OverwriteExisting bool` | Go's zero value should be safe. `OverwriteExisting=false` means local `.env`, orchestrator secrets, and shell exports win over Phase. | Fixes the original `SkipExisting` contradiction where docs claimed default true but a plain bool defaults false. |
 | 4 | `MustHydrate` panics, `Hydrate` returns error | Mirrors existing `config.MustLoad` / `chassis.RequireMajor` ergonomics. | Convention match with `posthogkit`, `kafkakit`. |
@@ -35,6 +35,7 @@ Add a `phasekit` package to chassis-go that hydrates environment variables from 
 | 8 | Treat `[REDACTED]` values as a hydration error by default | Phase docs state AI mode can redact `secrets export` output. Hydrating literal `[REDACTED]` would be worse than failing fast. | Add `AllowRedacted bool` for explicit opt-out in tests or unusual deployments. |
 | 9 | Do not inherit the full parent environment into the Phase subprocess | Avoids leaking `CODEX`, `CLAUDECODE`, `AGENT`, and unrelated application env vars into the CLI. Pass only `PHASE_SERVICE_TOKEN`, `PHASE_HOST`, and a small network/TLS proxy allowlist. | Reduces AI-redaction and env-leak surprises while preserving service-token auth. |
 | 10 | Disable dynamic leases explicitly | `secrets export` can auto-generate leases by default. Startup hydration has no renewal or revocation lifecycle. | Pass `--generate-leases=false` on every v1 export command. |
+| 11 | Missing CLI falls back to existing env | Services should still start when Phase is not available locally or the runtime image intentionally relies on platform-provided env vars. | `Hydrate`/`MustHydrate` return success with `Result.Source == "env-fallback"` and leave env untouched. |
 
 ## 4. Verified facts (from live testing on `https://phase.z.secure/`)
 
@@ -131,8 +132,8 @@ type Config struct {
     AllPaths bool
 
     // If non-empty, Hydrate fails if any of these keys are missing
-    // from the Phase response. Use for critical secrets that must
-    // never silently fall back to defaults.
+    // from the Phase response. Not enforced when the phase CLI is
+    // missing and phasekit falls back to the existing environment.
     RequiredKeys []string
 
     // If true, Phase values replace variables that are already present
@@ -160,7 +161,7 @@ type Config struct {
 type Result struct {
     Set     []string  // keys hydrated into env
     Skipped []string  // keys preserved because OverwriteExisting is false
-    Source  string    // "phase-cli"
+    Source  string    // "phase-cli" or "env-fallback"
 }
 
 // MustHydrate calls Hydrate and panics on any error. Matches the
@@ -221,6 +222,7 @@ Each task is independently testable and commit-worthy.
   - optional network/TLS env copied from the parent if present: `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`, `SSL_CERT_DIR`
   - do **not** copy `CODEX`, `CLAUDECODE`, `CURSOR_AGENT`, `OPENCODE`, `AGENT`, or application secret env vars
 - Resolve `BinaryPath` via `exec.LookPath("phase")` if empty
+- If the binary cannot be resolved, return `Result{Source: "env-fallback"}` with no error and no env mutation; `config.MustLoad` remains responsible for failing on missing required runtime config.
 - Use `exec.CommandContext` to honor context timeouts
 - Wrap exit errors with stderr context for debuggability:
   ```go
@@ -248,6 +250,7 @@ Each task is independently testable and commit-worthy.
 ### Task 6 — `Hydrate` / `MustHydrate` orchestration
 - Wire: defaults → validate → exec → parse → validate required keys/redaction → applyEnv
 - `MustHydrate` panics with formatted message including which step failed
+- `MustHydrate` must not panic when the Phase CLI is missing; it should return the same env-fallback result as `Hydrate`
 - Honor context cancellation (errors from `exec.CommandContext` surface naturally)
 - Logging: emit one INFO log line via `slog.Default()` with count of keys hydrated, never the keys themselves (don't even leak names to logs)
 
@@ -297,6 +300,7 @@ Each task is independently testable and commit-worthy.
   - `[REDACTED]` value fails by default and is allowed only with `AllowRedacted: true`
   - argv includes `--generate-leases=false`
   - argv path handling: default `/`, custom exact path, and `AllPaths: true` passes empty string
+  - missing phase binary: success with `Source: "env-fallback"`, no env mutation, no `MustHydrate` panic
   - subprocess env includes Phase/proxy allowlist and excludes AI/application env vars
   - Non-zero exit code from CLI: error mentions stderr
   - Context timeout: error wraps `context.DeadlineExceeded`
@@ -397,6 +401,7 @@ Each task is independently testable and commit-worthy.
   - Verify a `RequiredKeys` entry that doesn't exist in Phase causes a clean error
   - Verify dynamic secret leases are not generated by the default command
   - Verify `[REDACTED]` output is rejected, either via AI mode or a fake/manual controlled output
+  - Verify removing `phase` from `PATH` falls back to existing env without a phasekit panic
 - [ ] CHANGELOG entry added
 - [ ] VERSION incremented (last step)
 - [ ] Code review pass clean (via `code-reviewer` agent or human review)
@@ -435,7 +440,7 @@ Each task is independently testable and commit-worthy.
 | Dynamic leases accidentally generated | High | Always pass `--generate-leases=false` in v1 and verify argv in tests. |
 | AI redaction surprises in dev | Medium | Do not inherit AI env vars into the subprocess and reject literal `[REDACTED]` values unless `AllowRedacted` is explicitly true. |
 | Required-key error leaves partial env mutation | Medium | Validate required keys before calling `os.Setenv`. Add regression test. |
-| `phase` binary not in production image | Low | Documented prominently in `INTEGRATING_PHASE.md`. `MustHydrate` error message explicitly says "phase binary not found in PATH". |
+| `phase` binary not in production image | Low | `Hydrate`/`MustHydrate` fall back to the existing environment with `Source: "env-fallback"`. `config.MustLoad` remains the required-config gate. |
 
 ## 13. Dependencies
 
@@ -546,7 +551,7 @@ Recommendation for chassis services:
 
 ## Appendix D: ADR
 
-**Decision:** Build `phasekit` as a startup-only Phase CLI JSON export bridge. Preserve existing environment variables by default, reject redacted values by default, and disable dynamic secret leases in v1.
+**Decision:** Build `phasekit` as a startup-only Phase CLI JSON export bridge. Preserve existing environment variables by default, fall back to existing env when the CLI is absent, reject redacted values by default, and disable dynamic secret leases in v1.
 
 **Drivers:**
 - Keep chassis-go free of new third-party Go modules for this integration.
@@ -559,8 +564,8 @@ Recommendation for chassis services:
 - Dynamic leases during startup hydration: rejected for v1 because there is no renewal/revoke lifecycle.
 
 **Consequences:**
-- Runtime images must include the `phase` binary.
-- Services depend on Phase availability during cold start unless they choose a future cache/offline design.
+- Runtime images must include the `phase` binary to hydrate from Phase; otherwise phasekit falls back to existing env.
+- Services depend on Phase availability during cold start only when the CLI is present and Phase returns an execution/auth/export error.
 - Existing orchestrator or local environment variables win unless the caller sets `OverwriteExisting: true`.
 
 **Follow-ups:**

@@ -2,7 +2,9 @@
 
 `phasekit` hydrates environment variables from Phase before `config.MustLoad`
 runs. It is a startup bridge: it calls the `phase` CLI, reads JSON, and applies
-the returned key/value pairs to `os.Environ`.
+the returned key/value pairs to `os.Environ`. If the `phase` binary is not
+installed, phasekit falls back to the existing process environment without
+returning an error.
 
 Use this when your service already uses chassis `config.MustLoad` but wants
 Phase to hold secrets centrally with audit history, role-based access, and
@@ -11,14 +13,16 @@ provides the environment values those structs read.
 
 ## Requirements
 
-- Phase CLI 2.2.0 or newer installed in the runtime image
-- `PHASE_SERVICE_TOKEN` available to the process
+- Phase CLI 2.2.0 or newer installed in the runtime image when Phase hydration
+  is required
+- `PHASE_SERVICE_TOKEN` available to the process when the Phase CLI is present
 - Optional `PHASE_HOST` for self-hosted Phase
 - `chassis.RequireMajor(11)` called before `phasekit.Hydrate` or
   `phasekit.MustHydrate`
 
 `phasekit` adds no Go module dependency on the Phase SDK. Runtime images do
-need the external `phase` binary.
+need the external `phase` binary to hydrate from Phase, but services can still
+start from locally supplied environment variables when the binary is absent.
 
 ## Quickstart
 
@@ -68,6 +72,12 @@ Existing environment variables win by default. That means local `.env` files,
 shell exports, Kubernetes secrets, and CI secrets can override Phase values.
 Set `OverwriteExisting: true` only when Phase should replace values that are
 already present in the process environment.
+
+When the `phase` binary is missing, `Hydrate` and `MustHydrate` return
+successfully with `Result.Source == "env-fallback"` and do not mutate the
+environment. In that fallback path, `RequiredKeys` are not enforced by
+phasekit because there is no Phase response to validate. `config.MustLoad`
+remains the startup gate for required environment variables.
 
 ## Path Semantics
 
@@ -139,7 +149,7 @@ output.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `phasekit: phase binary not found in PATH` | Runtime image lacks the CLI | Install or copy the `phase` binary |
+| `Result.Source == "env-fallback"` | Runtime image lacks the CLI | Install/copy `phase`, or rely on platform-provided env vars |
 | `phase CLI exited ... 403` | Invalid or expired token | Rotate `PHASE_SERVICE_TOKEN` |
 | `required keys missing` | Secret absent from the configured app/env/path | Check `App`, `Env`, `Path`, and `AllPaths` |
 | `returned redacted value` | Phase AI redaction is active | Disable Phase AI mode or remove `~/.phase/ai.json` |
@@ -165,3 +175,5 @@ output.
 5. Pre-set one key locally and verify the local value wins.
 6. Set `OverwriteExisting: true` and verify the Phase value wins.
 7. Add a missing `RequiredKeys` entry and verify startup fails cleanly.
+8. Temporarily remove `phase` from `PATH` and verify startup falls back to
+   existing environment variables without a phasekit panic.

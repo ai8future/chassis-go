@@ -39,11 +39,6 @@ func TestValidateRequiredFields(t *testing.T) {
 		want string
 	}{
 		{
-			name: "missing service token",
-			cfg:  Config{App: "app", Env: "Production"},
-			want: "ServiceToken is required",
-		},
-		{
 			name: "missing app",
 			cfg:  Config{ServiceToken: "token", Env: "Production"},
 			want: "App is required",
@@ -65,6 +60,20 @@ func TestValidateRequiredFields(t *testing.T) {
 				t.Fatalf("expected error containing %q, got %v", tt.want, err)
 			}
 		})
+	}
+}
+
+func TestHydrateMissingServiceTokenWithCLI(t *testing.T) {
+	phasetest.WithFakeBinary(t, phasetest.FakeOptions{Secrets: map[string]string{}})
+
+	cfg := validConfig()
+	cfg.ServiceToken = ""
+	_, err := Hydrate(context.Background(), cfg)
+	if err == nil {
+		t.Fatal("expected missing service token error")
+	}
+	if !strings.Contains(err.Error(), "ServiceToken is required") {
+		t.Fatalf("expected service token error, got %v", err)
 	}
 }
 
@@ -368,6 +377,48 @@ func TestHydrateCustomPathAndAllPaths(t *testing.T) {
 				t.Fatalf("expected path %q, got %q", tt.wantPath, gotPath)
 			}
 		})
+	}
+}
+
+func TestHydrateMissingBinaryFallsBackToExistingEnv(t *testing.T) {
+	t.Setenv("PHASEKIT_ENV_ONLY", "local")
+
+	cfg := Config{
+		App:          "example-app",
+		Env:          "Production",
+		BinaryPath:   t.TempDir() + "/missing-phase",
+		RequiredKeys: []string{"PHASEKIT_REQUIRED_NOT_IN_ENV"},
+	}
+	result, err := Hydrate(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("expected missing CLI fallback, got error: %v", err)
+	}
+
+	if result.Source != sourceEnv {
+		t.Fatalf("expected source %q, got %q", sourceEnv, result.Source)
+	}
+	if len(result.Set) != 0 || len(result.Skipped) != 0 {
+		t.Fatalf("expected fallback not to mutate env, got %#v", result)
+	}
+	if got := os.Getenv("PHASEKIT_ENV_ONLY"); got != "local" {
+		t.Fatalf("expected existing env to remain unchanged, got %q", got)
+	}
+}
+
+func TestMustHydrateMissingBinaryDoesNotPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("expected missing CLI fallback not to panic, got %v", r)
+		}
+	}()
+
+	result := MustHydrate(context.Background(), Config{
+		App:        "example-app",
+		Env:        "Production",
+		BinaryPath: t.TempDir() + "/missing-phase",
+	})
+	if result.Source != sourceEnv {
+		t.Fatalf("expected source %q, got %q", sourceEnv, result.Source)
 	}
 }
 
