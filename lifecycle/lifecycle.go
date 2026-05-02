@@ -20,6 +20,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+var newPublisher = kafkakit.NewPublisher
+
 // AnnounceTimeout is the maximum time to wait for lifecycle announcements
 // (started/stopping). Announcements are best-effort and must not block the
 // service lifecycle. Set before calling Run; not safe for concurrent
@@ -108,6 +110,12 @@ func Run(ctx context.Context, args ...any) error {
 	if err := registry.Init(stop, chassis.Version); err != nil {
 		return fmt.Errorf("lifecycle: registry: %w", err)
 	}
+	registryInitialized := true
+	defer func() {
+		if registryInitialized {
+			registry.Shutdown("startup failed")
+		}
+	}()
 
 	// Resolve service name for kafkakit integrations.
 	svcName := o.serviceName
@@ -125,7 +133,7 @@ func Run(ctx context.Context, args ...any) error {
 		}
 
 		var err error
-		pub, err = kafkakit.NewPublisher(cfg)
+		pub, err = newPublisher(cfg)
 		if err != nil {
 			return fmt.Errorf("lifecycle: kafkakit: %w", err)
 		}
@@ -185,6 +193,7 @@ func Run(ctx context.Context, args ...any) error {
 		reason = "signal"
 	}
 	registry.Shutdown(reason)
+	registryInitialized = false
 
 	if registry.RestartRequested() {
 		exePath, exeErr := os.Executable()

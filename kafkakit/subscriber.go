@@ -116,11 +116,8 @@ func (s *Subscriber) Start(ctx context.Context) error {
 	if s.cfg.Subscriber.AtLeastOnce {
 		opts = append(opts,
 			kgo.DisableAutoCommit(),
-			kgo.OnPartitionsRevoked(func(ctx context.Context, cl *kgo.Client, _ map[string][]int32) {
+			kgo.OnPartitionsRevoked(func(context.Context, *kgo.Client, map[string][]int32) {
 				s.wg.Wait()
-				if err := cl.CommitUncommittedOffsets(ctx); err != nil {
-					slog.Error("kafkakit: revoke commit failed", "err", err)
-				}
 			}),
 		)
 	}
@@ -174,12 +171,20 @@ func (s *Subscriber) Start(ctx context.Context) error {
 
 		if s.cfg.Subscriber.AtLeastOnce {
 			// Batch-and-wait: process all records, then commit offsets.
+			handled := true
+			records := []*kgo.Record{}
 			if s.concurrency() <= 1 {
 				fetches.EachRecord(func(record *kgo.Record) {
-					s.handleRecord(ctx, record)
+					records = append(records, record)
+					if !s.handleRecord(ctx, record) {
+						handled = false
+					}
 				})
 			} else {
+				var batchHandled atomic.Bool
+				batchHandled.Store(true)
 				fetches.EachRecord(func(record *kgo.Record) {
+					records = append(records, record)
 					sem <- struct{}{}
 					s.wg.Add(1)
 					go func() {
@@ -187,12 +192,22 @@ func (s *Subscriber) Start(ctx context.Context) error {
 							<-sem
 							s.wg.Done()
 						}()
-						s.handleRecord(ctx, record)
+						if !s.handleRecord(ctx, record) {
+							batchHandled.Store(false)
+						}
 					}()
 				})
 				s.wg.Wait()
+				handled = batchHandled.Load()
 			}
-			if err := s.client.CommitUncommittedOffsets(ctx); err != nil {
+			if !handled {
+				slog.Error("kafkakit: skipping offset commit after non-durable handler failure")
+				continue
+			}
+			if len(records) == 0 {
+				continue
+			}
+			if err := s.client.CommitRecords(ctx, records...); err != nil {
 				slog.Error("kafkakit: commit offsets failed", "err", err)
 			}
 		} else {
@@ -200,7 +215,7 @@ func (s *Subscriber) Start(ctx context.Context) error {
 			// immediately. Workers drain on shutdown via deferred s.wg.Wait().
 			if s.concurrency() <= 1 {
 				fetches.EachRecord(func(record *kgo.Record) {
-					s.handleRecord(ctx, record)
+					_ = s.handleRecord(ctx, record)
 				})
 			} else {
 				fetches.EachRecord(func(record *kgo.Record) {
@@ -211,7 +226,7 @@ func (s *Subscriber) Start(ctx context.Context) error {
 							<-sem
 							s.wg.Done()
 						}()
-						s.handleRecord(ctx, record)
+						_ = s.handleRecord(ctx, record)
 					}()
 				})
 			}
@@ -220,18 +235,19 @@ func (s *Subscriber) Start(ctx context.Context) error {
 }
 
 // handleRecord processes a single Kafka record through the handler pipeline.
-func (s *Subscriber) handleRecord(ctx context.Context, record *kgo.Record) {
+// It returns false only when processing failed in a way that must not be offset-committed.
+func (s *Subscriber) handleRecord(ctx context.Context, record *kgo.Record) bool {
 	env, err := unwrapEnvelope(record.Value)
 	if err != nil {
 		slog.Error("kafkakit: unwrap envelope failed", "topic", record.Topic, "err", err)
-		return
+		return true
 	}
 
 	evt := envelopeToEvent(env)
 
 	// Tenant filtering
 	if s.filter != nil && !s.filter.ShouldDeliver(evt.TenantID) {
-		return // silently skip events for other tenants
+		return true // silently skip events for other tenants
 	}
 
 	// Find matching handler
@@ -247,13 +263,17 @@ func (s *Subscriber) handleRecord(ctx context.Context, record *kgo.Record) {
 
 	if handler == nil {
 		slog.Warn("kafkakit: no handler for subject", "subject", evt.Subject)
-		return
+		return true
 	}
 
 	if err := handler(ctx, evt); err != nil {
 		slog.Error("kafkakit: handler error", "subject", evt.Subject, "err", err)
-		s.routeToDLQ(evt, err)
+		if dlqErr := s.routeToDLQ(evt, err); dlqErr != nil {
+			slog.Error("kafkakit: DLQ routing failed; leaving offset uncommitted", "subject", evt.Subject, "err", dlqErr)
+			return false
+		}
 	}
+	return true
 }
 
 // doClose performs the actual shutdown: marks unhealthy, drains in-flight
@@ -261,10 +281,23 @@ func (s *Subscriber) handleRecord(ctx context.Context, record *kgo.Record) {
 func (s *Subscriber) doClose() {
 	s.healthy.Store(false)
 	s.wg.Wait()
-	if err := s.client.CommitUncommittedOffsets(context.Background()); err != nil {
-		slog.Error("kafkakit: final commit failed", "err", err)
+	s.mu.RLock()
+	cl := s.client
+	s.mu.RUnlock()
+	if cl == nil {
+		return
 	}
-	s.client.Close()
+	if !s.cfg.Subscriber.AtLeastOnce {
+		if err := cl.CommitUncommittedOffsets(context.Background()); err != nil {
+			slog.Error("kafkakit: final commit failed", "err", err)
+		}
+	}
+	cl.Close()
+	s.mu.Lock()
+	if s.client == cl {
+		s.client = nil
+	}
+	s.mu.Unlock()
 }
 
 // Close shuts down the subscriber.
@@ -280,13 +313,12 @@ func (s *Subscriber) Healthy() bool {
 
 // routeToDLQ publishes a failed event to the dead letter queue topic.
 // DLQ topic format: ai8._dlq.{original_subject}
-func (s *Subscriber) routeToDLQ(evt Event, handlerErr error) {
+func (s *Subscriber) routeToDLQ(evt Event, handlerErr error) error {
 	s.mu.RLock()
 	cl := s.client
 	s.mu.RUnlock()
 	if cl == nil {
-		slog.Error("kafkakit: cannot route to DLQ, no client")
-		return
+		return fmt.Errorf("no kafka client")
 	}
 
 	dlq := dlqTopic(evt.Subject)
@@ -297,8 +329,7 @@ func (s *Subscriber) routeToDLQ(evt Event, handlerErr error) {
 	}
 	data, err := json.Marshal(dlqPayload)
 	if err != nil {
-		slog.Error("kafkakit: marshal DLQ payload", "err", err)
-		return
+		return fmt.Errorf("marshal DLQ payload: %w", err)
 	}
 
 	record := &kgo.Record{
@@ -308,8 +339,9 @@ func (s *Subscriber) routeToDLQ(evt Event, handlerErr error) {
 
 	results := cl.ProduceSync(context.Background(), record)
 	if err := results.FirstErr(); err != nil {
-		slog.Error("kafkakit: DLQ produce failed", "topic", dlq, "err", err)
+		return fmt.Errorf("produce DLQ record to %s: %w", dlq, err)
 	}
+	return nil
 }
 
 // dlqTopic returns the dead letter queue topic for the given subject.

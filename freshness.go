@@ -143,16 +143,20 @@ func rebuild(moduleRoot, pkgPath, binPath string) error {
 	return nil
 }
 
+func autoRebuildDisabled() bool {
+	return os.Getenv("CHASSIS_NO_REBUILD") != ""
+}
+
 // checkFreshness compares the compiled-in appVersion against the VERSION file
 // on disk at the binary's module root. If the disk version is newer, it
 // rebuilds the binary and re-execs. Only active when SetAppVersion() has been
-// called.
+// called, and disabled when CHASSIS_NO_REBUILD is set.
 func checkFreshness() {
 	av := getAppVersion()
 	if av == "" {
 		return
 	}
-	if os.Getenv("CHASSIS_AUTO_REBUILD") != "1" {
+	if autoRebuildDisabled() {
 		return
 	}
 	if os.Getenv("CHASSIS_REBUILD_GUARD") != "" {

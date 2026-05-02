@@ -36,6 +36,7 @@ type ServiceConfig struct {
 }
 
 func main() {
+	chassis.SetAppVersion(chassis.Version)
 	chassis.RequireMajor(11)
 	cfg := config.MustLoad[ServiceConfig]()
 	logger := logz.New(cfg.LogLevel)

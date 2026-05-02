@@ -22,6 +22,7 @@ type AppConfig struct {
 }
 
 func main() {
+	chassis.SetAppVersion(chassis.Version)
 	chassis.RequireMajor(11)
 	cfg := config.MustLoad[AppConfig]()
 	logger := logz.New(cfg.LogLevel)

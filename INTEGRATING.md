@@ -1830,7 +1830,7 @@ cfg := kafkakit.Config{
 - Fast handlers (sub-second). The batch-and-wait stall between polls becomes a real throughput bottleneck.
 - You already have at-most-once semantics baked into your architecture and don't need re-delivery.
 
-**Handler errors and DLQ:** When `AtLeastOnce` is enabled, handler errors are committed after DLQ routing. A message that fails and is routed to the DLQ is considered "handled" — it will not be re-delivered in a loop. This is the correct behavior: the DLQ captures the failure for investigation.
+**Handler errors and DLQ:** When `AtLeastOnce` is enabled, handler errors are committed only after successful DLQ routing. A message that fails and is routed to the DLQ is considered "handled" and will not be re-delivered in a loop. If DLQ publishing fails, the offset is left uncommitted so Kafka can re-deliver the message instead of losing it.
 
 ---
 

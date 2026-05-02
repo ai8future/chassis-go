@@ -1,4 +1,4 @@
-// Example 04-full-service demonstrates all chassis 5.0 modules wired together:
+// Example 04-full-service demonstrates chassis modules wired together:
 // config, logz, lifecycle, errors, secval, metrics, health, httpkit, grpckit, otel.
 //
 // Copy this directory to start a new service.
@@ -43,6 +43,7 @@ type AppConfig struct {
 }
 
 func main() {
+	chassis.SetAppVersion(chassis.Version)
 	chassis.RequireMajor(11)
 
 	cfg := config.MustLoad[AppConfig]()
@@ -111,7 +112,7 @@ func main() {
 	handler := httpkit.Recovery(logger)(
 		httpkit.Tracing()(
 			httpkit.RequestID(
-				guard.Timeout(10*time.Second)(
+				guard.Timeout(10 * time.Second)(
 					httpkit.Logging(logger)(mux),
 				),
 			),

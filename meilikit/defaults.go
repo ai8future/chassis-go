@@ -6,10 +6,11 @@ import (
 	"unicode/utf8"
 )
 
+const defaultLimit int64 = 20
+
 const (
-	defaultLimit     int64 = 20
-	defaultBatchSize       = 1000
-	maxBatchSize           = 10000
+	defaultBatchSize = 1000
+	maxBatchSize     = 10000
 )
 
 // resolveSearchDefaults fills in zero-valued defaults for SearchOptions.

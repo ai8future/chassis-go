@@ -1,10 +1,15 @@
 package kafkakit
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 func TestSubscriberConfig_ConcurrencyDefault(t *testing.T) {
@@ -165,4 +170,69 @@ func TestConcurrentDispatch_DrainOnClose(t *testing.T) {
 	if completed.Load() != int32(totalMessages) {
 		t.Fatalf("expected %d completed after drain, got %d", totalMessages, completed.Load())
 	}
+}
+
+func TestSubscriberCloseBeforeStartIsNoop(t *testing.T) {
+	cfg := Config{BootstrapServers: "localhost:9092"}
+	s, err := NewSubscriber(cfg, "test-group")
+	if err != nil {
+		t.Fatalf("NewSubscriber error: %v", err)
+	}
+
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+	if s.Healthy() {
+		t.Fatal("subscriber should not be healthy after Close")
+	}
+}
+
+func TestHandleRecordBlocksCommitWhenDLQUnavailable(t *testing.T) {
+	cfg := Config{BootstrapServers: "localhost:9092"}
+	s, err := NewSubscriber(cfg, "test-group")
+	if err != nil {
+		t.Fatalf("NewSubscriber error: %v", err)
+	}
+	if err := s.Subscribe("ai8.test.subject", func(context.Context, Event) error {
+		return errors.New("handler failed")
+	}); err != nil {
+		t.Fatalf("Subscribe error: %v", err)
+	}
+
+	record := testRecord(t, "ai8.test.subject")
+	if handled := s.handleRecord(context.Background(), record); handled {
+		t.Fatal("handler failure should block commit when DLQ is unavailable")
+	}
+}
+
+func TestHandleRecordAllowsCommitAfterSuccessfulHandler(t *testing.T) {
+	cfg := Config{BootstrapServers: "localhost:9092"}
+	s, err := NewSubscriber(cfg, "test-group")
+	if err != nil {
+		t.Fatalf("NewSubscriber error: %v", err)
+	}
+	if err := s.Subscribe("ai8.test.subject", func(context.Context, Event) error {
+		return nil
+	}); err != nil {
+		t.Fatalf("Subscribe error: %v", err)
+	}
+
+	record := testRecord(t, "ai8.test.subject")
+	if handled := s.handleRecord(context.Background(), record); !handled {
+		t.Fatal("successful handler should allow commit")
+	}
+}
+
+func testRecord(t *testing.T, subject string) *kgo.Record {
+	t.Helper()
+
+	env, err := wrapEnvelope(context.Background(), "test-source", subject, "", nil, []byte(`{"ok":true}`))
+	if err != nil {
+		t.Fatalf("wrapEnvelope error: %v", err)
+	}
+	raw, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshal envelope error: %v", err)
+	}
+	return &kgo.Record{Topic: subject, Value: raw}
 }

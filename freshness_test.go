@@ -154,11 +154,28 @@ func TestCheckFreshnessSkipsWhenNoAppVersion(t *testing.T) {
 	checkFreshness()
 }
 
-func TestCheckFreshnessSkipsWithAutoRebuildOff(t *testing.T) {
+func TestAutoRebuildEnabledByDefault(t *testing.T) {
+	t.Setenv("CHASSIS_AUTO_REBUILD", "")
+	t.Setenv("CHASSIS_NO_REBUILD", "")
+
+	if autoRebuildDisabled() {
+		t.Fatal("auto rebuild should be enabled by default")
+	}
+}
+
+func TestAutoRebuildDisabledWithNoRebuildEnv(t *testing.T) {
+	t.Setenv("CHASSIS_NO_REBUILD", "1")
+
+	if !autoRebuildDisabled() {
+		t.Fatal("auto rebuild should be disabled when CHASSIS_NO_REBUILD is set")
+	}
+}
+
+func TestCheckFreshnessSkipsWithNoRebuildEnv(t *testing.T) {
 	orig := getAppVersion()
 	SetAppVersion("1.0.0")
 	defer SetAppVersion(orig)
-	// CHASSIS_AUTO_REBUILD not set — should skip
+	t.Setenv("CHASSIS_NO_REBUILD", "1")
 
 	checkFreshness()
 }
@@ -167,7 +184,6 @@ func TestCheckFreshnessSkipsWithGuardEnv(t *testing.T) {
 	orig := getAppVersion()
 	SetAppVersion("1.0.0")
 	defer SetAppVersion(orig)
-	t.Setenv("CHASSIS_AUTO_REBUILD", "1")
 	t.Setenv("CHASSIS_REBUILD_GUARD", "1")
 
 	checkFreshness()

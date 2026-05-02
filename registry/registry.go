@@ -81,23 +81,23 @@ type handlerEntry struct {
 }
 
 var (
-	mu           sync.Mutex
-	active       atomic.Bool
-	logFile      *os.File
-	reg          *Registration
-	svcDir       string
-	pidPath      string
-	logFilePath  string
-	cmdPath      string
-	handlers     = map[string]handlerEntry{}
-	ports        []PortInfo
-	startedAt    time.Time
-	cancelFn     context.CancelFunc
-	restart      atomic.Bool
+	mu            sync.Mutex
+	active        atomic.Bool
+	logFile       *os.File
+	reg           *Registration
+	svcDir        string
+	pidPath       string
+	logFilePath   string
+	cmdPath       string
+	handlers      = map[string]handlerEntry{}
+	ports         []PortInfo
+	startedAt     time.Time
+	cancelFn      context.CancelFunc
+	restart       atomic.Bool
 	stopRequested atomic.Bool
-	lastProgress *ProgressSummary
-	cliMode      bool
-	cliDone      chan struct{}
+	lastProgress  *ProgressSummary
+	cliMode       bool
+	cliDone       chan struct{}
 
 	// BasePath is the root directory for service registrations.
 	// Set before calling lifecycle.Run; not safe for concurrent modification.
@@ -238,7 +238,7 @@ func Init(cancel context.CancelFunc, chassisVersion string) error {
 		Hostname:       host,
 		StartedAt:      startedAt.Format(time.RFC3339),
 		Version:        ver,
-		Language:        "go",
+		Language:       "go",
 		ChassisVersion: chassisVersion,
 		BasePort:       djb2Port(name),
 		Args:           redactArgs(os.Args),
@@ -396,13 +396,15 @@ func InitCLI(chassisVersion string) error {
 	})
 
 	// Start command polling goroutine for stop support (no heartbeat in CLI mode).
-	cliDone = make(chan struct{})
-	go func() {
-		t := time.NewTicker(CmdPollInterval)
+	done := make(chan struct{})
+	interval := CmdPollInterval
+	cliDone = done
+	go func(done <-chan struct{}, interval time.Duration) {
+		t := time.NewTicker(interval)
 		defer t.Stop()
 		for {
 			select {
-			case <-cliDone:
+			case <-done:
 				return
 			case <-t.C:
 				if !active.Load() {
@@ -411,7 +413,7 @@ func InitCLI(chassisVersion string) error {
 				pollOnce()
 			}
 		}
-	}()
+	}(done, interval)
 
 	return nil
 }
@@ -704,50 +706,6 @@ func appendLogLocked(entry map[string]any) {
 	}
 	if _, err := logFile.Write(append(data, '\n')); err != nil {
 		fmt.Fprintf(os.Stderr, "registry: log write failed: %v\n", err)
-	}
-}
-
-// killPreviousInstances sends SIGTERM to any running instances of the same
-// service, waits up to 3 seconds for graceful shutdown, then sends SIGKILL.
-// This prevents port conflicts and duplicate daemons on restart.
-func killPreviousInstances(dir string, myPID int) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		if !strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".cmd.json") || strings.HasSuffix(name, ".tmp") {
-			continue
-		}
-		pidStr := strings.TrimSuffix(name, ".json")
-		pid, err := strconv.Atoi(pidStr)
-		if err != nil || pid == myPID {
-			continue
-		}
-		if !processAlive(pid) {
-			continue
-		}
-		p, err := os.FindProcess(pid)
-		if err != nil {
-			continue
-		}
-		fmt.Fprintf(os.Stderr, "registry: killing stale instance (PID %d)\n", pid)
-		_ = p.Signal(syscall.SIGTERM)
-		deadline := time.Now().Add(3 * time.Second)
-		for time.Now().Before(deadline) {
-			if !processAlive(pid) {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		if processAlive(pid) {
-			_ = p.Signal(syscall.SIGKILL)
-			time.Sleep(100 * time.Millisecond)
-		}
 	}
 }
 

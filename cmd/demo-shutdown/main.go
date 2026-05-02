@@ -31,6 +31,7 @@ import (
 )
 
 func main() {
+	chassis.SetAppVersion(chassis.Version)
 	chassis.RequireMajor(11)
 	logger := logz.New("info")
 

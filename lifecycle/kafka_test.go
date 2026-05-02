@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -152,6 +153,34 @@ func TestRunWithKafkaConfigRegistryIntegration(t *testing.T) {
 	// PID file should be cleaned up after shutdown.
 	if _, err := os.Stat(pidFile); !os.IsNotExist(err) {
 		t.Error("PID file should be removed after Run completes")
+	}
+}
+
+func TestRunCleansRegistryWhenKafkaPublisherCreationFails(t *testing.T) {
+	tmp := resetKafkaTest(t)
+
+	oldNewPublisher := newPublisher
+	newPublisher = func(kafkakit.Config) (*kafkakit.Publisher, error) {
+		return nil, errors.New("publisher failed")
+	}
+	t.Cleanup(func() { newPublisher = oldNewPublisher })
+
+	name := os.Getenv("CHASSIS_SERVICE_NAME")
+	if name == "" {
+		wd, _ := os.Getwd()
+		name = filepath.Base(wd)
+	}
+	pidFile := filepath.Join(tmp, name, strconv.Itoa(os.Getpid())+".json")
+
+	err := Run(context.Background(), WithKafkaConfig(kafkakit.Config{
+		BootstrapServers: "localhost:19092",
+		Source:           "test-svc",
+	}))
+	if err == nil || !strings.Contains(err.Error(), "publisher failed") {
+		t.Fatalf("expected publisher failure, got %v", err)
+	}
+	if _, statErr := os.Stat(pidFile); !os.IsNotExist(statErr) {
+		t.Fatalf("PID file should be removed after Kafka startup failure, stat err: %v", statErr)
 	}
 }
 

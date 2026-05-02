@@ -293,16 +293,7 @@ func (c *Client) ListCollections(ctx context.Context) ([]string, error) {
 // Upsert inserts or updates points in a collection.
 // Uses wait=true so the call blocks until Qdrant confirms persistence.
 func (c *Client) Upsert(ctx context.Context, collection string, points []Point) error {
-	type wire struct {
-		ID      string         `json:"id"`
-		Vector  []float32      `json:"vector"`
-		Payload map[string]any `json:"payload,omitempty"`
-	}
-	pts := make([]wire, len(points))
-	for i, p := range points {
-		pts[i] = wire{ID: p.ID, Vector: p.Vector, Payload: p.Payload}
-	}
-	body := map[string]any{"points": pts}
+	body := map[string]any{"points": points}
 	resp, err := c.doJSON(ctx, http.MethodPut, collPath(collection)+"/points?wait=true", body)
 	if err != nil {
 		return fmt.Errorf("qdrantkit: upsert: %w", err)

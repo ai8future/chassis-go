@@ -25,54 +25,54 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 | Package | Import | Purpose |
 |---------|--------|---------|
 | `chassis` | `github.com/ai8future/chassis-go/v11` | Version gate (`RequireMajor(11)`) and deterministic port assignment (`Port(name, offset)` via djb2) |
-| `config` | `.../v10/config` | Generic env-to-struct config loader via struct tags. Panics on missing required vars |
-| `logz` | `.../v10/logz` | Structured JSON logging wrapping `log/slog` with automatic OTel `trace_id`/`span_id` injection |
-| `lifecycle` | `.../v10/lifecycle` | Signal-aware graceful shutdown orchestration via `errgroup` |
-| `registry` | `.../v10/registry` | File-based service registration at `/tmp/chassis/`. Status reporting, port declarations, custom commands, heartbeat |
-| `testkit` | `.../v10/testkit` | Test helpers: `NewLogger` (writes to `t.Log`), `SetEnv` (with cleanup), `GetFreePort` |
+| `config` | `.../v11/config` | Generic env-to-struct config loader via struct tags. Panics on missing required vars |
+| `logz` | `.../v11/logz` | Structured JSON logging wrapping `log/slog` with automatic OTel `trace_id`/`span_id` injection |
+| `lifecycle` | `.../v11/lifecycle` | Signal-aware graceful shutdown orchestration via `errgroup` |
+| `registry` | `.../v11/registry` | File-based service registration at `/tmp/chassis/`. Status reporting, port declarations, custom commands, heartbeat |
+| `testkit` | `.../v11/testkit` | Test helpers: `NewLogger` (writes to `t.Log`), `SetEnv` (with cleanup), `GetFreePort` |
 
 ### Tier 2: Transports and Clients
 
 | Package | Import | Purpose |
 |---------|--------|---------|
-| `httpkit` | `.../v10/httpkit` | HTTP middleware: RequestID, Logging, Recovery, Tracing. JSON error responses |
-| `grpckit` | `.../v10/grpckit` | gRPC interceptors: Logging, Recovery, Metrics, Tracing. Health service registration |
-| `health` | `.../v10/health` | Parallel health check aggregation with HTTP handler and gRPC adapter |
-| `call` | `.../v10/call` | Resilient outbound HTTP client: retry with exponential backoff, circuit breaker, OTel spans |
+| `httpkit` | `.../v11/httpkit` | HTTP middleware: RequestID, Logging, Recovery, Tracing. JSON error responses |
+| `grpckit` | `.../v11/grpckit` | gRPC interceptors: Logging, Recovery, Metrics, Tracing. Health service registration |
+| `health` | `.../v11/health` | Parallel health check aggregation with HTTP handler and gRPC adapter |
+| `call` | `.../v11/call` | Resilient outbound HTTP client: retry with exponential backoff, circuit breaker, OTel spans |
 
 ### Tier 3: Cross-Cutting
 
 | Package | Import | Purpose |
 |---------|--------|---------|
-| `guard` | `.../v10/guard` | HTTP guards: rate limiter (LRU), CORS, IP filter, security headers, body limits, timeouts |
-| `flagz` | `.../v10/flagz` | Feature flags with percentage rollouts (FNV-1a), pluggable sources, OTel span events |
-| `metrics` | `.../v10/metrics` | OTel-native metrics recorder with cardinality protection (max 1000 label combos) |
-| `otel` | `.../v10/otel` | OpenTelemetry bootstrap: OTLP gRPC traces + metrics, configurable samplers |
-| `errors` | `.../v10/errors` | Unified error type with dual HTTP/gRPC codes and RFC 9457 Problem Details |
-| `secval` | `.../v10/secval` | JSON security validation: blocks prototype pollution keys (`__proto__`, `constructor`, `prototype`) and deep nesting |
-| `work` | `.../v10/work` | Structured concurrency: `Map`, `All`, `Race`, `Stream` — all OTel-traced |
+| `guard` | `.../v11/guard` | HTTP guards: rate limiter (LRU), CORS, IP filter, security headers, body limits, timeouts |
+| `flagz` | `.../v11/flagz` | Feature flags with percentage rollouts (FNV-1a), pluggable sources, OTel span events |
+| `metrics` | `.../v11/metrics` | OTel-native metrics recorder with cardinality protection (max 1000 label combos) |
+| `otel` | `.../v11/otel` | OpenTelemetry bootstrap: OTLP gRPC traces + metrics, configurable samplers |
+| `errors` | `.../v11/errors` | Unified error type with dual HTTP/gRPC codes and RFC 9457 Problem Details |
+| `secval` | `.../v11/secval` | JSON security validation: blocks prototype pollution keys (`__proto__`, `constructor`, `prototype`) and deep nesting |
+| `work` | `.../v11/work` | Structured concurrency: `Map`, `All`, `Race`, `Stream` — all OTel-traced |
 
 ### Tier 4: Utilities
 
 | Package | Import | Purpose |
 |---------|--------|---------|
-| `cache` | `.../v10/cache` | Generic LRU+TTL in-memory cache with `Prune()` |
-| `seal` | `.../v10/seal` | AES-256-GCM encrypt/decrypt, HMAC-SHA256 sign/verify, temporary tokens |
-| `tick` | `.../v10/tick` | Periodic task components for `lifecycle.Run` (`Every` with `Immediate`/`OnError` options) |
-| `webhook` | `.../v10/webhook` | HMAC-signed webhook send with retry, delivery tracking, `VerifyPayload` |
-| `deploy` | `.../v10/deploy` | Convention-based deploy directory discovery, environment detection, endpoints, dependencies, health |
+| `cache` | `.../v11/cache` | Generic LRU+TTL in-memory cache with `Prune()` |
+| `seal` | `.../v11/seal` | AES-256-GCM encrypt/decrypt, HMAC-SHA256 sign/verify, temporary tokens |
+| `tick` | `.../v11/tick` | Periodic task components for `lifecycle.Run` (`Every` with `Immediate`/`OnError` options) |
+| `webhook` | `.../v11/webhook` | HMAC-signed webhook send with retry, delivery tracking, `VerifyPayload` |
+| `deploy` | `.../v11/deploy` | Convention-based deploy directory discovery, environment detection, endpoints, dependencies, health |
 
 ### Tier 4: Integrations
 
 | Package | Import | Purpose |
 |---------|--------|---------|
-| `kafkakit` | `.../v10/kafkakit` | Publish/subscribe to Redpanda event bus with Avro envelopes, tenant filtering, DLQ, AtLeastOnce delivery. Depends on `schemakit`. Uses `github.com/twmb/franz-go` |
-| `schemakit` | `.../v10/schemakit` | Avro schema validation, registration, serialization. Confluent Schema Registry client |
-| `tracekit` | `.../v10/tracekit` | Distributed trace ID propagation (`tr_` + 12 hex). HTTP middleware. Wraps OTel when available |
-| `heartbeatkit` | `.../v10/heartbeatkit` | Auto liveness heartbeats every 30s. Depends on `kafkakit`. Auto-activates with kafkakit |
-| `announcekit` | `.../v10/announcekit` | Service/job lifecycle events. Depends on `kafkakit`. Auto-activates with kafkakit |
-| `registrykit` | `.../v10/registrykit` | HTTP client to registry_svc for entity resolution. Depends on `call` |
-| `lakekit` | `.../v10/lakekit` | HTTP client to lake_svc for data lake access. Depends on `call` |
+| `kafkakit` | `.../v11/kafkakit` | Publish/subscribe to Redpanda event bus with Avro envelopes, tenant filtering, DLQ, AtLeastOnce delivery. Depends on `schemakit`. Uses `github.com/twmb/franz-go` |
+| `schemakit` | `.../v11/schemakit` | Avro schema validation, registration, serialization. Confluent Schema Registry client |
+| `tracekit` | `.../v11/tracekit` | Distributed trace ID propagation (`tr_` + 12 hex). HTTP middleware. Wraps OTel when available |
+| `heartbeatkit` | `.../v11/heartbeatkit` | Auto liveness heartbeats every 30s. Depends on `kafkakit`. Auto-activates with kafkakit |
+| `announcekit` | `.../v11/announcekit` | Service/job lifecycle events. Depends on `kafkakit`. Auto-activates with kafkakit |
+| `registrykit` | `.../v11/registrykit` | HTTP client to registry_svc for entity resolution. Depends on `call` |
+| `lakekit` | `.../v11/lakekit` | HTTP client to lake_svc for data lake access. Depends on `call` |
 | `phasekit` | `.../v11/phasekit` | Startup secret hydration from Phase via the `phase` CLI before `config.MustLoad` |
 
 **Tier isolation**: If you only use Tier 1 packages, only `golang.org/x/sync` is pulled in — no gRPC, no OTel SDK.
@@ -535,7 +535,7 @@ func main() {
 ```
 
 `SetAppVersion` enables two automatic features:
-- **`--version` flag**: `myservice --version` prints `myservice 1.2.3 (chassis-go 10.x.y)` and exits
+- **`--version` flag**: `myservice --version` prints `myservice 1.2.3 (chassis-go 11.x.y)` and exits
 - **Auto-rebuild**: if the binary's compiled version is older than the VERSION file on disk, it recompiles and re-execs automatically. Opt out with `CHASSIS_NO_REBUILD=1`.
 
 See [INTEGRATING.md](INTEGRATING.md) for the full `appversion.go` setup pattern.

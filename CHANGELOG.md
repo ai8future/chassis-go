@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [11.1.8] - 2026-05-02
+
+### Fixed
+- **freshness**: Restore documented auto-rebuild behavior so `SetAppVersion` enables stale-binary rebuilds by default and `CHASSIS_NO_REBUILD=1` is the opt-out.
+- **registry**: Remove the CLI command-poller data race by giving the background goroutine immutable channel and interval state.
+- **kafkakit**: Preserve AtLeastOnce delivery when handler DLQ routing fails by committing only fully durable batches, and make `Subscriber.Close` safe before `Start`.
+- **lifecycle**: Shut down registry state when Kafka publisher startup fails after registry initialization.
+- **docs/examples**: Correct README v11 import paths and version output examples; set app versions in example binaries before `RequireMajor(11)`.
+- **static-analysis**: Remove dead registry code, an unused stats mutex, and simplify Qdrant upsert serialization.
+
+### Tests
+- Added regressions for freshness opt-out behavior, subscriber close-before-start, DLQ failure commit blocking, and lifecycle registry cleanup on Kafka startup failure.
+- Verified with `go test ./...`, `go vet ./...`, `go test -race ./...`, `staticcheck ./...`, and `govulncheck ./...`.
+
+*(Codex:gpt-5.5)*
+
 ## [11.1.7] - 2026-04-26
 
 ### Fixed

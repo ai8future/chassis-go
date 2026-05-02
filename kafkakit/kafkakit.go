@@ -4,7 +4,6 @@ package kafkakit
 
 import (
 	"context"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -39,13 +38,13 @@ type SubscriberConfig struct {
 	MaxPollRecords   int
 	SessionTimeoutMs int
 	Concurrency      int  // 0 or 1 = sequential; >1 = parallel workers
-	AtLeastOnce      bool // When true, offsets are committed only after all handlers in a batch complete. Use for slow handlers (>1s). Trade-off: messages may be reprocessed after a crash (at-least-once vs at-most-once). Handler errors are committed after DLQ routing — no re-delivery loop.
+	AtLeastOnce      bool // When true, offsets are committed only after all handlers in a batch complete. Use for slow handlers (>1s). Handler errors are committed only after successful DLQ routing.
 }
 
 // TenantFilterConfig holds tenant filtering settings.
 type TenantFilterConfig struct {
 	Enabled        bool
-	GrantsCacheTTL int    // seconds
+	GrantsCacheTTL int // seconds
 	GrantsURL      string
 }
 
@@ -90,7 +89,7 @@ type OutboundEvent struct {
 type Stats struct {
 	EventsPublishedTotal int64
 	ErrorsTotal          int64
-	LastEventPublished time.Time
+	LastEventPublished   time.Time
 }
 
 // publisherStats provides thread-safe counters for publisher metrics.
@@ -98,7 +97,6 @@ type publisherStats struct {
 	published     atomic.Int64
 	errors        atomic.Int64
 	lastPublished atomic.Int64 // unix nano
-	mu            sync.Mutex
 }
 
 func (s *publisherStats) incPublished() {
@@ -118,6 +116,6 @@ func (s *publisherStats) snapshot() Stats {
 	return Stats{
 		EventsPublishedTotal: s.published.Load(),
 		ErrorsTotal:          s.errors.Load(),
-		LastEventPublished: last,
+		LastEventPublished:   last,
 	}
 }
