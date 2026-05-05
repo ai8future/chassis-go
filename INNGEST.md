@@ -110,6 +110,8 @@ That's the entire API. Everything else (function creation, steps, retries, concu
 
 ## Multi-tenancy
 
+> **Note:** Multi-tenant support is not currently implemented in the `inngestkit` code — the patterns below are deploy-time conventions applied by consumer services, not features of the kit.
+
 All chassis services share a single self-hosted inngest server. Tenant isolation is achieved through `INNGEST_APP_ID` naming and event data conventions.
 
 ### Three patterns

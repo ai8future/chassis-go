@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [11.1.9] - 2026-05-05
+
+### Documentation
+- **inngestkit**: Add a callout to `INNGEST.md` clarifying that multi-tenant support is not implemented in the kit code; the documented patterns are deploy-time conventions applied by consumer services.
+
+*(Claude Code:Opus 4.7 (1M context))*
+
 ## [11.1.8] - 2026-05-02
 
 ### Fixed
