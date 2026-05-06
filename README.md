@@ -6,7 +6,13 @@ A composable Go service toolkit for building production-grade microservices. Too
 go get github.com/ai8future/chassis-go/v11
 ```
 
-**Current version:** 11.1.11 &middot; **Go:** 1.26.2+ &middot; **License:** MIT
+**Current version:** 11.1.12 &middot; **Go:** 1.26.2+ &middot; **License:** MIT
+
+---
+
+## Requirements
+
+chassis-go v11 declares `go 1.26.0` in `go.mod`, so Go 1.26 is the compiler floor and Go 1.25 toolchains cannot build this module. Build, test, and deploy with Go 1.26.2 or later; the patch floor is required for security fixes in the Go standard library and toolchain.
 
 ---
 

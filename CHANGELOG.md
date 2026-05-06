@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [11.1.12] - 2026-05-06
+
+### Documentation
+- Clarify the Go 1.26 adoption policy in `README.md` and `GO-BEST-PRACTICES.md`: `go.mod` declares the `go 1.26.0` compiler floor, while local development, CI, Docker builds, and releases must use Go 1.26.2+.
+
+### Tests
+- Verified with `go test ./...`.
+
+*(Codex:GPT-5)*
+
 ## [11.1.11] - 2026-05-06
 
 ### Changed
