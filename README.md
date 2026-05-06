@@ -616,6 +616,14 @@ github.com/hamba/avro/v2           (schemakit)
 
 ---
 
+## Database Access
+
+chassis-go ships no database driver. For Postgres, pair it with [chassis-go-addons/pgkit](https://github.com/ai8future/chassis-go-addons/tree/main/pgkit) (a `pgxpool` wrapper) plus [pressly/goose](https://github.com/pressly/goose) for ledger-based migrations.
+
+For typed queries, [sqlc](https://github.com/sqlc-dev/sqlc) is the recommended default: real SQL in `.sql` files, generated plain-Go code, no runtime ORM, and the generated `Queries` struct accepts the same `*pgxpool.Pool` from `pgkit.Open`. **Caveat:** sqlc generates one function per query, so it shines on **stable query shapes** (CRUD-heavy services). For workloads dominated by dynamic queries — admin screens with toggleable filters, reporting, search builders — [Bun](https://github.com/uptrace/bun) or hand-rolled pgx composes more cleanly.
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
