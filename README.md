@@ -6,7 +6,7 @@ A composable Go service toolkit for building production-grade microservices. Too
 go get github.com/ai8future/chassis-go/v11
 ```
 
-**Current version:** 11.1.12 &middot; **Go:** 1.26.2+ &middot; **License:** MIT
+**Current version:** 11.1.13 &middot; **Go:** 1.26.2+ &middot; **License:** MIT
 
 ---
 

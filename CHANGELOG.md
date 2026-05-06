@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [11.1.13] - 2026-05-06
+
+### Changed
+- Ignore local OMX runtime state by adding `.omx/` to `.gitignore`.
+
+### Tests
+- Verified with `go test ./...`.
+
+*(Codex:GPT-5)*
+
 ## [11.1.12] - 2026-05-06
 
 ### Documentation
