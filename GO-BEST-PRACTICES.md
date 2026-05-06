@@ -190,7 +190,7 @@ This still works for Makefile-driven builds and for injecting additional values 
 
 ```dockerfile
 # Build stage
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 WORKDIR /app
 RUN apk add --no-cache git ca-certificates
 COPY go.mod go.sum ./
@@ -215,7 +215,7 @@ ENTRYPOINT ["/{service_name}"]
 
 | Rule | Detail |
 |------|--------|
-| Builder image | `golang:1.25-alpine` |
+| Builder image | `golang:1.26-alpine` |
 | Production image | `gcr.io/distroless/static-debian12:nonroot` (preferred) or `alpine:3.21` if shell access needed |
 | Always set `CGO_ENABLED=0 GOOS=linux GOARCH=amd64` | Even though Docker runs Linux — makes the build explicit and reproducible |
 | Copy VERSION into image | Health check endpoints should report the version |

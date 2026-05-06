@@ -4,7 +4,7 @@ Practical guide for teams adopting chassis-go into an existing Go codebase.
 
 ## Before you start
 
-**Requirements**: Go 1.26.2+ (required for security patches in crypto/tls, crypto/x509, and html/template). The `go.mod` declares `go 1.25.5` for compatibility, but running on anything older than 1.26.2 leaves known CVEs unpatched. All consumer codebases **must** build and deploy with Go 1.26.2 or later.
+**Requirements**: Go 1.26.2+ (required for security patches in crypto/tls, crypto/x509, and html/template). The `go.mod` declares `go 1.26.0` as the minimum; consumer codebases **must** build and deploy with Go 1.26.2 or later to avoid known CVEs.
 
 **What this is**: A cohesive toolkit that covers the foundational concerns of a Go service — config, logging, lifecycle, HTTP, gRPC, health checks, and resilient outbound calls. Import the whole thing. Your `main()` stays yours.
 

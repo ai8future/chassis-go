@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [11.1.10] - 2026-05-06
+
+### Changed
+- Bump Go toolchain floor to `go 1.26.0` in `go.mod`; align `README.md`, `INTEGRATING.md`, `GO-BEST-PRACTICES.md`, and `examples/04-full-service/Dockerfile` to Go 1.26.
+
+*(Claude Code:Opus 4.7 (1M context))*
+
 ## [11.1.9] - 2026-05-05
 
 ### Documentation
