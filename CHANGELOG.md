@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [11.1.11] - 2026-05-06
+
+### Changed
+- Align CI with the supported Go 1.26.2+ policy by moving GitHub Actions test and lint jobs from Go 1.25 to Go 1.26.2; update the README badge to advertise Go 1.26.2+.
+
+### Tests
+- Verified with `go test ./...`.
+
+*(Codex:GPT-5)*
+
 ## [11.1.10] - 2026-05-06
 
 ### Changed
