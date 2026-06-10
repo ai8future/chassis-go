@@ -89,90 +89,115 @@ func loadFields(v reflect.Value, t reflect.Type) {
 	}
 }
 
-// setField converts a raw string value and sets it on the reflected field.
-func setField(fieldVal reflect.Value, raw string) error {
+// Convert parses raw into proto's dynamic type and returns the converted value.
+// It supports the same field types as MustLoad and never panics.
+func Convert(proto any, raw string) (any, error) {
+	protoType := reflect.TypeOf(proto)
+	if protoType == nil {
+		return nil, fmt.Errorf("unsupported field type <nil>")
+	}
+
 	// Handle time.Duration specially before the kind switch.
-	if fieldVal.Type() == reflect.TypeOf(time.Duration(0)) {
+	if protoType == reflect.TypeOf(time.Duration(0)) {
 		d, err := time.ParseDuration(raw)
 		if err != nil {
-			return fmt.Errorf("invalid duration: %w", err)
+			return nil, fmt.Errorf("invalid duration: %w", err)
 		}
-		fieldVal.Set(reflect.ValueOf(d))
-		return nil
+		return d, nil
 	}
 
 	// Handle []string specially.
-	if fieldVal.Type() == reflect.TypeOf([]string{}) {
+	if protoType == reflect.TypeOf([]string{}) {
 		parts := strings.Split(raw, ",")
 		trimmed := make([]string, 0, len(parts))
 		for _, p := range parts {
 			trimmed = append(trimmed, strings.TrimSpace(p))
 		}
-		fieldVal.Set(reflect.ValueOf(trimmed))
-		return nil
+		return trimmed, nil
 	}
 
-	switch fieldVal.Kind() {
+	switch protoType.Kind() {
 	case reflect.String:
-		fieldVal.SetString(raw)
+		v := reflect.New(protoType).Elem()
+		v.SetString(raw)
+		return v.Interface(), nil
 
 	case reflect.Int, reflect.Int64:
 		bitSize := 64
-		if fieldVal.Kind() == reflect.Int {
+		if protoType.Kind() == reflect.Int {
 			bitSize = strconv.IntSize
 		}
 		n, err := strconv.ParseInt(raw, 10, bitSize)
 		if err != nil {
-			return fmt.Errorf("invalid int: %w", err)
+			return nil, fmt.Errorf("invalid int: %w", err)
 		}
-		fieldVal.SetInt(n)
+		v := reflect.New(protoType).Elem()
+		v.SetInt(n)
+		return v.Interface(), nil
 
 	case reflect.Float64:
 		f, err := strconv.ParseFloat(raw, 64)
 		if err != nil {
-			return fmt.Errorf("invalid float64: %w", err)
+			return nil, fmt.Errorf("invalid float64: %w", err)
 		}
-		fieldVal.SetFloat(f)
+		v := reflect.New(protoType).Elem()
+		v.SetFloat(f)
+		return v.Interface(), nil
 
 	case reflect.Bool:
 		b, err := strconv.ParseBool(raw)
 		if err != nil {
-			return fmt.Errorf("invalid bool: %w", err)
+			return nil, fmt.Errorf("invalid bool: %w", err)
 		}
-		fieldVal.SetBool(b)
+		v := reflect.New(protoType).Elem()
+		v.SetBool(b)
+		return v.Interface(), nil
 
 	default:
+		return nil, fmt.Errorf("unsupported field type %s", protoType)
+	}
+}
+
+// setField converts a raw string value and sets it on the reflected field.
+func setField(fieldVal reflect.Value, raw string) error {
+	converted, err := Convert(fieldVal.Interface(), raw)
+	if err != nil {
+		return err
+	}
+	convertedVal := reflect.ValueOf(converted)
+	if !convertedVal.Type().AssignableTo(fieldVal.Type()) {
 		return fmt.Errorf("unsupported field type %s", fieldVal.Type())
 	}
-
+	fieldVal.Set(convertedVal)
 	return nil
 }
 
-// validateField checks a populated field against constraints in the validate
-// struct tag. Supported keys: min, max, oneof, pattern. Multiple constraints
-// are comma-separated (e.g. validate:"min=1,max=65535").
-func validateField(name string, val reflect.Value, tag string) {
-	parts := strings.Split(tag, ",")
+// Check validates v against a validate tag and returns an error instead of
+// panicking. Supported keys: min, max, oneof, pattern. Multiple constraints are
+// comma-separated (e.g. validate:"min=1,max=65535").
+func Check(name string, v any, validateTag string) error {
+	val := reflect.ValueOf(v)
+	parts := strings.Split(validateTag, ",")
 	for _, part := range parts {
 		key, value, _ := strings.Cut(strings.TrimSpace(part), "=")
 		switch key {
 		case "min":
 			minVal, err := strconv.ParseFloat(value, 64)
 			if err != nil {
-				panic(fmt.Sprintf("config: field %s has invalid min value %q in validate tag", name, value))
+				return fmt.Errorf("config: field %s has invalid min value %q in validate tag", name, value)
 			}
 			actual := fieldAsFloat(val)
 			if actual < minVal {
-				panic(fmt.Sprintf("config: field %s value %v is below minimum %s", name, val.Interface(), value))
+				return fmt.Errorf("config: field %s value %v is below minimum %s", name, val.Interface(), value)
 			}
 		case "max":
 			maxVal, err := strconv.ParseFloat(value, 64)
 			if err != nil {
-				panic(fmt.Sprintf("config: field %s has invalid max value %q in validate tag", name, value))
+				return fmt.Errorf("config: field %s has invalid max value %q in validate tag", name, value)
 			}
 			actual := fieldAsFloat(val)
 			if actual > maxVal {
-				panic(fmt.Sprintf("config: field %s value %v exceeds maximum %s", name, val.Interface(), value))
+				return fmt.Errorf("config: field %s value %v exceeds maximum %s", name, val.Interface(), value)
 			}
 		case "oneof":
 			allowed := strings.Fields(value)
@@ -185,18 +210,28 @@ func validateField(name string, val reflect.Value, tag string) {
 				}
 			}
 			if !found {
-				panic(fmt.Sprintf("config: field %s value %q not in allowed set [%s]", name, actual, value))
+				return fmt.Errorf("config: field %s value %q not in allowed set [%s]", name, actual, value)
 			}
 		case "pattern":
 			re, err := regexp.Compile(value)
 			if err != nil {
-				panic(fmt.Sprintf("config: field %s has invalid pattern %q in validate tag: %v", name, value, err))
+				return fmt.Errorf("config: field %s has invalid pattern %q in validate tag: %v", name, value, err)
 			}
 			actual := fmt.Sprintf("%v", val.Interface())
 			if !re.MatchString(actual) {
-				panic(fmt.Sprintf("config: field %s value %q does not match pattern %s", name, actual, value))
+				return fmt.Errorf("config: field %s value %q does not match pattern %s", name, actual, value)
 			}
 		}
+	}
+	return nil
+}
+
+// validateField checks a populated field against constraints in the validate
+// struct tag. Supported keys: min, max, oneof, pattern. Multiple constraints
+// are comma-separated (e.g. validate:"min=1,max=65535").
+func validateField(name string, val reflect.Value, tag string) {
+	if err := Check(name, val.Interface(), tag); err != nil {
+		panic(err.Error())
 	}
 }
 

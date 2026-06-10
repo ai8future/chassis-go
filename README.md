@@ -6,7 +6,7 @@ A composable Go service toolkit for building production-grade microservices. Too
 go get github.com/ai8future/chassis-go/v11
 ```
 
-**Current version:** 11.1.13 &middot; **Go:** 1.26.2+ &middot; **License:** MIT
+**Current version:** 11.1.14 &middot; **Go:** 1.26.2+ &middot; **License:** MIT
 
 ---
 
@@ -32,7 +32,8 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 |---------|--------|---------|
 | `chassis` | `github.com/ai8future/chassis-go/v11` | Version gate (`RequireMajor(11)`) and deterministic port assignment (`Port(name, offset)` via djb2) |
 | `config` | `.../v11/config` | Generic env-to-struct config loader via struct tags. Panics on missing required vars |
-| `logz` | `.../v11/logz` | Structured JSON logging wrapping `log/slog` with automatic OTel `trace_id`/`span_id` injection |
+| `logz` | `.../v11/logz` | Structured JSON/text logging wrapping `log/slog` with automatic OTel `trace_id`/`span_id` injection |
+| `clikit` | `.../v11/clikit` | Stdlib-first CLI toolkit: flat commands, env+flag binding, JSON output, exit codes, color, and opt-in registry integration |
 | `lifecycle` | `.../v11/lifecycle` | Signal-aware graceful shutdown orchestration via `errgroup` |
 | `registry` | `.../v11/registry` | File-based service registration at `/tmp/chassis/`. Status reporting, port declarations, custom commands, heartbeat |
 | `testkit` | `.../v11/testkit` | Test helpers: `NewLogger` (writes to `t.Log`), `SetEnv` (with cleanup), `GetFreePort` |
@@ -81,11 +82,32 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 | `lakekit` | `.../v11/lakekit` | HTTP client to lake_svc for data lake access. Depends on `call` |
 | `phasekit` | `.../v11/phasekit` | Startup secret hydration from Phase via the `phase` CLI before `config.MustLoad` |
 
-**Tier isolation**: If you only use Tier 1 packages, only `golang.org/x/sync` is pulled in — no gRPC, no OTel SDK.
+**Tier isolation**: Foundation packages avoid transport/runtime stacks such as gRPC and the OTel SDK unless you import packages that need them. `clikit` adds no CLI framework and reuses existing chassis/logz plumbing; its trace-aware logging path may include the already-present OTel trace API, but not the OTel SDK.
 
 ---
 
 ## Quick Start
+
+### CLI / batch tool
+
+```go
+func main() {
+    chassis.SetAppVersion(mytool.AppVersion) // app-owned VERSION embed
+    chassis.RequireMajor(11)                 // owns --version and freshness
+
+    app := clikit.New(clikit.Config{Name: "mytool"}).Command(clikit.Command{
+        Name: "greet",
+        Run: func(ctx context.Context, c *clikit.Context) error {
+            return c.Out.Emit(map[string]string{"message": "hello"})
+        },
+    })
+    os.Exit(app.Run(os.Args))
+}
+```
+
+`clikit` does not register `--version` and does not replace `RequireMajor(11)`. Existing v11 services that do not import `clikit` keep their current startup, version, and freshness behavior.
+
+### HTTP service
 
 ```go
 package main
@@ -167,7 +189,7 @@ func main() {
 
 ### `config` — Environment-Based Configuration
 
-Load environment variables into typed structs using struct tags. Fail-fast: missing required config panics at startup.
+Load environment variables into typed structs using struct tags. Fail-fast: missing required config panics at startup. As with other chassis modules, call `chassis.RequireMajor(11)` once before `config.MustLoad`.
 
 ```go
 type AppConfig struct {
@@ -178,6 +200,7 @@ type AppConfig struct {
     AllowedIPs  []string      `env:"ALLOWED_IPS" default:"127.0.0.1"`
 }
 
+chassis.RequireMajor(11)
 cfg := config.MustLoad[AppConfig]()
 ```
 
@@ -579,7 +602,7 @@ curl -X POST http://localhost:8080/v1/demo -d '{"__proto__":"evil"}'  # → 400
 ## Design Principles
 
 1. **Toolkit, not framework** — Chassis never owns `main()`. You call it, not the other way around.
-2. **Tier isolation** — Importing `config` doesn't pull in gRPC or OTel SDK. Dependencies scale with what you use.
+2. **Tier isolation** — Importing `config` does not pull in gRPC or the OTel SDK. Dependencies scale with what you use; `clikit` adds no CLI framework and reuses existing chassis/logz primitives.
 3. **Visible wiring** — No magic startup, no global init. All assembly happens in your code.
 4. **Fail fast** — Missing config, invalid guard parameters, or wrong major version crash immediately at startup with clear messages.
 5. **OTel native** — Tracing, metrics, and log correlation are built in from the ground up, not bolted on.

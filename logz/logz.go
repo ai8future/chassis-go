@@ -3,6 +3,7 @@ package logz
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -15,12 +16,45 @@ import (
 // Accepted levels are "debug", "info", "warn", "error" (case-insensitive).
 // Unrecognized levels default to "info".
 func New(level string) *slog.Logger {
+	return NewWithWriter(level, os.Stderr)
+}
+
+// NewWithWriter creates a structured JSON logger that writes to w.
+// Accepted levels are "debug", "info", "warn", "error" (case-insensitive).
+// Unrecognized levels default to "info".
+func NewWithWriter(level string, w io.Writer) *slog.Logger {
 	chassis.AssertVersionChecked()
 	lvl := parseLevel(level)
-	jsonHandler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+	jsonHandler := slog.NewJSONHandler(w, &slog.HandlerOptions{
 		Level: lvl,
 	})
 	return slog.New(&traceHandler{inner: jsonHandler, base: jsonHandler})
+}
+
+// NewTextWithWriter creates a text logger that writes to w and includes trace
+// attributes when a valid OpenTelemetry span context is attached.
+// Accepted levels are "debug", "info", "warn", "error" (case-insensitive).
+// Unrecognized levels default to "info".
+func NewTextWithWriter(level string, w io.Writer) *slog.Logger {
+	chassis.AssertVersionChecked()
+	lvl := parseLevel(level)
+	textHandler := slog.NewTextHandler(w, &slog.HandlerOptions{
+		Level: lvl,
+	})
+	return slog.New(&traceHandler{inner: textHandler, base: textHandler})
+}
+
+// TraceAttrs returns top-level slog attributes for a valid OpenTelemetry span
+// context. It returns nil when ctx carries no valid span context.
+func TraceAttrs(ctx context.Context) []slog.Attr {
+	sc := trace.SpanContextFromContext(ctx)
+	if !sc.IsValid() {
+		return nil
+	}
+	return []slog.Attr{
+		slog.String("trace_id", sc.TraceID().String()),
+		slog.String("span_id", sc.SpanID().String()),
+	}
 }
 
 // parseLevel converts a level string to a slog.Level.
@@ -47,9 +81,9 @@ func parseLevel(level string) slog.Level {
 // and the base handler (without groups) so that trace_id is always emitted at
 // the top level of the JSON output.
 type traceHandler struct {
-	inner      slog.Handler // current handler with groups and attrs applied
-	base       slog.Handler // base handler without groups, for top-level trace_id
-	groups     []string     // accumulated group names for record reconstruction
+	inner      slog.Handler  // current handler with groups and attrs applied
+	base       slog.Handler  // base handler without groups, for top-level trace_id
+	groups     []string      // accumulated group names for record reconstruction
 	groupAttrs [][]slog.Attr // attrs added via WithAttrs while inside groups, per group depth
 }
 
@@ -66,10 +100,13 @@ func (h *traceHandler) Enabled(ctx context.Context, level slog.Level) bool {
 func (h *traceHandler) Handle(ctx context.Context, r slog.Record) error {
 	var traceID, spanID string
 
-	sc := trace.SpanContextFromContext(ctx)
-	if sc.IsValid() {
-		traceID = sc.TraceID().String()
-		spanID = sc.SpanID().String()
+	for _, attr := range TraceAttrs(ctx) {
+		switch attr.Key {
+		case "trace_id":
+			traceID = attr.Value.String()
+		case "span_id":
+			spanID = attr.Value.String()
+		}
 	}
 
 	if traceID == "" {

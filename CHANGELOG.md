@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [11.1.14] - 2026-06-10
+
+### Added
+- Add `clikit`, a stdlib-first CLI toolkit for chassis v11 apps with flat commands, env+flag binding, structured exit codes, JSON-safe stdout emitters, color handling, signal-aware contexts, and opt-in registry integration that records final CLI completion state.
+- Add `config.Convert` and `config.Check` so CLI flag binding can reuse config parsing and validation without changing `MustLoad` panic behavior.
+- Add `logz.NewWithWriter`, `logz.NewTextWithWriter`, and `logz.TraceAttrs` for testable stdout/stderr separation and trace-aware CLI diagnostics.
+- Add `examples/05-clikit` with an app-owned embedded version plus clikit unit, dependency-boundary, subprocess, generated consumer `--version`, freshness, registry completion, and signal-cancellation coverage.
+
+### Documentation
+- Document `clikit` in the README Tier 1 package table and CLI quick start, including the app-owned version/freshness prologue, config version-gate requirement, dependency-boundary wording, and backward-compatible opt-in behavior.
+
+### Tests
+- Verified with `go test ./config/... ./logz/... ./clikit/... -v`, `go vet ./clikit/...`, `go list -deps ./clikit`, and `go build ./examples/05-clikit`.
+
+*(Codex:gpt-5.5)*
+
 ## [11.1.13] - 2026-05-06
 
 ### Changed

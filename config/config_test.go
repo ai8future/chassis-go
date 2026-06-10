@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -245,6 +246,117 @@ func TestMustLoad_InvalidFloat(t *testing.T) {
 	_ = MustLoad[cfg]()
 }
 
+func TestConvertSupportedTypes(t *testing.T) {
+	type namedString string
+	type namedInt int
+	type namedBool bool
+
+	tests := []struct {
+		name  string
+		proto any
+		raw   string
+		want  any
+	}{
+		{name: "string", proto: "", raw: "hello", want: "hello"},
+		{name: "named string", proto: namedString(""), raw: "hello", want: namedString("hello")},
+		{name: "int", proto: int(0), raw: "42", want: int(42)},
+		{name: "named int", proto: namedInt(0), raw: "42", want: namedInt(42)},
+		{name: "int64", proto: int64(0), raw: "42", want: int64(42)},
+		{name: "float64", proto: float64(0), raw: "3.5", want: float64(3.5)},
+		{name: "bool", proto: false, raw: "true", want: true},
+		{name: "named bool", proto: namedBool(false), raw: "true", want: namedBool(true)},
+		{name: "duration", proto: time.Duration(0), raw: "5s", want: 5 * time.Second},
+		{name: "string slice", proto: []string{}, raw: "alpha, beta,gamma", want: []string{"alpha", "beta", "gamma"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Convert(tt.proto, tt.raw)
+			if err != nil {
+				t.Fatalf("Convert returned error: %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("Convert(%T, %q) = %#v (%T), want %#v (%T)", tt.proto, tt.raw, got, got, tt.want, tt.want)
+			}
+		})
+	}
+}
+
+func TestConvertInvalidValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		proto any
+		raw   string
+	}{
+		{name: "nil prototype", proto: nil, raw: "x"},
+		{name: "unsupported type", proto: struct{}{}, raw: "x"},
+		{name: "invalid int", proto: int(0), raw: "nope"},
+		{name: "invalid int64", proto: int64(0), raw: "nope"},
+		{name: "invalid float64", proto: float64(0), raw: "nope"},
+		{name: "invalid bool", proto: false, raw: "maybe"},
+		{name: "invalid duration", proto: time.Duration(0), raw: "notaduration"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := Convert(tt.proto, tt.raw); err == nil {
+				t.Fatalf("Convert(%T, %q) returned nil error", tt.proto, tt.raw)
+			}
+		})
+	}
+}
+
+func TestCheckValidationPasses(t *testing.T) {
+	tests := []struct {
+		name string
+		v    any
+		tag  string
+	}{
+		{name: "min", v: 10, tag: "min=1"},
+		{name: "max", v: 10, tag: "max=20"},
+		{name: "oneof", v: "info", tag: "oneof=debug info warn error"},
+		{name: "pattern", v: "host-01", tag: "pattern=^[a-z0-9\\-]+$"},
+		{name: "combined", v: 8080, tag: "min=1,max=65535"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := Check("Field", tt.v, tt.tag); err != nil {
+				t.Fatalf("Check returned error: %v", err)
+			}
+		})
+	}
+}
+
+func TestCheckValidationFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		v       any
+		tag     string
+		wantMsg string
+	}{
+		{name: "min", v: 0, tag: "min=1", wantMsg: "below minimum"},
+		{name: "max", v: 70000, tag: "max=65535", wantMsg: "exceeds maximum"},
+		{name: "oneof", v: "verbose", tag: "oneof=debug info warn error", wantMsg: "not in allowed set"},
+		{name: "pattern", v: "INVALID HOST!", tag: "pattern=^[a-z0-9\\-]+$", wantMsg: "does not match pattern"},
+		{name: "invalid min tag", v: 1, tag: "min=nope", wantMsg: "invalid min value"},
+		{name: "invalid max tag", v: 1, tag: "max=nope", wantMsg: "invalid max value"},
+		{name: "invalid pattern tag", v: "x", tag: "pattern=[", wantMsg: "invalid pattern"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Check("Field", tt.v, tt.tag)
+			if err == nil {
+				t.Fatalf("Check(%q) returned nil error", tt.tag)
+			}
+			if !strings.Contains(err.Error(), tt.wantMsg) {
+				t.Fatalf("Check error = %q, want substring %q", err.Error(), tt.wantMsg)
+			}
+		})
+	}
+}
+
 // ---------- validate tag tests ----------
 
 func TestValidateMin(t *testing.T) {
@@ -320,4 +432,3 @@ func TestValidateMinMax(t *testing.T) {
 		t.Fatalf("expected 8080, got %d", cfg.Port)
 	}
 }
-
