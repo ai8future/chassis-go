@@ -1,258 +1,138 @@
-# chassis-go: Product Overview
+> **What is PRODUCT.md?** This file is the product bible for this codebase. It helps
+> someone understand what this software does, why it exists, who it serves, and what
+> business capabilities it provides. It gives context needed to make informed decisions
+> about code changes.
 
-## What Is This Product?
+# What Is chassis-go?
 
-chassis-go is a standardized Go microservice toolkit that eliminates the need for every engineering team to independently solve the same foundational infrastructure problems. It provides a curated, pre-integrated set of production-grade building blocks covering configuration, logging, lifecycle management, HTTP and gRPC transports, resilient service-to-service communication, observability, security, event streaming, and operational visibility. It is the shared substrate on which all Go microservices in the ai8future ecosystem are built.
+chassis-go is the standardized Go microservice **toolkit** for the ai8future / `chassis_suite` ecosystem. It is a curated, pre-integrated set of production-grade building blocks — configuration, structured logging, lifecycle/shutdown, HTTP and gRPC transports, resilient service-to-service calls, observability, security guards, an event bus, operational visibility, and typed clients for shared platform services. It is the shared substrate on which Go microservices in the suite are built, the Go-language sibling of the suite's other language chassis (TypeScript, Python). It is explicitly a **toolkit, not a framework**: chassis never owns `main()`, never calls application code, and never hides wiring behind magic. The developer imports exactly the packages they need and assembles them in their own `main()`.
 
-chassis-go is explicitly a **toolkit, not a framework**. It never owns `main()`. It never calls application code. The developer wires it together explicitly, choosing exactly the components they need. This distinction exists because the organization values business logic that remains pure, portable, and decoupled from infrastructure concerns.
-
----
-
-## Why Does This Product Exist?
+# Why Does It Exist?
 
 ### The Core Problem
 
-Every Go microservice needs the same foundational capabilities: environment-based configuration, structured JSON logging with trace correlation, graceful multi-component shutdown, health checks, HTTP middleware (request IDs, panic recovery, request logging), gRPC interceptors, resilient outbound HTTP calls with retry and circuit breaking, rate limiting, feature flags, security headers, CORS, distributed tracing, metrics, and webhook delivery.
+Every Go microservice needs the same foundational concerns: env-based config, structured JSON logging with trace correlation, graceful multi-component shutdown, health checks, HTTP middleware (request IDs, recovery, logging), gRPC interceptors, resilient outbound calls with retry and circuit breaking, rate limiting, feature flags, security headers/CORS, distributed tracing, metrics, webhooks, and event publishing. Without a shared toolkit, each team re-implements these inconsistently. The results are predictable: divergent error formats between services, observability present in some services and absent in others, different retry strategies, no standard health protocol, and no operational view of what is running and in what state. Operating the fleet gets harder with every new service.
 
-Without a shared toolkit, teams re-implement these capabilities inconsistently across services. The results are predictable: inconsistent error formats between services, missing observability in some services, different retry strategies for outbound calls, no standardized health check protocol, no operational visibility into what services are running and in what state. Debugging and operating the fleet becomes increasingly difficult as the number of services grows.
+### The Business Goal / Business Case
 
-### The Business Goal
+**Reduce time-to-production for a new microservice from weeks to hours while guaranteeing every service in the fleet meets a single, consistent production-readiness bar.** Concretely:
 
-**Reduce time-to-production for new microservices from weeks to hours while ensuring every service in the fleet meets a consistent production-readiness bar.**
+- **Consistency** — every service logs, errors, exposes health, and shuts down the same way, so the fleet is operable as one coherent system instead of a pile of snowflakes.
+- **Faster onboarding** — a developer gets a production-grade service by importing chassis packages and wiring them; no need to hand-roll OpenTelemetry, a circuit breaker, or a rate limiter.
+- **Operational visibility** — every chassis service self-registers, heartbeats, reports status, and accepts operational commands. There are no invisible services.
+- **Fail-fast safety** — config errors, version mismatches, and init-ordering mistakes crash at startup with clear messages, before any traffic is served.
+- **Platform connectivity** — services connect to the suite's entity registry, data lake, event bus, and common backends (LLM inference, vector/search, analytics) without writing boilerplate clients.
 
-Specifically:
+# Who Does It Serve?
 
-1. **Consistency across the fleet**: Every service logs the same way, reports errors the same way, exposes health the same way, handles shutdown the same way. This makes the entire fleet operable as a coherent system rather than a collection of snowflakes.
+chassis-go is consumed by **other code, not end users**:
 
-2. **Faster onboarding**: A new developer can spin up a production-grade service by importing chassis packages and wiring them in `main()`. They do not need to learn how to set up OpenTelemetry, how to build a circuit breaker, or how to write a rate limiter.
+- **Service developers** building Go microservices for the suite. They import chassis, wire it in `main()`, and get consistent observability, error handling, and operability.
+- **Platform engineers** maintaining shared infrastructure (entity registry, data lake, event bus). They use the integration kits to keep cross-service communication uniform.
+- **CLI / batch tool authors** who use `clikit` + the registry to ship visible, version-gated command-line tools that fit the same operational fabric.
+- **Operations** who monitor and manage the fleet via the file registry, heartbeats, and lifecycle events, and can issue commands (stop, restart, custom) to running services.
 
-3. **Operational visibility**: Every service that uses chassis automatically registers itself, publishes heartbeats, reports status, and accepts operational commands. There are no invisible services.
-
-4. **Fail-fast safety**: Configuration errors, version mismatches, and initialization ordering mistakes crash the process immediately at startup with clear messages. This prevents services from running in degraded or undefined states that are far harder to diagnose in production.
-
-5. **Platform connectivity**: Services built with chassis can immediately connect to the organization's entity registry, knowledge graph, data lake, and event bus without writing boilerplate HTTP clients or Kafka producers/consumers.
-
----
-
-## What Business Logic Does It Contain?
+# Business Capabilities
 
 ### 1. Version Compatibility Contract
+Every service declares the chassis major it expects (`chassis.RequireMajor(11)`) at the top of `main()`; a mismatch exits immediately, and every chassis package asserts the gate was called before it runs. `SetAppVersion` additionally powers a free `--version` flag and stale-binary auto-rebuild. **Business value:** prevents silent behavioral drift on upgrade, turns version skew into an actionable message instead of subtle bugs, and forces a conscious upgrade checkpoint.
 
-chassis-go enforces a mandatory version gate. Every service must declare at the top of `main()` which major version of chassis it expects (`chassis.RequireMajor(11)`). If the installed library's major version does not match, the process exits immediately. Every chassis package also checks that `RequireMajor` was called before it runs.
+### 2. Fail-Fast Environment Configuration
+`config` loads env vars into typed structs via struct tags (`string`, `int`, `int64`, `float64`, `bool`, `time.Duration`, `[]string`); required fields without defaults panic at startup. **Business value:** misconfiguration — the most common preventable production incident — is caught before the service accepts traffic, never leaving a service that looks healthy but is wrong.
 
-**Business rationale**: This prevents silent behavioral changes when the toolkit is upgraded without review. A version mismatch produces a clear, actionable error message rather than subtle bugs. It also creates an upgrade checkpoint — teams must consciously acknowledge major version changes.
-
-### 2. Environment-Based Configuration with Fail-Fast Semantics
-
-The `config` package loads environment variables into typed Go structs via struct tags. Fields without defaults that are not present in the environment cause an immediate panic at startup.
-
-**Business rationale**: Configuration errors are the most common class of production incidents that are preventable at startup. By panicking immediately when required configuration is missing, the service never reaches a state where it appears healthy but is actually misconfigured. This "binary safety" principle means: either the service has everything it needs to run, or it crashes before accepting any traffic.
-
-Supported types include strings, integers, floats, booleans, durations, and comma-separated string slices, covering the vast majority of service configuration needs without requiring external config file parsers.
-
-### 3. Structured Logging with Automatic Trace Correlation
-
-The `logz` package wraps Go's standard `log/slog` library to produce JSON logs with automatic OpenTelemetry trace ID and span ID injection. When a request is being traced, every log line produced in that request's context automatically includes `trace_id` and `span_id` fields.
-
-**Business rationale**: Structured JSON logging is required for production log aggregation systems (ELK, Loki, Datadog). Automatic trace correlation means engineers can jump from a log line directly to the distributed trace without manual instrumentation. This dramatically reduces mean-time-to-diagnose for production issues.
+### 3. Structured Logging with Trace Correlation
+`logz` wraps `log/slog` to emit JSON with automatic OTel `trace_id`/`span_id` injection on every line in a traced context. **Business value:** logs are aggregation-ready (Datadog/Loki/ELK) and engineers can jump from a log line straight to its distributed trace, cutting mean-time-to-diagnose.
 
 ### 4. Graceful Shutdown Orchestration
+`lifecycle.Run` catches SIGTERM/SIGINT, cancels a shared context, drains all components via `errgroup`, and fails the group if any peer errors. It also initializes the registry on startup. **Business value:** Kubernetes sends SIGTERM before killing pods; standardized drain prevents dropped in-flight requests, data corruption, and orphaned resources without each team re-solving it.
 
-The `lifecycle` package provides signal-aware shutdown orchestration. It catches SIGTERM/SIGINT, cancels a shared context, and waits for all service components (HTTP server, gRPC server, background workers, event consumers) to drain cleanly. If any component returns an error, all others are signaled to stop.
-
-**Business rationale**: Kubernetes sends SIGTERM before killing pods. Services that do not handle graceful shutdown drop in-flight requests, corrupt data, or leave orphaned resources. By providing a standardized shutdown orchestrator, every chassis service handles these signals correctly without each team needing to implement the pattern themselves.
-
-### 5. File-Based Service Registration and Command System
-
-The `registry` package creates a per-service directory under `/tmp/chassis/<service-name>/` containing a JSON PID file, a structured JSONL event log, and a command file. Services automatically register on startup, log heartbeats every 30 seconds, poll for commands every 3 seconds, and clean up stale registrations from dead processes.
-
-**Business rationale**: This solves the "what is running on this machine?" problem that plagues development and staging environments. External tooling (viewers, dashboards, CLI utilities) can discover all running chassis services, see their status, inspect their ports, and send commands (stop, restart, custom operations like cache flushing) without needing a service mesh or container orchestrator. The command system enables operational workflows like graceful restarts and custom administrative actions.
-
-The registry supports both **service mode** (long-running processes with heartbeat) and **CLI/batch mode** (short-lived processes with progress tracking), ensuring that even batch jobs are visible to operations.
-
-Security is enforced: directory permissions are verified at 0700, PID files use 0600 permissions, sensitive command-line arguments (passwords, tokens, keys) are automatically redacted, and atomic file writes prevent corruption.
+### 5. Operational Visibility via File Registry
+On startup each service registers under `/tmp/chassis/<service>/` with a JSON PID file, a JSONL event log, and a polled command file; it heartbeats every 30s, polls commands every 3s, honors built-in `stop`/`restart`, and cleans up stale PIDs. **Business value:** answers "what is running here, in what state?" for dev/staging without a service mesh, and lets external tooling issue operational commands (including custom ones like cache flush).
 
 ### 6. Deterministic Port Assignment
+`chassis.Port(name, offset)` derives a stable port (djb2 hash, range 5000–48000) with conventional role offsets (HTTP +0, gRPC +1, metrics +2). **Business value:** eliminates port-collision friction across developer machines and environments and gives tooling a predictable convention.
 
-The root `chassis` package provides `Port(name, offset)` which derives a stable, deterministic port number from a service name using the djb2 hash algorithm. The result is always in the range 5000-48000, safely below the OS ephemeral port range.
+### 7. Resilient Outbound HTTP
+`call` provides retry (exponential backoff + jitter on 5xx, never on 4xx), circuit breakers (Closed/Open/HalfOpen, global singletons keyed by name), timeouts, Bearer-token injection, OTel client spans, and batch concurrency via `work.Map`. **Business value:** service-to-service calls are the dominant microservice failure mode; backoff absorbs transient faults and breakers prevent cascade failures.
 
-**Business rationale**: When multiple services run on the same development machine, port collisions are a constant friction. Deterministic ports mean that the same service always gets the same port across all developer machines and environments. Standard role offsets (HTTP=+0, gRPC=+1, metrics=+2) create a predictable convention that tooling can rely on.
+### 8. Unified Error Model
+`errors.ServiceError` carries both an HTTP status and a gRPC code, supports fluent detail/cause chaining (`errors.Is/As`-compatible) and RFC 9457 Problem Details, with factory constructors for the standard categories (400/401/403/404/413/429/504/503/500). **Business value:** in a dual HTTP+gRPC fleet, one error type that knows both representations prevents mistranslation, and clients get machine-readable structured errors.
 
-### 7. Resilient Outbound HTTP Client
+### 9. HTTP & gRPC Middleware
+`httpkit` supplies `func(http.Handler) http.Handler` middleware (RequestID, Logging, Recovery, Tracing); `grpckit` supplies matching unary/stream interceptors plus health registration. Both use standard signatures. **Business value:** every transport gets consistent observability and panic safety while composing with any router or gRPC server — no proprietary framework to learn.
 
-The `call` package provides an HTTP client with configurable retry (exponential backoff with jitter on 5xx, never on 4xx), circuit breaker (Closed/Open/HalfOpen states with configurable thresholds), timeout enforcement, automatic Bearer token injection, and automatic OTel client span creation with W3C trace header propagation.
+### 10. Parallel Health Aggregation
+`health` runs dependency checks concurrently, reports every result (no short-circuit), and serves 200/503 over HTTP or healthy/unhealthy over gRPC Health V1. **Business value:** low-latency readiness probes that surface *all* failing dependencies, which is what diagnosing partial outages requires.
 
-Circuit breakers are global singletons keyed by name, so multiple clients hitting the same downstream service share circuit state. The client also supports batch concurrent requests via `work.Map`.
+### 11. Request Guards (Defense-in-Depth)
+`guard` provides LRU-bounded rate limiting (spoof-resistant key extraction), CORS, CIDR IP filtering (deny wins), security headers (CSP, HSTS, frame/MIME/referrer/permissions), body-size limits (413), and request timeouts (504). **Business value:** application-layer protection against abuse, cross-origin attacks, common web vulns, and resource-exhaustion — uniformly, per service.
 
-**Business rationale**: Service-to-service calls are the primary failure mode in microservice architectures. Retry with backoff handles transient failures. Circuit breakers prevent cascade failures by fast-failing when a downstream service is unhealthy. Token injection removes authentication boilerplate. OTel integration means every outbound call appears in distributed traces automatically.
+### 12. Feature Flags with Stable Rollouts
+`flagz` offers boolean checks, percentage rollouts via consistent FNV-1a hashing (same user → same result), string variants, and pluggable/composable sources (env, JSON, map), recorded as OTel span events. **Business value:** gradual rollouts, A/B tests, and kill switches without redeploys, with stable per-user behavior.
 
-### 8. Unified Error Type with Dual HTTP/gRPC Codes and RFC 9457 Problem Details
+### 13. OTel-Native Observability
+`otel` boots the SDK in one call (OTLP gRPC traces+metrics, W3C propagation, configurable samplers); `metrics` is a recorder with cardinality protection (max 1000 label combos/metric). All packages emit telemetry automatically. **Business value:** observability is the default rather than an afterthought, and cardinality limits keep high-cardinality labels from overwhelming the metrics backend.
 
-The `errors` package provides a `ServiceError` type that carries both an HTTP status code and a gRPC status code, fluent detail attachment, error cause chaining (compatible with `errors.Is/As`), and RFC 9457 Problem Details rendering.
+### 14. Security & Crypto Primitives
+`secval` blocks prototype-pollution keys (`__proto__`, `constructor`, `prototype`) and >20-level nesting; `seal` provides AES-256-GCM, HMAC-SHA256, and temporary signed tokens (expiry + JTI). **Business value:** prevents a class of injection attacks and the common pitfalls of hand-rolled crypto (weak key derivation, nonce reuse, timing leaks).
 
-Factory constructors cover the standard error categories: validation (400), unauthorized (401), forbidden (403), not found (404), payload too large (413), rate limit (429), timeout (504), dependency unavailable (503), and internal (500).
+### 15. Structured Concurrency & Scheduling
+`work` offers `Map`/`All`/`Race`/`Stream` with bounded pools and OTel tracing; `tick.Every` runs lifecycle-integrated periodic tasks with jitter and error policy; `cache` is a generic LRU+TTL store. **Business value:** safe fan-out/fan-in without goroutine leaks, thundering-herd-resistant periodic work, and a standard in-memory cache instead of per-team variants.
 
-**Business rationale**: In a system with both HTTP and gRPC transports, errors must translate cleanly across protocols. A single error type that knows both its HTTP and gRPC representation prevents the common bug where an error is 404 in HTTP but maps to INTERNAL in gRPC. RFC 9457 Problem Details compliance means API consumers get structured, machine-readable error responses rather than ad-hoc JSON.
+### 16. Webhook Delivery & Deploy Conventions
+`webhook` sends HMAC-SHA256-signed deliveries with retry, delivery IDs, and a receive-side `VerifyPayload`; `deploy` discovers convention-based deploy directories, loads env/secret files without clobbering, finds TLS certs, and detects the runtime environment. **Business value:** integrity-verified event notifications to external systems, and consistent, secure per-environment configuration across the fleet.
 
-### 9. HTTP Middleware Stack
+### 17. Event Bus & Schema Contracts
+`kafkakit` publishes/subscribes to Redpanda with a standard envelope (event ID, ms timestamp, source, subject, trace ID, tenant ID, entity refs), tenant-based delivery filtering, dead-letter routing, wildcard subscriptions, and at-most-once/`AtLeastOnce` delivery; `schemakit` validates and registers Avro schemas in Confluent wire format. **Business value:** the event bus is the asynchronous backbone — standard envelopes keep every event traceable, attributable, and tenant-filterable, and schema enforcement protects event contracts.
 
-The `httpkit` package provides standard `func(http.Handler) http.Handler` middleware for request ID generation (UUID v4), structured request logging, panic recovery (catches panics, logs stack traces, returns 500), and OTel tracing (creates server spans, extracts W3C TraceContext from incoming headers).
+### 18. Liveness & Lifecycle Events
+`heartbeatkit` emits liveness to `ai8.infra.heartbeat` every 30s; `announcekit` emits service- and job-lifecycle events to `ai8.infra.{service}.lifecycle.{state}` and `.../job.{state}`. Both build on `kafkakit`. **Business value:** automated dead-service detection plus dashboards, alerting, and audit trails of service and batch-job state transitions.
 
-**Business rationale**: Every HTTP service needs these four capabilities. By providing them as composable middleware compatible with any Go router (stdlib ServeMux, chi, gorilla/mux), chassis eliminates duplicate implementations while preserving full routing flexibility.
+### 19. Platform & Backend Clients
+Typed `call`-backed clients: `registrykit` (registry_svc entity/relationship/graph operations), `lakekit` (lake_svc SQL/history/datasets), `inferkit` (OpenAI-compatible LLM chat/stream/embeddings), `ollamakit` (Ollama native API), `meilikit` (Meilisearch), `qdrantkit` (Qdrant vectors), and `posthogkit` (batched analytics). **Business value:** every consumer talks to shared infrastructure and common backends through one client with consistent timeouts, retries, headers (`X-Tenant-ID`, `X-Trace-ID`), and tracing — no ad-hoc HTTP clients.
 
-### 10. gRPC Interceptor Stack
+### 20. CLI Toolkit, Secret Hydration & Durable Workflows
+`clikit` is a stdlib-first CLI toolkit (flat commands, env+flag binding, JSON-safe output, exit codes, color, signal-aware context, opt-in registry completion) that never owns `main()` or calls `os.Exit`; `phasekit` hydrates env vars from Phase via the `phase` CLI before `config.MustLoad`; `inngestkit` is thin setup glue for the Inngest Go SDK. **Business value:** batch tools and CLIs join the same version-gate and operational fabric, secrets load consistently without linking a vendor SDK, and durable-workflow services wire up with minimal, opt-in glue.
 
-The `grpckit` package provides unary and stream interceptors for logging, panic recovery (logs panics with full stack traces, returns `codes.Internal`), metrics (OTel `rpc.server.duration` histogram), and tracing. It also provides health service registration that decouples gRPC from the health check package.
+# Business Logic and Rules / Key Design Decisions
 
-**Business rationale**: The same four concerns that apply to HTTP apply to gRPC. Standardized interceptors ensure every gRPC service in the fleet has consistent observability and error handling.
+| Decision | Rule | Why this matters |
+|---|---|---|
+| Toolkit, not framework | chassis never owns `main()` or calls app code | Business logic stays pure, portable, and testable; no lock-in to the toolkit |
+| Version gate is mandatory | `RequireMajor(11)` first; every module asserts it | Upgrades are conscious checkpoints; skew fails loudly, not subtly |
+| Fail fast everywhere | Missing config, bad guard params, wrong major, or pre-gate use all crash at startup | Catching errors before traffic is strictly safer than failing under load |
+| Tier isolation | Importing `config`/`logz` does not pull gRPC or the OTel SDK; heavy deps live in the kits that need them | A simple CLI pays only for `golang.org/x/sync`, not the full dependency tree |
+| OTel native | Tracing, metrics, and log correlation are built into every layer | Observability is the default state, not a per-team add-on |
+| Standard interfaces | HTTP `func(http.Handler) http.Handler`, standard gRPC interceptors, `*slog.Logger` | Composes with the broader Go ecosystem; nothing proprietary to learn |
+| Cardinality cap | `metrics` drops new label combos after 1000/metric | Prevents high-cardinality labels from exploding the metrics backend |
+| Retry policy | `call`/`webhook` retry on 5xx with backoff+jitter, never on 4xx | Absorbs transient failures without hammering on deterministic client errors |
+| Global breakers | Circuit breakers are singletons keyed by name | All clients to a downstream share breaker state, so the fleet fast-fails together |
+| Registry security | Dirs 0700, PID files 0600, sensitive args redacted, atomic writes | Operational visibility must not leak secrets or corrupt state |
+| secval scope | Reject `__proto__`/`constructor`/`prototype` and >20 nesting; not for file uploads/streams (parses fully into memory) | Stops prototype pollution and nesting attacks; size limits must come first |
+| Go floor | `go.mod` declares `go 1.26.0`; build/CI/Docker use Go 1.26.2+ | The patch floor carries stdlib/toolchain security fixes |
 
-### 11. Health Check Aggregation
+# How to Think About Code Changes
 
-The `health` package runs multiple dependency checks (database, cache, external services) in parallel, reports per-check results, and returns 200/503 for HTTP or healthy/unhealthy for gRPC Health V1. Individual check failures do not short-circuit other checks.
+- **Preserve the toolkit contract.** Do not make chassis own `main()`, auto-wire, or call application code. New capabilities are opt-in packages the consumer assembles.
+- **Respect tier isolation.** Foundation packages (`chassis`, `config`, `logz`, `clikit`, `lifecycle`, `registry`, `testkit`) must not gain transport/runtime dependencies (gRPC, OTel SDK, Kafka, Avro). Heavy dependencies belong only in the kit that needs them. Verify with `go list -deps`.
+- **Keep the version gate first.** Any new entry point asserts the gate; any new module calls `AssertVersionChecked()` at its boundaries. The module path is `github.com/ai8future/chassis-go/v11` — all internal imports use `/v11`.
+- **What belongs here vs. a sibling repo:** generic, cross-service infrastructure belongs in chassis-go. Database drivers do **not** — chassis ships none; Postgres pairs with `chassis-go-addons/pgkit`. Business/domain logic belongs in the consuming service, never here. Equivalent capabilities for other languages live in the sibling chassis repos, not here.
+- **Honor AGENTS.md:** increment `VERSION` and annotate `CHANGELOG.md` for code changes (read `VERSION` only at the last moment to avoid collisions), keep `appversion.go` embedding `VERSION` in consumers, and stay out of the `_studies`/`_proposals`/`_rcodegen`/`_bugs_*` directories.
 
-**Business rationale**: Load balancers and Kubernetes readiness probes need health endpoints. Running checks in parallel keeps health endpoint latency low. Reporting all failures (not just the first) is critical for diagnosing partial outages where multiple dependencies fail simultaneously.
+# Deployment Model / Scale
 
-### 12. Request Guards
+chassis-go is a **library**, not a deployed service — it has no runtime of its own and is `go get`-imported into consumer services. It is designed for fleet scale: every consumer self-registers, heartbeats, and emits lifecycle events so the fleet is observable as a coherent system. It targets containerized/Kubernetes deployment (graceful SIGTERM handling, deploy-directory conventions, OTLP export) but runs anywhere a Go binary runs. Dependency weight scales with usage — a CLI tool stays lean while a full service opts into transports, the event bus, and platform clients.
 
-The `guard` package provides HTTP middleware for six protection concerns:
+# Target Users / Use Cases
 
-- **Rate limiting**: Per-key token bucket with LRU eviction for bounded memory. Configurable key extraction (remote address, X-Forwarded-For with trusted CIDR ranges, arbitrary headers). Returns 429 with RFC 9457 Problem Details.
-- **CORS**: Preflight handling, origin matching, configurable methods/headers/max-age, credentials validation with wildcard origin safety check.
-- **Security headers**: CSP, HSTS (2 years), X-Frame-Options: DENY, X-Content-Type-Options, Referrer-Policy, Permissions-Policy.
-- **IP filtering**: CIDR-based allow/deny lists with deny-takes-precedence semantics.
-- **Body size limits**: Rejects oversized payloads with 413 before processing.
-- **Request timeouts**: Buffered response writer with 504 Gateway Timeout on deadline.
+- New Go microservices needing a production baseline (config, logging, transports, health, shutdown) in hours.
+- Services that must integrate with the suite's registry, data lake, or event bus.
+- Services that call LLM inference, vector/search, or analytics backends and want one resilient, traced client.
+- Version-gated CLI and batch tools that should be visible to operations like long-running services.
 
-**Business rationale**: These guards implement defense-in-depth at the application layer. Rate limiting prevents abuse and protects downstream services. CORS prevents cross-origin attacks. Security headers prevent common web vulnerabilities (clickjacking, MIME sniffing, XSS). IP filtering restricts access to internal services. Body limits prevent memory exhaustion attacks. Timeouts prevent slow requests from consuming resources indefinitely.
+# Current State / Status
 
-### 13. Feature Flags with Percentage Rollouts
-
-The `flagz` package provides feature flags with boolean checks, percentage rollouts using consistent FNV-1a hashing (the same user always gets the same result for the same flag), string variants, and pluggable sources (environment variables, JSON files, in-memory maps, composable multi-source with override semantics).
-
-Flag evaluations are automatically recorded as OTel span events when tracing is active.
-
-**Business rationale**: Feature flags enable gradual rollouts, A/B testing, and kill switches without redeployment. Consistent hashing ensures that percentage rollouts are stable per-user, preventing the disorienting experience of features flickering on and off. Multi-source support allows flags to be managed differently per environment (dev vs. production).
-
-### 14. OpenTelemetry-Native Observability
-
-The `otel` package provides one-call initialization of the OpenTelemetry SDK with OTLP gRPC exporters for traces and metrics, W3C propagation, and configurable samplers. The `metrics` package provides a pre-configured metrics recorder with cardinality protection (max 1000 label combinations per metric to prevent backend explosions).
-
-All chassis packages integrate with OTel automatically: HTTP middleware creates server spans, gRPC interceptors create server spans, outbound HTTP calls create client spans, structured concurrency operations create parent/child spans, feature flag evaluations create span events, and log lines include trace context.
-
-**Business rationale**: Distributed tracing and metrics are essential for operating microservices in production. By building OTel integration into every layer of the toolkit, chassis ensures that observability is not an afterthought that requires manual instrumentation. Cardinality protection prevents the common problem of high-cardinality labels (user IDs, request paths) overwhelming metrics backends.
-
-### 15. JSON Security Validation
-
-The `secval` package validates JSON payloads against prototype pollution keys (`__proto__`, `constructor`, `prototype`) and excessive nesting (max 20 levels).
-
-**Business rationale**: Prototype pollution is a class of attack where malicious JSON keys like `__proto__` can modify object prototypes in downstream JavaScript consumers, leading to security vulnerabilities. Even in a Go backend, these payloads may be stored and later consumed by frontend or Node.js services. Nesting depth limits prevent stack overflow attacks from deeply nested JSON.
-
-### 16. Structured Concurrency Primitives
-
-The `work` package provides four patterns for parallel execution with bounded worker pools and automatic OTel tracing:
-
-- **Map**: Transform items concurrently, preserving input order.
-- **All**: Run heterogeneous tasks concurrently, fail on first error.
-- **Race**: First success wins, cancel the rest.
-- **Stream**: Process channel items concurrently as a pipeline.
-
-**Business rationale**: Fan-out/fan-in workloads are ubiquitous in microservices (fetching data from multiple sources, processing batches, racing primary vs. replica). These primitives prevent goroutine leaks, respect context cancellation, enforce bounded concurrency to prevent resource exhaustion, and automatically trace each unit of work.
-
-### 17. Cryptographic Primitives
-
-The `seal` package provides AES-256-GCM encryption/decryption with scrypt key derivation, HMAC-SHA256 signing/verification, and temporary signed tokens with expiry and unique JTI.
-
-**Business rationale**: Services frequently need to encrypt sensitive data, sign payloads for integrity verification, and create short-lived tokens for inter-service authentication or user sessions. By providing these as tested, audited primitives, chassis prevents the common mistakes of hand-rolled cryptography (weak key derivation, nonce reuse, timing attacks in signature verification).
-
-### 18. HMAC-Signed Webhook Delivery
-
-The `webhook` package provides HMAC-SHA256 signed webhook delivery with automatic retry on 5xx errors, delivery tracking, and a `VerifyPayload` function for the receive side. Every webhook includes a unique delivery ID, timestamp, and cryptographic signature.
-
-**Business rationale**: Webhooks are the standard mechanism for notifying external systems of events. HMAC signing ensures payload integrity and authenticity. Retry ensures delivery despite transient failures. Delivery tracking enables debugging delivery issues. The verify function on the receive side makes it easy for any chassis service to be a webhook consumer.
-
-### 19. Convention-Based Deploy Directory
-
-The `deploy` package discovers deploy-time configuration from a convention-based directory layout (`/app/deploy/<name>/` for Kubernetes, `~/deploy/<name>/` for developers). It loads environment files (config.env, secrets.env) without overwriting existing env vars, discovers TLS certificates, reads deploy metadata, detects the runtime environment (Kubernetes, container, VM, bare-metal), declares endpoints and dependency topology, and produces structured health payloads.
-
-**Business rationale**: Services need different configuration in different environments. A convention-based directory structure means configuration management is consistent across the fleet. Loading secrets from files (rather than environment variables alone) is more secure for container deployments. Runtime detection enables environment-aware behavior without explicit configuration.
-
-### 20. Periodic Task Scheduling
-
-The `tick` package provides `Every(interval, fn, opts...)` which returns a lifecycle-compatible component for running periodic tasks with configurable jitter, immediate first execution, and error behavior (skip errors and continue, or stop on first error).
-
-**Business rationale**: Many services need periodic background work (cache warming, metric aggregation, health checks, cleanup tasks). This primitive integrates cleanly with the lifecycle system and supports jitter to prevent thundering herds when multiple instances of a service tick at the same interval.
-
-### 21. In-Memory Cache
-
-The `cache` package provides a generic LRU+TTL in-memory cache with configurable max size, TTL, and a `Prune()` method.
-
-**Business rationale**: Many services need short-lived caching of frequently accessed data (API responses, database query results, configuration lookups). A built-in cache prevents each team from implementing their own with different eviction and expiry semantics.
-
-### 22. Event Bus Integration (Kafka/Redpanda)
-
-The `kafkakit` package provides publish/subscribe to Kafka/Redpanda with a standardized event envelope (unique event IDs, millisecond timestamps, source identity, subject, OTel trace ID extraction, tenant ID, entity references), tenant-based filtering (own/shared/granted tenant delivery logic), dead letter queue routing on handler errors, wildcard pattern matching for subscriptions, publisher statistics, and configurable delivery guarantees (at-most-once default with rolling semaphore, or at-least-once via `AtLeastOnce` mode with batch-and-wait and manual offset commit).
-
-The `schemakit` package provides Avro schema loading from `.avsc` files, validation, serialization/deserialization in Confluent wire format, and schema registration with Confluent Schema Registry.
-
-**Business rationale**: The event bus is the backbone of the asynchronous communication architecture. Standardized envelopes ensure every event is traceable, attributable to a source, and filterable by tenant. Tenant filtering is essential for multi-tenant architectures where a single Kafka cluster serves multiple tenants. Dead letter queues prevent poison messages from blocking consumers. Schema validation ensures event contracts are enforced at both publish and consume time.
-
-### 23. Automatic Liveness and Lifecycle Events
-
-The `heartbeatkit` package publishes heartbeat events to `ai8.infra.heartbeat` every 30 seconds with service name, hostname, PID, uptime, version, and optional publisher statistics. The `announcekit` package publishes standardized service lifecycle events (started, ready, stopping, failed) and job lifecycle events (started, complete, failed) to well-known Kafka subjects.
-
-**Business rationale**: In a microservice fleet, knowing which services are alive and in what state is fundamental to operations. Heartbeats enable automated dead-service detection. Lifecycle events enable dashboards, alerting, and audit trails of service state transitions. Job lifecycle events enable tracking batch processing across the fleet.
-
-### 24. Distributed Trace ID Propagation
-
-The `tracekit` package provides lightweight trace ID propagation (`tr_` + 12 hex characters) via Go contexts and HTTP headers (`X-Trace-ID`). It complements OTel tracing for scenarios where the full OTel SDK is not available or appropriate.
-
-**Business rationale**: Not every service or client can run the full OTel stack. A lightweight trace ID that propagates through HTTP headers and event envelopes ensures end-to-end traceability even in environments without OTel collectors.
-
-### 25. Platform Service Clients
-
-Two client packages provide typed HTTP clients for the organization's core platform services:
-
-- **registrykit**: Client for `registry_svc` (entity registry). Supports entity resolution by CRD, domain, email, slug, or namespaced identifier; relationship traversal; ancestor/descendant queries; graph neighborhood queries; entity creation; identifier management; relationship creation; and entity merging.
-
-- **lakekit**: Client for `lake_svc` (data lake). Supports SQL queries, entity event history, dataset listing, and dataset statistics.
-
-Both clients set standardized `X-Tenant-ID` and `X-Trace-ID` headers on every request.
-
-**Business rationale**: These services (entity registry, data lake) are shared infrastructure that multiple services need to query. Typed client libraries prevent each consuming service from writing ad-hoc HTTP clients with inconsistent error handling, timeout policies, and header conventions.
-
----
-
-## Who Are the Target Users?
-
-1. **Service developers** building new Go microservices for the ai8future ecosystem. They import chassis, wire the packages together in `main()`, and get a production-ready service with consistent observability, error handling, and operational visibility.
-
-2. **Platform engineers** maintaining the shared infrastructure (entity registry, knowledge graph, data lake, event bus). They use the integration packages to ensure consistent cross-service communication patterns.
-
-3. **Operations teams** who monitor and manage the fleet. The registry, heartbeat, and lifecycle events give them visibility into what is running, what state it is in, and the ability to issue commands to running services.
-
----
-
-## Design Philosophy as Business Strategy
-
-### Toolkit, Not Framework
-The organization's architecture principle is "Library-First" -- business logic stays pure and portable. chassis never owns the application. This prevents vendor lock-in to the toolkit itself and means business logic can be extracted and tested independently.
-
-### Tier Isolation
-Importing low-level packages (config, logz) does not pull in heavy dependencies (gRPC, OTel SDK). This means a simple CLI tool that only needs config and logging pays only the cost of `golang.org/x/sync`, not the full gRPC and OTel dependency tree. Dependencies scale with what you use.
-
-### Fail Fast
-Missing config panics. Invalid guard config panics. Wrong major version crashes. Using a chassis module before calling `RequireMajor` crashes. These are all intentional. The philosophy is that catching errors at process startup (before any traffic is served) is strictly better than catching them at runtime under load.
-
-### OTel Native
-Tracing, metrics, and log correlation are built into every layer rather than bolted on. This means observability is the default state, not something teams need to remember to add.
-
-### Standard Interfaces
-HTTP middleware uses the standard `func(http.Handler) http.Handler` signature. gRPC uses standard interceptors. Logging uses `*slog.Logger`. These choices mean chassis composes with the broader Go ecosystem rather than requiring a proprietary middleware framework.
-
----
-
-## Current Version and Maturity
-
-The toolkit is at version 10.0.10 as of March 2026. It has gone through 10 major versions since its initial release in February 2026, reflecting rapid iteration driven by real-world adoption across the ai8future service fleet. The first planned consumers were `pricing-cli` (CLI tool validating Tier 1 packages) and `serp_svc` (full-stack service validating all tiers).
-
-The changelog shows a progression from foundational packages (config, logging, lifecycle, HTTP, gRPC, health, call) through security hardening (registry permissions, credential redaction, safe file writes), operational tooling (registry, CLI mode, deploy directories), cross-cutting concerns (feature flags, guards, structured concurrency, cryptography, webhooks), and platform connectivity (event bus, schema management, service clients).
+- **Version:** 11.1.14 (Go 1.26 floor; build/CI on Go 1.26.2+). MIT licensed.
+- **Maturity:** in active production use across the fleet; eleven major versions since the initial release in February 2026 (the v4 module-path migration landed Feb 8, 2026), reflecting rapid iteration driven by real adoption.
+- **Built today:** all packages in this document are implemented and tested (~63 test files), with runnable examples in `examples/01-cli` through `examples/05-clikit` and a `cmd/demo-shutdown` graceful-shutdown demo.
+- **Notes / planned:** `inngestkit` durable-workflow integration is available but optional and not required for service completion; `phasekit` ships with dynamic secret leases disabled in v1; database access is intentionally out of scope (pair with `chassis-go-addons/pgkit`).

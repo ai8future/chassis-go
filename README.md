@@ -81,6 +81,19 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 | `registrykit` | `.../v11/registrykit` | HTTP client to registry_svc for entity resolution. Depends on `call` |
 | `lakekit` | `.../v11/lakekit` | HTTP client to lake_svc for data lake access. Depends on `call` |
 | `phasekit` | `.../v11/phasekit` | Startup secret hydration from Phase via the `phase` CLI before `config.MustLoad` |
+| `inngestkit` | `.../v11/inngestkit` | Thin setup glue for the Inngest Go SDK (config, HTTP mount, send). Functions/steps use `inngestgo` directly. Optional |
+
+### Tier 4: External Service Clients
+
+All client packages below are built on `call.Client` (retry, circuit breaker, OTel spans) and add no heavy dependencies.
+
+| Package | Import | Purpose |
+|---------|--------|---------|
+| `inferkit` | `.../v11/inferkit` | Provider-agnostic client for OpenAI-compatible LLM APIs: chat completions, SSE streaming, embeddings. Works with OpenAI, DeepInfra, Groq, Ollama (compat mode) |
+| `ollamakit` | `.../v11/ollamakit` | Client for Ollama's native `/api/` endpoints: chat, generate, embeddings, model management. Stdlib-only |
+| `meilikit` | `.../v11/meilikit` | Client for Meilisearch: index and document management, search |
+| `qdrantkit` | `.../v11/qdrantkit` | Client for the Qdrant vector database: collections, points, filtered search |
+| `posthogkit` | `.../v11/posthogkit` | Non-blocking, batched PostHog analytics client; buffered capture flushed periodically or by size. No-op when disabled |
 
 **Tier isolation**: Foundation packages avoid transport/runtime stacks such as gRPC and the OTel SDK unless you import packages that need them. `clikit` adds no CLI framework and reuses existing chassis/logz plumbing; its trace-aware logging path may include the already-present OTel trace API, but not the OTel SDK.
 
@@ -549,6 +562,41 @@ func TestMyHandler(t *testing.T) {
 }
 ```
 
+### Integration & Client Kits
+
+The integration kits are optional. Import only the ones a service needs — each
+keeps its heavier dependencies out of the core import graph.
+
+**Event bus (`kafkakit` + `schemakit`)** — publish/subscribe to Redpanda over
+the Kafka protocol with a standard event envelope (event ID, ms timestamp,
+source, subject, trace ID, tenant ID, entity refs), tenant-based delivery
+filtering, dead-letter routing on handler error, wildcard subscriptions, and
+at-most-once (default) or `AtLeastOnce` delivery. `schemakit` loads `.avsc`
+Avro schemas and serializes/registers them in Confluent wire format against a
+Schema Registry.
+
+**Liveness & lifecycle (`heartbeatkit` + `announcekit`)** — `heartbeatkit`
+publishes liveness payloads to `ai8.infra.heartbeat` on a fixed interval;
+`announcekit` publishes service- and job-lifecycle events to
+`ai8.infra.{service}.lifecycle.{state}` and `ai8.infra.{service}.job.{state}`.
+Both depend on `kafkakit` and auto-activate when it is configured.
+
+**Platform clients (`registrykit` + `lakekit`)** — typed `call`-backed HTTP
+clients for `registry_svc` (entity resolution, relationship/graph traversal,
+entity management) and `lake_svc` (SQL queries, entity history, dataset
+listing/stats). Both set `X-Tenant-ID` and `X-Trace-ID` on every request.
+
+**Inference & search clients** — `inferkit` (OpenAI-compatible chat/stream/
+embeddings), `ollamakit` (Ollama native API), `meilikit` (Meilisearch), and
+`qdrantkit` (Qdrant vector DB) are all thin `call`-backed clients for common
+backends. `posthogkit` is a non-blocking batched analytics client that no-ops
+when disabled.
+
+**Durable workflows (`inngestkit`)** — thin setup glue (config, HTTP mount,
+event send) for the Inngest Go SDK. Function and step definitions use
+`inngestgo` directly; see [`INNGEST.md`](INNGEST.md). Optional — services
+without durable-workflow needs should skip it.
+
 ---
 
 ## Version Gate
@@ -632,16 +680,20 @@ When OTel is initialized, the following telemetry is collected automatically:
 
 ## Dependencies
 
-Only the OTel API, `golang.org/x/sync`, and `google.golang.org/grpc` are direct dependencies:
+The core packages keep a thin direct-dependency surface (OTel, `golang.org/x/sync`, `golang.org/x/crypto`, `google.golang.org/grpc`). Heavier dependencies are isolated to the integration kits that need them, so they are only pulled in when you import those packages:
 
 ```
-go.opentelemetry.io/otel          v1.40.0
-go.opentelemetry.io/otel/sdk      v1.40.0
-golang.org/x/sync                 v0.19.0
-google.golang.org/grpc            v1.78.0
-github.com/twmb/franz-go          (kafkakit)
-github.com/hamba/avro/v2           (schemakit)
+go.opentelemetry.io/otel          v1.40.0   (core)
+go.opentelemetry.io/otel/sdk      v1.40.0   (otel, metrics)
+golang.org/x/sync                 v0.19.0   (core)
+golang.org/x/crypto               v0.48.0   (seal)
+google.golang.org/grpc            v1.79.3   (grpckit, otel)
+github.com/twmb/franz-go          v1.20.7   (kafkakit)
+github.com/hamba/avro/v2          v2.31.0   (schemakit)
+github.com/inngest/inngestgo      v0.15.1   (inngestkit)
 ```
+
+See `go.mod` for the full, pinned dependency list.
 
 ---
 
