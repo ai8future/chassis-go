@@ -218,6 +218,20 @@ func TestMustLoad_BoolFalseExplicit(t *testing.T) {
 	}
 }
 
+func TestCheckPatternContainingComma(t *testing.T) {
+	if err := Check("Port", "123", `pattern=^[0-9]{1,3}$`); err != nil {
+		t.Fatalf("expected pattern with comma quantifier to pass: %v", err)
+	}
+
+	if err := Check("Port", "1234", `pattern=^[0-9]{1,3}$`); err == nil {
+		t.Fatal("expected pattern with comma quantifier to reject too-long value")
+	}
+
+	if err := Check("Port", 80, "min=1,max=65535"); err != nil {
+		t.Fatalf("expected normal comma-separated constraints to still pass: %v", err)
+	}
+}
+
 func TestMustLoad_SliceStringSingleElement(t *testing.T) {
 	t.Setenv("TEST_TAGS", "solo")
 

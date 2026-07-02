@@ -146,6 +146,30 @@ func TestRebuildNoGo(t *testing.T) {
 	}
 }
 
+func TestRebuildTempPathUnique(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "svc")
+
+	a, err := rebuildTempPath(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(a)
+
+	b, err := rebuildTempPath(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(b)
+
+	if a == b {
+		t.Fatalf("expected unique temp paths, got %q twice", a)
+	}
+	if filepath.Dir(a) != dir || filepath.Dir(b) != dir {
+		t.Fatalf("temp paths must sit alongside the binary: %q, %q", a, b)
+	}
+}
+
 func TestCheckFreshnessSkipsWhenNoAppVersion(t *testing.T) {
 	orig := getAppVersion()
 	SetAppVersion("")

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -88,7 +89,7 @@ type Environment struct {
 	PodName   string `json:"pod_name,omitempty"`
 }
 
-func (d *Deploy) Found() bool { return d.found }
+func (d *Deploy) Found() bool  { return d.found }
 func (d *Deploy) Dir() string  { return d.dir }
 func (d *Deploy) Name() string { return d.name }
 
@@ -342,6 +343,7 @@ func parseEnvFile(path string) map[string]string {
 	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -357,6 +359,10 @@ func parseEnvFile(path string) map[string]string {
 			v = v[1 : len(v)-1]
 		}
 		result[strings.TrimSpace(k)] = v
+	}
+	if err := scanner.Err(); err != nil {
+		slog.Warn("deploy: env file scan failed", "path", path, "error", err)
+		return map[string]string{}
 	}
 	return result
 }

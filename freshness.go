@@ -113,6 +113,19 @@ func resolveMainPackage(buildInfoPath, modulePath, moduleRoot, binPath string) s
 // rebuildTimeout is the maximum time to wait for go build.
 var rebuildTimeout = 2 * time.Minute
 
+func rebuildTempPath(binPath string) (string, error) {
+	f, err := os.CreateTemp(filepath.Dir(binPath), filepath.Base(binPath)+".chassis-rebuild-*.tmp")
+	if err != nil {
+		return "", err
+	}
+	path := f.Name()
+	if err := f.Close(); err != nil {
+		os.Remove(path)
+		return "", err
+	}
+	return path, nil
+}
+
 // rebuild runs go build to produce a new binary at binPath, building pkgPath
 // from moduleRoot. Builds to a temp file then atomically renames.
 func rebuild(moduleRoot, pkgPath, binPath string) error {
@@ -121,7 +134,11 @@ func rebuild(moduleRoot, pkgPath, binPath string) error {
 		return fmt.Errorf("go not found in PATH: %w", err)
 	}
 
-	tmpPath := binPath + ".chassis-rebuild.tmp"
+	tmpPath, err := rebuildTempPath(binPath)
+	if err != nil {
+		return fmt.Errorf("create temp build target: %w", err)
+	}
+	defer os.Remove(tmpPath)
 
 	ctx, cancel := context.WithTimeout(context.Background(), rebuildTimeout)
 	defer cancel()
@@ -131,12 +148,14 @@ func rebuild(moduleRoot, pkgPath, binPath string) error {
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
-		os.Remove(tmpPath)
 		return fmt.Errorf("go build failed: %w", err)
 	}
 
+	if err := os.Chmod(tmpPath, 0o755); err != nil {
+		return fmt.Errorf("chmod rebuilt binary: %w", err)
+	}
+
 	if err := os.Rename(tmpPath, binPath); err != nil {
-		os.Remove(tmpPath)
 		return fmt.Errorf("rename failed: %w", err)
 	}
 

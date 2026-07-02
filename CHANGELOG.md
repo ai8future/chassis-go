@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [11.2.1] - 2026-07-02
+
+### Fixed
+- **freshness**: Build stale binaries to unique temp files beside the target binary and chmod before atomic rename.
+- **registry**: Reject symlinked or group/world-writable registry base paths and atomically claim command files before reading.
+- **work**: Recover panics in `Map`, `All`, `Race`, and `Stream` as task errors instead of crashing worker goroutines.
+- **config**: Preserve regex quantifier commas when splitting validation constraints.
+- **schemakit**: Reject SchemaID 0 during serialize/deserialize to avoid ambiguous unregistered wire payloads.
+- **kafkakit**: Apply configured producer record retries with bounded exponential jitter backoff and choose the most-specific matching subscriber handler deterministically.
+- **heartbeatkit**: Bound each heartbeat publish with a per-publish timeout so a blocked publisher cannot halt the loop forever.
+- **deploy**: Increase `.env` scanner capacity to 1 MiB and surface scanner errors instead of silently ignoring long lines.
+
+### Tests
+- Added regressions for freshness temp paths, registry base-path hardening, work panic recovery, config regex validation splitting, schemakit SchemaID 0 rejection, kafkakit retry/backoff and handler selection, heartbeat bounded publishing, and deploy long env lines.
+- Verified with `go test -race ./ ./registry ./work ./config ./schemakit ./kafkakit ./heartbeatkit ./deploy`, `go build ./...`, `git diff --check -- freshness.go freshness_test.go registry/registry.go registry/registry_test.go work/work.go work/work_test.go config/config.go config/config_test.go schemakit/schemakit.go schemakit/schemakit_test.go kafkakit/publisher.go kafkakit/publisher_test.go kafkakit/subscriber.go kafkakit/subscriber_test.go heartbeatkit/heartbeatkit.go heartbeatkit/heartbeatkit_test.go deploy/deploy.go deploy/env_internal_test.go`, and `go test ./...`.
+
+*(Codex:gpt-5.5)*
+
 ## [11.2.0] - 2026-07-02
 
 ### Breaking / API / Wire

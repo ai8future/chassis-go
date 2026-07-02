@@ -250,17 +250,7 @@ func (s *Subscriber) handleRecord(ctx context.Context, record *kgo.Record) bool 
 		return true // silently skip events for other tenants
 	}
 
-	// Find matching handler
-	s.mu.RLock()
-	var handler HandlerFunc
-	for pattern, h := range s.handlers {
-		if matchPattern(pattern, evt.Subject) {
-			handler = h
-			break
-		}
-	}
-	s.mu.RUnlock()
-
+	handler := s.selectHandler(evt.Subject)
 	if handler == nil {
 		slog.Warn("kafkakit: no handler for subject", "subject", evt.Subject)
 		return true
@@ -274,6 +264,34 @@ func (s *Subscriber) handleRecord(ctx context.Context, record *kgo.Record) bool 
 		}
 	}
 	return true
+}
+
+func (s *Subscriber) selectHandler(subject string) HandlerFunc {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	bestPattern := ""
+	bestScore := -1
+	var handler HandlerFunc
+	for pattern, h := range s.handlers {
+		if !matchPattern(pattern, subject) {
+			continue
+		}
+		score := patternSpecificity(pattern)
+		if handler == nil || score > bestScore || (score == bestScore && pattern < bestPattern) {
+			bestPattern = pattern
+			bestScore = score
+			handler = h
+		}
+	}
+	return handler
+}
+
+func patternSpecificity(pattern string) int {
+	if strings.HasSuffix(pattern, ">") {
+		return len(strings.TrimSuffix(pattern, ">")) * 2
+	}
+	return len(pattern)*2 + 1
 }
 
 // doClose performs the actual shutdown: marks unhealthy, drains in-flight

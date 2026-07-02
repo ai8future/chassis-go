@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand/v2"
 	"strings"
 	"time"
 
@@ -61,10 +62,16 @@ func NewPublisher(cfg Config) (*Publisher, error) {
 
 	// Apply publisher-specific settings
 	if cfg.Publisher.MaxRetries > 0 {
-		backoffMs := cfg.Publisher.RetryBackoffMs
-		opts = append(opts, kgo.RetryBackoffFn(func(int) time.Duration {
-			return time.Duration(backoffMs) * time.Millisecond
-		}))
+		backoff := time.Duration(cfg.Publisher.RetryBackoffMs) * time.Millisecond
+		if backoff <= 0 {
+			backoff = 100 * time.Millisecond
+		}
+		opts = append(opts,
+			kgo.RecordRetries(cfg.Publisher.MaxRetries),
+			kgo.RetryBackoffFn(func(attempt int) time.Duration {
+				return publisherRetryBackoff(backoff, attempt)
+			}),
+		)
 	}
 
 	client, err := kgo.NewClient(opts...)
@@ -77,6 +84,22 @@ func NewPublisher(cfg Config) (*Publisher, error) {
 		source:   cfg.Source,
 		tenantID: cfg.TenantID,
 	}, nil
+}
+
+func publisherRetryBackoff(base time.Duration, attempt int) time.Duration {
+	if base <= 0 {
+		base = 100 * time.Millisecond
+	}
+	if attempt < 1 {
+		attempt = 1
+	}
+	shift := attempt - 1
+	if shift > 6 {
+		shift = 6
+	}
+	delay := base << shift
+	half := delay / 2
+	return half + time.Duration(rand.Int64N(int64(half)+1))
 }
 
 // Publish sends a single event to the topic derived from the subject.

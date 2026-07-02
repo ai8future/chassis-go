@@ -27,8 +27,8 @@ type publisher interface {
 // statsProvider optionally enriches heartbeat payloads with publisher stats.
 type statsProvider interface {
 	Stats() struct {
-		EventsPublished1h int64
-		Errors1h          int64
+		EventsPublished1h  int64
+		Errors1h           int64
 		LastEventPublished time.Time
 	}
 }
@@ -80,7 +80,14 @@ func Start(ctx context.Context, pub publisher, cfg Config) {
 						payload["last_event_published"] = stats.LastEventPublished.Format(time.RFC3339)
 					}
 				}
-				if err := pub.Publish(ctx, "ai8.infra.heartbeat", payload); err != nil {
+				timeout := cfg.Interval / 2
+				if timeout < time.Second {
+					timeout = time.Second
+				}
+				pubCtx, cancelPub := context.WithTimeout(ctx, timeout)
+				err := pub.Publish(pubCtx, "ai8.infra.heartbeat", payload)
+				cancelPub()
+				if err != nil {
 					slog.Warn("heartbeatkit: publish failed", "error", err)
 				}
 			case <-ctx.Done():

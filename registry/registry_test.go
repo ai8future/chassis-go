@@ -45,6 +45,24 @@ func initRegistry(t *testing.T) string {
 	return testSvcDir(tmp)
 }
 
+func TestInitRejectsSymlinkBasePath(t *testing.T) {
+	target := t.TempDir()
+	link := filepath.Join(t.TempDir(), "chassis-link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	registry.ResetForTest(link)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := registry.Init(cancel, "11.0.0")
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected symlink rejection, got %v", err)
+	}
+	_ = ctx
+}
+
 func TestInitCreatesDirectoryAndFiles(t *testing.T) {
 	svcDir := initRegistry(t)
 	pid := strconv.Itoa(os.Getpid())

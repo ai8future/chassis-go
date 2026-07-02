@@ -49,3 +49,19 @@ func TestPublishBatchReportsPerRecordFailures(t *testing.T) {
 		t.Fatalf("expected Unwrap to expose %d errors, got %d", len(be.Failures), len(be.Unwrap()))
 	}
 }
+
+func TestPublisherRetryBackoffIncreasesWithAttempt(t *testing.T) {
+	base := 50 * time.Millisecond
+
+	first := publisherRetryBackoff(base, 1)
+	later := publisherRetryBackoff(base, 4)
+
+	if first < base/2 || first > base {
+		t.Fatalf("first backoff %v outside expected jitter range [%v,%v]", first, base/2, base)
+	}
+	minLater := 4 * base
+	maxLater := 8 * base
+	if later < minLater || later > maxLater {
+		t.Fatalf("later backoff %v outside expected jitter range [%v,%v]", later, minLater, maxLater)
+	}
+}
