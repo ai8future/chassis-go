@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [11.3.0] - 2026-07-02
+
+### Changed
+- Promote to minor release `11.3.0`. No functional code changes since `11.2.4`; version marker consolidating the recent tracekit documentation/test corrections into a new minor line.
+
+*(Claude:Opus 4.8)*
+
 ## [11.2.4] - 2026-07-02
 
 ### Documentation
