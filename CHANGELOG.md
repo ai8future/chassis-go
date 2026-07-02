@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [11.2.2] - 2026-07-02
+
+### Fixed
+- **phasekit**: Restore hydrated env keys between tests and use a load-tolerant fake CLI timeout so repeated in-process runs are isolated.
+- **call**: Use method-only client span names and cap retry response-body drains to 1 MiB.
+- **flagz**: Fail fast when `Multi` receives a nil source.
+- **errors**: Avoid nil-request panics when logging `WriteProblem` encode failures.
+- **tick**: Stop jitter timers on cancellation to avoid timer leaks.
+- **guard**: Document the trust boundary for `HeaderKey` rate-limit keys.
+- **deploy**: Include a bounded tail of failing hook output in hook errors.
+- **inferkit**: Defer response-body close around successful JSON decode paths.
+
+### Dependencies
+- Updated `golang.org/x/crypto` from v0.48.0 to v0.53.0 and refreshed related `x/*` modules with `go mod tidy`.
+
+### Tests
+- Verified with `go test -race -count=3 ./phasekit/`, `go test -race ./call/ ./seal/ ./flagz/ ./errors/ ./tick/ ./webhook/ ./guard/ ./deploy/ ./inferkit/ -v`, `go build ./...`, `go vet ./...`, `go test -race -count=1 ./...`, and `go test -count=2 ./phasekit/`.
+
+*(Codex:gpt-5.5)*
+
 ## [11.2.1] - 2026-07-02
 
 ### Fixed

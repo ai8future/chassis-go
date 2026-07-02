@@ -18,6 +18,34 @@ func init() {
 	chassis.RequireMajor(11)
 }
 
+// restoreEnvAfter restores env keys a test's Hydrate call may set, keeping
+// repeated in-process runs (go test -count>1) independent without clobbering a
+// caller's pre-existing environment.
+func restoreEnvAfter(t *testing.T, keys ...string) {
+	t.Helper()
+	prior := make(map[string]struct {
+		value string
+		ok    bool
+	}, len(keys))
+	for _, k := range keys {
+		v, ok := os.LookupEnv(k)
+		prior[k] = struct {
+			value string
+			ok    bool
+		}{value: v, ok: ok}
+	}
+	t.Cleanup(func() {
+		for _, k := range keys {
+			p := prior[k]
+			if p.ok {
+				os.Setenv(k, p.value)
+			} else {
+				os.Unsetenv(k)
+			}
+		}
+	})
+}
+
 func TestApplyDefaults(t *testing.T) {
 	cfg := applyDefaults(Config{})
 
@@ -189,6 +217,7 @@ func TestValidateRequiredKeys(t *testing.T) {
 }
 
 func TestHydrateHappyPath(t *testing.T) {
+	restoreEnvAfter(t, "PHASEKIT_ALPHA", "PHASEKIT_BETA", "PHASEKIT_GAMMA")
 	fake := phasetest.WithFakeBinary(t, phasetest.FakeOptions{
 		Secrets: map[string]string{
 			"PHASEKIT_ALPHA": "a",
@@ -203,6 +232,7 @@ func TestHydrateHappyPath(t *testing.T) {
 		App:          "example-app",
 		Env:          "Production",
 		RequiredKeys: []string{"PHASEKIT_ALPHA", "PHASEKIT_BETA"},
+		Timeout:      60 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("Hydrate returned error: %v", err)
@@ -245,6 +275,7 @@ func TestHydrateHappyPath(t *testing.T) {
 }
 
 func TestHydrateExplicitBinaryPathDoesNotRequirePATH(t *testing.T) {
+	restoreEnvAfter(t, "PHASEKIT_EXPLICIT_BINARY")
 	fake := phasetest.WithFakeBinary(t, phasetest.FakeOptions{
 		Secrets: map[string]string{"PHASEKIT_EXPLICIT_BINARY": "ok"},
 	})
@@ -266,6 +297,7 @@ func TestHydrateExplicitBinaryPathDoesNotRequirePATH(t *testing.T) {
 }
 
 func TestHydratePreservesExistingByDefault(t *testing.T) {
+	restoreEnvAfter(t, "PHASEKIT_NEW")
 	t.Setenv("PHASEKIT_EXISTING", "local")
 	t.Setenv("PHASEKIT_EMPTY_EXISTING", "")
 	phasetest.WithFakeBinary(t, phasetest.FakeOptions{
@@ -296,6 +328,7 @@ func TestHydratePreservesExistingByDefault(t *testing.T) {
 }
 
 func TestHydrateOverwriteExisting(t *testing.T) {
+	restoreEnvAfter(t, "PHASEKIT_OVERWRITE")
 	t.Setenv("PHASEKIT_OVERWRITE", "local")
 	phasetest.WithFakeBinary(t, phasetest.FakeOptions{
 		Secrets: map[string]string{"PHASEKIT_OVERWRITE": "phase"},
@@ -317,6 +350,7 @@ func TestHydrateOverwriteExisting(t *testing.T) {
 }
 
 func TestHydrateRequiredKeysMissingDoesNotApplyEnv(t *testing.T) {
+	restoreEnvAfter(t, "PHASEKIT_SHOULD_NOT_APPLY")
 	phasetest.WithFakeBinary(t, phasetest.FakeOptions{
 		Secrets: map[string]string{"PHASEKIT_SHOULD_NOT_APPLY": "value"},
 	})
@@ -334,6 +368,7 @@ func TestHydrateRequiredKeysMissingDoesNotApplyEnv(t *testing.T) {
 
 func TestHydrateMultiLineValue(t *testing.T) {
 	want := "-----BEGIN TEST-----\nline2 with \"quotes\"\nline3 with \\backslash\n-----END TEST-----"
+	restoreEnvAfter(t, "PHASEKIT_MULTILINE")
 	phasetest.WithFakeBinary(t, phasetest.FakeOptions{
 		Secrets: map[string]string{"PHASEKIT_MULTILINE": want},
 	})
@@ -359,6 +394,7 @@ func TestHydrateEmptyResponse(t *testing.T) {
 }
 
 func TestHydrateRedactedValue(t *testing.T) {
+	restoreEnvAfter(t, "PHASEKIT_REDACTED")
 	phasetest.WithFakeBinary(t, phasetest.FakeOptions{
 		Secrets: map[string]string{"PHASEKIT_REDACTED": "[REDACTED]"},
 	})
@@ -369,6 +405,7 @@ func TestHydrateRedactedValue(t *testing.T) {
 }
 
 func TestHydrateAllowRedacted(t *testing.T) {
+	restoreEnvAfter(t, "PHASEKIT_REDACTED_ALLOWED")
 	phasetest.WithFakeBinary(t, phasetest.FakeOptions{
 		Secrets: map[string]string{"PHASEKIT_REDACTED_ALLOWED": "[REDACTED]"},
 	})
@@ -543,6 +580,7 @@ func TestHydrateSubprocessEnvAllowlist(t *testing.T) {
 }
 
 func TestHydrateInvalidEnvKeyDoesNotPartiallyApply(t *testing.T) {
+	restoreEnvAfter(t, "PHASEKIT_VALID_BEFORE_BAD")
 	phasetest.WithFakeBinary(t, phasetest.FakeOptions{
 		Secrets: map[string]string{
 			"PHASEKIT_VALID_BEFORE_BAD": "value",
@@ -560,6 +598,7 @@ func TestHydrateInvalidEnvKeyDoesNotPartiallyApply(t *testing.T) {
 }
 
 func TestHydrateInvalidEnvValueDoesNotPartiallyApply(t *testing.T) {
+	restoreEnvAfter(t, "PHASEKIT_VALID_BEFORE_NUL")
 	phasetest.WithFakeBinary(t, phasetest.FakeOptions{
 		Secrets: map[string]string{
 			"PHASEKIT_VALID_BEFORE_NUL": "value",
@@ -606,6 +645,7 @@ func TestHydrateNonZeroExit(t *testing.T) {
 }
 
 func TestHydrateContextTimeout(t *testing.T) {
+	restoreEnvAfter(t, "PHASEKIT_TIMEOUT")
 	phasetest.WithFakeBinary(t, phasetest.FakeOptions{
 		Secrets: map[string]string{"PHASEKIT_TIMEOUT": "value"},
 		Delay:   2 * time.Second,
@@ -639,6 +679,7 @@ func validConfig() Config {
 		ServiceToken: "pss_service:v2:test",
 		App:          "example-app",
 		Env:          "Production",
+		Timeout:      60 * time.Second,
 	}
 }
 

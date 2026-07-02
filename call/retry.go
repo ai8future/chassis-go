@@ -43,7 +43,7 @@ func (r *Retrier) Do(ctx context.Context, fn func() (*http.Response, error)) (*h
 		if err != nil {
 			// Drain and close any partial response body so the connection can be reused.
 			if resp != nil && resp.Body != nil {
-				io.Copy(io.Discard, resp.Body)
+				io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 				resp.Body.Close()
 			}
 			if errors.Is(err, ErrBodyNotRewindable) {
@@ -75,7 +75,7 @@ func (r *Retrier) Do(ctx context.Context, fn func() (*http.Response, error)) (*h
 				attribute.Int("http.status_code", resp.StatusCode),
 			))
 			// Drain and close the body so the underlying connection can be reused.
-			io.Copy(io.Discard, resp.Body)
+			io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 			resp.Body.Close()
 			if waitErr := r.backoff(ctx, attempt); waitErr != nil {
 				return nil, waitErr

@@ -113,6 +113,15 @@ func TestMultiLayering(t *testing.T) {
 	}
 }
 
+func TestMultiPanicsOnNilSource(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for nil source")
+		}
+	}()
+	flagz.Multi(flagz.FromEnv("FF"), nil)
+}
+
 func TestEnabledTrueFalse(t *testing.T) {
 	src := flagz.FromMap(map[string]string{
 		"on":  "true",

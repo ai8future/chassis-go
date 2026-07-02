@@ -3,6 +3,7 @@ package deploy_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -602,15 +603,19 @@ func TestRunHookReturnsExecError(t *testing.T) {
 	}
 
 	hookPath := filepath.Join(hooksDir, "pre-stop")
-	if err := os.WriteFile(hookPath, []byte("#!/bin/sh\nexit 7\n"), 0o755); err != nil {
+	if err := os.WriteFile(hookPath, []byte("#!/bin/sh\necho 'hook exploded' >&2\nexit 7\n"), 0o755); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
 	t.Setenv("CHASSIS_DEPLOY_DIR", dir)
 	d := deploy.Discover("test-svc")
 
-	if err := d.RunHook("pre-stop"); err == nil {
+	err := d.RunHook("pre-stop")
+	if err == nil {
 		t.Fatal("expected exec error from failing hook")
+	}
+	if !strings.Contains(err.Error(), "hook exploded") {
+		t.Fatalf("expected failing hook output in error, got %v", err)
 	}
 }
 

@@ -70,15 +70,12 @@ func Every(interval time.Duration, fn func(context.Context) error, opts ...Optio
 				return nil
 			case <-ticker.C:
 				if cfg.jitter > 0 {
-					jitterDelay := time.Duration(rand.Int64N(int64(cfg.jitter)))
+					jt := time.NewTimer(time.Duration(rand.Int64N(int64(cfg.jitter))))
 					select {
 					case <-ctx.Done():
+						jt.Stop()
 						return nil
-					case <-func() <-chan time.Time {
-						t := time.NewTimer(jitterDelay)
-						// Note: if ctx.Done fires, the timer is GC'd after firing.
-						return t.C
-					}():
+					case <-jt.C:
 					}
 				}
 				if err := fn(ctx); err != nil {

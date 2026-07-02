@@ -405,6 +405,40 @@ func TestWriteProblemNilError(t *testing.T) {
 	}
 }
 
+type failingProblemWriter struct {
+	header http.Header
+	code   int
+}
+
+func (w *failingProblemWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = http.Header{}
+	}
+	return w.header
+}
+
+func (w *failingProblemWriter) WriteHeader(code int) {
+	w.code = code
+}
+
+func (w *failingProblemWriter) Write([]byte) (int, error) {
+	return 0, errors.New("write failed")
+}
+
+func TestWriteProblemNilRequestEncodeErrorDoesNotPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("expected nil request encode-error logging not to panic, got %v", r)
+		}
+	}()
+
+	w := &failingProblemWriter{}
+	WriteProblem(w, nil, InternalError("boom"), "")
+	if w.code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", w.code)
+	}
+}
+
 func TestProblemDetailNilRequest(t *testing.T) {
 	err := ValidationError("bad")
 	pd := err.ProblemDetail(nil)

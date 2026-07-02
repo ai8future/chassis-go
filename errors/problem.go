@@ -121,6 +121,10 @@ func WriteProblem(w http.ResponseWriter, r *http.Request, err error, requestID s
 	w.WriteHeader(svcErr.HTTPCode)
 
 	if encErr := json.NewEncoder(w).Encode(pd); encErr != nil {
-		slog.ErrorContext(r.Context(), "errors: failed to encode problem detail", "error", encErr)
+		if r != nil {
+			slog.ErrorContext(r.Context(), "errors: failed to encode problem detail", "error", encErr)
+		} else {
+			slog.Error("errors: failed to encode problem detail", "error", encErr)
+		}
 	}
 }

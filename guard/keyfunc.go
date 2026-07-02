@@ -81,7 +81,12 @@ func XForwardedFor(trustedCIDRs ...string) KeyFunc {
 	}
 }
 
-// HeaderKey returns a KeyFunc using the value of a request header as the key.
+// HeaderKey returns a KeyFunc using the value of a request header as the
+// rate-limit key.
+//
+// WARNING: only use headers set by trusted infrastructure (e.g. a load
+// balancer). A client-controlled header lets an attacker mint a fresh
+// rate-limit bucket per request, trivially bypassing the limit.
 // Falls back to RemoteAddr if the header is absent.
 func HeaderKey(header string) KeyFunc {
 	return func(r *http.Request) string {

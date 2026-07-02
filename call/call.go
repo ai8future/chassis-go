@@ -151,7 +151,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 
 	// OTel: create client span and inject trace headers.
 	tracer := otelapi.GetTracerProvider().Tracer(tracerName)
-	ctx, span := tracer.Start(ctx, req.Method+" "+req.URL.Path,
+	ctx, span := tracer.Start(ctx, req.Method,
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
 			attribute.String("http.method", req.Method),

@@ -372,8 +372,15 @@ func runHookExec(path string) error {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path)
 	cmd.Dir = filepath.Dir(path)
-	_, err := cmd.CombinedOutput()
-	return err
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		tail := out
+		if len(tail) > 2048 {
+			tail = tail[len(tail)-2048:]
+		}
+		return fmt.Errorf("deploy: hook %s failed: %w: %s", filepath.Base(path), err, strings.TrimSpace(string(tail)))
+	}
+	return nil
 }
 
 // detectRuntime returns the detected runtime environment.
