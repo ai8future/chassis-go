@@ -35,6 +35,7 @@ var (
 	ErrTokenExpired = errors.New("seal: token expired")
 	ErrTokenInvalid = errors.New("seal: invalid token")
 	ErrSignature    = errors.New("seal: signature verification failed")
+	ErrPassphrase   = errors.New("seal: empty passphrase")
 )
 
 const (
@@ -49,6 +50,10 @@ const (
 // Encrypt encrypts plaintext using AES-256-GCM with a scrypt-derived key.
 func Encrypt(plaintext []byte, passphrase string) (Envelope, error) {
 	chassis.AssertVersionChecked()
+	if passphrase == "" {
+		return Envelope{}, ErrPassphrase
+	}
+
 	salt := make([]byte, saltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return Envelope{}, fmt.Errorf("seal: generate salt: %w", err)
@@ -91,6 +96,9 @@ func Encrypt(plaintext []byte, passphrase string) (Envelope, error) {
 
 // Decrypt decrypts an Envelope using the given passphrase.
 func Decrypt(env Envelope, passphrase string) ([]byte, error) {
+	if passphrase == "" {
+		return nil, ErrPassphrase
+	}
 	if env.Version != 1 {
 		return nil, fmt.Errorf("%w: unsupported envelope version %d", ErrDecrypt, env.Version)
 	}
@@ -141,6 +149,9 @@ func Decrypt(env Envelope, passphrase string) ([]byte, error) {
 // Sign computes an HMAC-SHA256 signature of payload using secret.
 func Sign(payload []byte, secret string) string {
 	chassis.AssertVersionChecked()
+	if secret == "" {
+		panic("seal: Sign called with empty secret: signatures would be forgeable; check your secret env var")
+	}
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(payload)
 	return hex.EncodeToString(mac.Sum(nil))
@@ -148,6 +159,9 @@ func Sign(payload []byte, secret string) string {
 
 // Verify checks that signature is a valid HMAC-SHA256 of payload using secret.
 func Verify(payload []byte, signature string, secret string) bool {
+	if secret == "" {
+		return false
+	}
 	expected := Sign(payload, secret)
 	return subtle.ConstantTimeCompare([]byte(expected), []byte(signature)) == 1
 }

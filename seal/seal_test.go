@@ -72,6 +72,37 @@ func TestSignVerify(t *testing.T) {
 	}
 }
 
+func TestSignPanicsOnEmptySecret(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic for empty secret")
+		}
+	}()
+	seal.Sign([]byte("payload"), "")
+}
+
+func TestVerifyEmptySecretIsFalse(t *testing.T) {
+	if seal.Verify([]byte("payload"), seal.Sign([]byte("payload"), "k"), "") {
+		t.Fatal("empty secret must never verify")
+	}
+}
+
+func TestEncryptEmptyPassphraseErrors(t *testing.T) {
+	if _, err := seal.Encrypt([]byte("data"), ""); err == nil {
+		t.Fatal("expected error for empty passphrase")
+	}
+}
+
+func TestDecryptEmptyPassphraseErrors(t *testing.T) {
+	env, err := seal.Encrypt([]byte("data"), "non-empty-passphrase")
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	if _, err := seal.Decrypt(env, ""); err == nil {
+		t.Fatal("expected error for empty passphrase")
+	}
+}
+
 func TestNewTokenValidateToken(t *testing.T) {
 	secret := "token-signing-secret"
 	claims := map[string]any{"user": "alice", "role": "admin"}

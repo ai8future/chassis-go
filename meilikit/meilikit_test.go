@@ -3,6 +3,7 @@ package meilikit
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -397,7 +398,7 @@ func TestBulkImport_Progress(t *testing.T) {
 
 	progressCalls := 0
 	var lastImported, lastTotal int
-	err := idx.BulkImport(context.Background(), records, BulkOptions{
+	tasks, err := idx.BulkImport(context.Background(), records, BulkOptions{
 		BatchSize: 100,
 		OnProgress: func(imported, total int) {
 			progressCalls++
@@ -407,6 +408,9 @@ func TestBulkImport_Progress(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tasks) != 3 {
+		t.Fatalf("tasks = %d, want 3", len(tasks))
 	}
 	if batchCount != 3 {
 		t.Fatalf("batches = %d, want 3 (100+100+50)", batchCount)
@@ -436,7 +440,7 @@ func TestBulkImport_ContextCanceled(t *testing.T) {
 	cancel()
 
 	records := make([]any, 10)
-	err := idx.BulkImport(ctx, records, BulkOptions{BatchSize: 5})
+	_, err := idx.BulkImport(ctx, records, BulkOptions{BatchSize: 5})
 	if err == nil {
 		t.Fatal("expected error for canceled context")
 	}
@@ -460,9 +464,43 @@ func TestBulkImport_DefaultBatchSize(t *testing.T) {
 	for i := range records {
 		records[i] = map[string]int{"id": i}
 	}
-	idx.BulkImport(context.Background(), records, BulkOptions{})
+	tasks, err := idx.BulkImport(context.Background(), records, BulkOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("tasks = %d, want 1", len(tasks))
+	}
 	if received != 50 {
 		t.Fatalf("received = %d, want 50", received)
+	}
+}
+
+func TestBulkImportReturnsTaskInfos(t *testing.T) {
+	var batches int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		batches++
+		w.WriteHeader(http.StatusAccepted)
+		fmt.Fprintf(w, `{"taskUid":%d,"status":"enqueued","type":"documentAdditionOrUpdate"}`, 100+batches)
+	}))
+	defer srv.Close()
+
+	c, _ := New(Config{BaseURL: srv.URL})
+	idx, _ := c.Index("things")
+
+	records := make([]any, 3)
+	for i := range records {
+		records[i] = map[string]any{"id": i}
+	}
+	tasks, err := idx.BulkImport(context.Background(), records, BulkOptions{BatchSize: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 2 {
+		t.Fatalf("expected 2 task infos, got %d", len(tasks))
+	}
+	if tasks[0].TaskUID != 101 || tasks[1].TaskUID != 102 {
+		t.Fatalf("unexpected task IDs: %+v", tasks)
 	}
 }
 
@@ -844,7 +882,7 @@ func TestBulkImport_HTTPError(t *testing.T) {
 
 	c, _ := New(Config{BaseURL: srv.URL})
 	idx, _ := c.Index("test")
-	err := idx.BulkImport(context.Background(), []any{map[string]int{"id": 1}}, BulkOptions{})
+	_, err := idx.BulkImport(context.Background(), []any{map[string]int{"id": 1}}, BulkOptions{})
 	if err == nil {
 		t.Fatal("expected error for 413")
 	}
@@ -867,9 +905,12 @@ func TestBulkImport_EmptyRecords(t *testing.T) {
 
 	c, _ := New(Config{BaseURL: srv.URL})
 	idx, _ := c.Index("test")
-	err := idx.BulkImport(context.Background(), nil, BulkOptions{})
+	tasks, err := idx.BulkImport(context.Background(), nil, BulkOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tasks) != 0 {
+		t.Fatalf("tasks = %d, want 0", len(tasks))
 	}
 	if called {
 		t.Fatal("expected no HTTP calls for empty records")

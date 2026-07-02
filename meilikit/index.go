@@ -125,14 +125,17 @@ func (idx *Index) Search(ctx context.Context, query string, opts SearchOptions) 
 }
 
 // BulkImport adds records in batches with optional progress reporting.
-func (idx *Index) BulkImport(ctx context.Context, records []any, opts BulkOptions) error {
+// It returns one TaskInfo per batch; Meilisearch indexing is asynchronous, so
+// poll these tasks to confirm documents actually indexed.
+func (idx *Index) BulkImport(ctx context.Context, records []any, opts BulkOptions) ([]TaskInfo, error) {
 	opts = resolveBulkDefaults(opts)
 	total := len(records)
 	imported := 0
+	tasks := make([]TaskInfo, 0, (total+opts.BatchSize-1)/opts.BatchSize)
 
 	for i := 0; i < total; i += opts.BatchSize {
 		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("meilikit: bulk import %q: %w", idx.name, err)
+			return tasks, fmt.Errorf("meilikit: bulk import %q: %w", idx.name, err)
 		}
 		end := i + opts.BatchSize
 		if end > total {
@@ -142,35 +145,42 @@ func (idx *Index) BulkImport(ctx context.Context, records []any, opts BulkOption
 
 		body, err := json.Marshal(batch)
 		if err != nil {
-			return fmt.Errorf("meilikit: marshal batch: %w", err)
+			return tasks, fmt.Errorf("meilikit: marshal batch: %w", err)
 		}
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 			idx.client.baseURL+"/indexes/"+idx.name+"/documents", bytes.NewReader(body))
 		if err != nil {
-			return fmt.Errorf("meilikit: build request: %w", err)
+			return tasks, fmt.Errorf("meilikit: build request: %w", err)
 		}
 		req.Header.Set("Content-Type", "application/json")
 		idx.client.setHeaders(ctx, req)
 
 		resp, err := idx.client.http.Do(req)
 		if err != nil {
-			return fmt.Errorf("meilikit: bulk import %q: %w", idx.name, err)
+			return tasks, fmt.Errorf("meilikit: bulk import %q: %w", idx.name, err)
 		}
 
 		if resp.StatusCode >= 400 {
 			err := decodeMeiliError(resp)
 			resp.Body.Close()
-			return err
+			return tasks, err
 		}
+
+		var task TaskInfo
+		err = json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&task)
 		resp.Body.Close()
+		if err != nil {
+			return tasks, fmt.Errorf("meilikit: decode bulk import task for %q: %w", idx.name, err)
+		}
+		tasks = append(tasks, task)
 
 		imported += len(batch)
 		if opts.OnProgress != nil {
 			opts.OnProgress(imported, total)
 		}
 	}
-	return nil
+	return tasks, nil
 }
 
 // AddDocuments adds or replaces documents. Returns task info.

@@ -18,6 +18,33 @@ type Publisher struct {
 	stats    publisherStats
 }
 
+// BatchFailure records one failed record in a batch publish.
+type BatchFailure struct {
+	Index   int
+	Subject string
+	Err     error
+}
+
+// BatchError reports per-record outcomes of PublishBatch. Records not listed
+// in Failures were durably produced; retry only failed records to avoid
+// duplicate publishes.
+type BatchError struct {
+	Failures  []BatchFailure
+	Succeeded int
+}
+
+func (e *BatchError) Error() string {
+	return fmt.Sprintf("kafkakit: %d of %d batch record(s) failed", len(e.Failures), e.Succeeded+len(e.Failures))
+}
+
+func (e *BatchError) Unwrap() []error {
+	out := make([]error, len(e.Failures))
+	for i, failure := range e.Failures {
+		out[i] = failure.Err
+	}
+	return out
+}
+
 // NewPublisher creates a Publisher connected to the configured Kafka brokers.
 // Source identity is taken from Config.Source.
 func NewPublisher(cfg Config) (*Publisher, error) {
@@ -120,13 +147,30 @@ func (p *Publisher) PublishBatch(ctx context.Context, events []OutboundEvent) er
 		})
 	}
 
+	recordIndex := make(map[*kgo.Record]int, len(records))
+	for i, record := range records {
+		recordIndex[record] = i
+	}
+
 	results := p.client.ProduceSync(ctx, records...)
-	for i, r := range results {
+	failures := make([]BatchFailure, 0)
+	var succeeded int
+	for _, r := range results {
 		if r.Err != nil {
 			p.stats.incErrors()
-			return fmt.Errorf("kafkakit: produce record %d failed: %w", i, r.Err)
+			idx := recordIndex[r.Record]
+			failures = append(failures, BatchFailure{
+				Index:   idx,
+				Subject: events[idx].Subject,
+				Err:     r.Err,
+			})
+			continue
 		}
 		p.stats.incPublished()
+		succeeded++
+	}
+	if len(failures) > 0 {
+		return &BatchError{Failures: failures, Succeeded: succeeded}
 	}
 	return nil
 }

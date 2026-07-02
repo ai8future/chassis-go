@@ -70,7 +70,7 @@ func (s *Sender) Send(url string, payload any, secret string) (string, error) {
 
 	id := generateID()
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-	sigPayload := timestamp + "." + string(body)
+	sigPayload := timestamp + "." + id + "." + string(body)
 	sig := "sha256=" + seal.Sign([]byte(sigPayload), secret)
 
 	delivery := &Delivery{
@@ -115,10 +115,10 @@ func (s *Sender) Send(url string, payload any, secret string) (string, error) {
 			lastErr = err
 			if attempt < s.maxAttempts {
 				delay := 100 * time.Millisecond
-			for i := 1; i < attempt; i++ {
-				delay *= 2
-			}
-			time.Sleep(delay + time.Duration(rand.Int64N(int64(delay/2))))
+				for i := 1; i < attempt; i++ {
+					delay *= 2
+				}
+				time.Sleep(delay + time.Duration(rand.Int64N(int64(delay/2))))
 			}
 			continue
 		}
@@ -167,26 +167,31 @@ func (s *Sender) Status(id string) (Delivery, bool) {
 	return *d, true
 }
 
-// VerifyPayload verifies a webhook payload signature on the receive side.
-// Rejects payloads with timestamps older than 5 minutes to prevent replay attacks.
-func VerifyPayload(headers http.Header, body []byte, secret string) ([]byte, error) {
+// VerifyPayloadID verifies a webhook payload signature on the receive side and
+// returns the signed delivery ID. The ID is covered by the HMAC so receivers
+// can safely use it to deduplicate replayed deliveries within the timestamp
+// window.
+//
+// Wire format (v11.2+): signature input is "timestamp.id.body".
+func VerifyPayloadID(headers http.Header, body []byte, secret string) (string, []byte, error) {
 	sig := headers.Get("X-Webhook-Signature")
 	timestamp := headers.Get("X-Webhook-Timestamp")
-	if sig == "" || timestamp == "" {
-		return nil, ErrBadSignature
+	id := headers.Get("X-Webhook-Id")
+	if sig == "" || timestamp == "" || id == "" {
+		return "", nil, ErrBadSignature
 	}
 
 	// Reject stale timestamps to prevent replay attacks.
 	ts, err := strconv.ParseInt(timestamp, 10, 64)
 	if err != nil {
-		return nil, ErrBadSignature
+		return "", nil, ErrBadSignature
 	}
 	age := time.Since(time.Unix(ts, 0))
 	if age < 0 {
 		age = -age
 	}
 	if age > 5*time.Minute {
-		return nil, fmt.Errorf("%w: timestamp expired", ErrBadSignature)
+		return "", nil, fmt.Errorf("%w: timestamp expired", ErrBadSignature)
 	}
 
 	// Strip "sha256=" prefix
@@ -194,12 +199,20 @@ func VerifyPayload(headers http.Header, body []byte, secret string) ([]byte, err
 		sig = sig[7:]
 	}
 
-	sigPayload := timestamp + "." + string(body)
+	sigPayload := timestamp + "." + id + "." + string(body)
 	if !seal.Verify([]byte(sigPayload), sig, secret) {
-		return nil, ErrBadSignature
+		return "", nil, ErrBadSignature
 	}
 
-	return body, nil
+	return id, body, nil
+}
+
+// VerifyPayload verifies a webhook payload signature on the receive side,
+// discarding the signed delivery ID. Prefer VerifyPayloadID so replayed
+// delivery IDs can be deduplicated.
+func VerifyPayload(headers http.Header, body []byte, secret string) ([]byte, error) {
+	_, payload, err := VerifyPayloadID(headers, body, secret)
+	return payload, err
 }
 
 func generateID() string {

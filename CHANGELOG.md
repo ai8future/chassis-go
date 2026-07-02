@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [11.2.0] - 2026-07-02
+
+### Breaking / API / Wire
+- **webhook**: Signatures now cover the delivery ID with `timestamp.id.body` instead of `timestamp.body`; senders and receivers must upgrade together. Added `VerifyPayloadID` so receivers can deduplicate signed delivery IDs.
+- **meilikit**: `Index.BulkImport` now returns `([]TaskInfo, error)` so callers can observe and poll every asynchronous import task.
+- **kafkakit**: `Publisher.PublishBatch` now returns `*BatchError` on per-record publish failures so callers can retry only failed records.
+- **seal**: `Sign` now panics for empty secrets, `Verify` rejects empty secrets, and `Encrypt`/`Decrypt` reject empty passphrases.
+
+### Tests
+- Added regressions for kafkakit per-record batch failures, webhook signed delivery IDs, meilikit bulk task returns, and seal empty-secret/passphrase guards.
+- Verified with `grep -rn "BulkImport" --include="*.go" .`, `go test -race ./kafkakit ./webhook ./meilikit ./seal`, `go build ./...`, and `git diff --check -- kafkakit webhook meilikit seal`.
+
+*(Codex:gpt-5.5)*
+
 ## [11.1.15] - 2026-07-02
 
 ### Fixed
