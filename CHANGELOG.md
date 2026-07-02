@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [11.2.4] - 2026-07-02
+
+### Documentation
+- **tracekit**: Correct current docs to describe generated lightweight trace IDs as `tr_` + 32 lowercase hex chars (16 random bytes / 128-bit entropy). Middleware continues to accept safe opaque incoming `X-Trace-ID` values, including legacy `tr_` + 12 hex IDs, during transition.
+
+### Tests
+- **tracekit**: Add explicit middleware coverage for preserving both legacy `tr_` + 12 hex and canonical `tr_` + 32 hex incoming trace IDs.
+
+*(Claude:Opus 4.8)*
+
 ## [11.2.3] - 2026-07-02
 
 ### Fixed
