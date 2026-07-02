@@ -9,8 +9,13 @@ import (
 	"testing"
 	"time"
 
+	chassis "github.com/ai8future/chassis-go/v11"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func TestSubscriberConfig_ConcurrencyDefault(t *testing.T) {
 	cfg := SubscriberConfig{}

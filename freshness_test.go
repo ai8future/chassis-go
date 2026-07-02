@@ -7,6 +7,10 @@ import (
 	"testing"
 )
 
+func init() {
+	RequireMajor(11)
+}
+
 func TestSemverNewer(t *testing.T) {
 	tests := []struct {
 		a, b string

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [11.2.3] - 2026-07-02
+
+### Fixed
+- **chassis/registry**: Move process app-version storage into an internal shared package so registry internal tests can call `chassis.RequireMajor(11)` without an import cycle while preserving `chassis.SetAppVersion` and `registry.SetAppVersion` behavior.
+
+### Tests
+- Ensure every tracked Go test file calls `chassis.RequireMajor(11)` and verify the missing-test-file count is zero.
+- Verified with `go test ./...`, `go build ./...`, `go vet ./...`, `go test -race -count=1 ./...`, and `go test -count=2 ./phasekit/`.
+
+*(Codex:gpt-5.5)*
+
 ## [11.2.2] - 2026-07-02
 
 ### Fixed

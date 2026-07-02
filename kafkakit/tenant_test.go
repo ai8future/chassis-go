@@ -3,7 +3,13 @@ package kafkakit
 import (
 	"sync"
 	"testing"
+
+	chassis "github.com/ai8future/chassis-go/v11"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func TestTenantFilter_RevokeStopsDelivery(t *testing.T) {
 	f := NewTenantFilter("acme")

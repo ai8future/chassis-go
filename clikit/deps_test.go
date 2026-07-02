@@ -4,7 +4,13 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	chassis "github.com/ai8future/chassis-go/v11"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func TestDependencyAllowlist(t *testing.T) {
 	cmd := exec.Command("go", "list", "-deps", "./clikit")

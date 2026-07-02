@@ -7,8 +7,13 @@ import (
 	"testing"
 	"time"
 
+	chassis "github.com/ai8future/chassis-go/v11"
 	"github.com/ai8future/chassis-go/v11/guard"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func TestCORSPreflightReturns204(t *testing.T) {
 	mw := guard.CORS(guard.CORSConfig{

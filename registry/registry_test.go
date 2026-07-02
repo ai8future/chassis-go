@@ -17,6 +17,10 @@ import (
 	"github.com/ai8future/chassis-go/v11/registry"
 )
 
+func init() {
+	chassis.RequireMajor(11)
+}
+
 // testSvcDir mirrors registry.resolveName() so tests look in the correct directory.
 func testSvcDir(base string) string {
 	name := os.Getenv("CHASSIS_SERVICE_NAME")

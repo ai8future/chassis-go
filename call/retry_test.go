@@ -8,7 +8,13 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	chassis "github.com/ai8future/chassis-go/v11"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 type trackingBody struct {
 	closed *atomic.Int32

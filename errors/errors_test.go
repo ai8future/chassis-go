@@ -9,8 +9,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	chassis "github.com/ai8future/chassis-go/v11"
 	"google.golang.org/grpc/codes"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func TestValidationError(t *testing.T) {
 	err := ValidationError("bad input")

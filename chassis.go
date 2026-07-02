@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/ai8future/chassis-go/v11/registry"
+	"github.com/ai8future/chassis-go/v11/internal/appversion"
 )
 
 //go:embed VERSION
@@ -21,19 +21,16 @@ var rawVersion string
 var Version = strings.TrimSpace(rawVersion)
 
 var majorVersionAsserted atomic.Bool
-var appVersionVal atomic.Value // stores string
 
 // SetAppVersion sets the consumer application's own version string.
 // When set, --version output includes both the app version and the chassis
 // version. Call this before RequireMajor if you want it included.
 func SetAppVersion(v string) {
-	appVersionVal.Store(v)
-	registry.SetAppVersion(v)
+	appversion.Set(v)
 }
 
 func getAppVersion() string {
-	v, _ := appVersionVal.Load().(string)
-	return v
+	return appversion.Get()
 }
 
 // RequireMajor crashes the process if the chassis major version does not match

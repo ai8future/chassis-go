@@ -5,7 +5,13 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	chassis "github.com/ai8future/chassis-go/v11"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func TestWrapEnvelope_NilEntityRefs(t *testing.T) {
 	env, err := wrapEnvelope(context.Background(), "svc", "sub", "t", nil, nil)
