@@ -216,6 +216,55 @@ func TestChatStream_OK(t *testing.T) {
 	}
 }
 
+func TestChatStreamOutlivesClientTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("server does not support flushing")
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+
+		chunks := []string{
+			`{"model":"llama3.2","message":{"role":"assistant","content":"slow"},"done":false}`,
+			`{"model":"llama3.2","message":{"role":"assistant","content":" stream"},"done":false}`,
+			`{"model":"llama3.2","message":{"role":"assistant","content":""},"done":true}`,
+		}
+		for _, chunk := range chunks {
+			fmt.Fprintln(w, chunk)
+			flusher.Flush()
+			time.Sleep(75 * time.Millisecond)
+		}
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	client := New(Config{Host: srv.URL, Model: "llama3.2", Timeout: 100 * time.Millisecond})
+	ch, err := client.ChatStream(ctx, ChatRequest{
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var content string
+	var sawDone bool
+	for chunk := range ch {
+		if chunk.Err != nil {
+			t.Fatalf("unexpected stream error: %v", chunk.Err)
+		}
+		content += chunk.Content
+		sawDone = sawDone || chunk.Done
+	}
+	if content != "slow stream" {
+		t.Fatalf("expected full stream content, got %q", content)
+	}
+	if !sawDone {
+		t.Fatal("expected done chunk")
+	}
+}
+
 // --------------------------------------------------------------------------
 // 6. ChatStream — error status
 // --------------------------------------------------------------------------
@@ -541,6 +590,26 @@ func TestPullModel_OK(t *testing.T) {
 	client := New(Config{Host: srv.URL})
 	err := client.PullModel(context.Background(), "llama3.2")
 	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPullModelOutlivesClientTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/pull" {
+			t.Errorf("expected /api/pull, got %s", r.URL.Path)
+		}
+		time.Sleep(150 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"status":"success"}`)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	client := New(Config{Host: srv.URL, Timeout: 50 * time.Millisecond})
+	if err := client.PullModel(ctx, "llama3.2"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

@@ -2,6 +2,7 @@ package call
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -96,6 +97,52 @@ func TestRetryOn5xx(t *testing.T) {
 
 	if n := int(hits.Load()); n != 3 {
 		t.Fatalf("expected 3 attempts, got %d", n)
+	}
+}
+
+func TestRetryReturnsBodyNotRewindableWhenGetBodyFails(t *testing.T) {
+	srv, hits := counterServer(http.StatusServiceUnavailable)
+	defer srv.Close()
+
+	c := New(
+		WithTimeout(5*time.Second),
+		WithRetry(3, time.Millisecond),
+	)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader("payload"))
+	rewindErr := errors.New("rewind failed")
+	req.GetBody = func() (io.ReadCloser, error) {
+		return nil, rewindErr
+	}
+
+	_, err := c.Do(req)
+	if !errors.Is(err, ErrBodyNotRewindable) {
+		t.Fatalf("expected ErrBodyNotRewindable, got %v", err)
+	}
+	if !errors.Is(err, rewindErr) {
+		t.Fatalf("expected wrapped rewind error, got %v", err)
+	}
+	if n := int(hits.Load()); n != 1 {
+		t.Fatalf("expected 1 attempt before rewind failure, got %d", n)
+	}
+}
+
+func TestRetryReturnsBodyNotRewindableForNonRewindableBody(t *testing.T) {
+	srv, hits := counterServer(http.StatusServiceUnavailable)
+	defer srv.Close()
+
+	c := New(
+		WithTimeout(5*time.Second),
+		WithRetry(3, time.Millisecond),
+	)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL, io.NopCloser(strings.NewReader("payload")))
+	req.GetBody = nil
+
+	_, err := c.Do(req)
+	if !errors.Is(err, ErrBodyNotRewindable) {
+		t.Fatalf("expected ErrBodyNotRewindable, got %v", err)
+	}
+	if n := int(hits.Load()); n != 1 {
+		t.Fatalf("expected 1 attempt before non-rewindable retry, got %d", n)
 	}
 }
 
@@ -573,7 +620,7 @@ type testBreaker struct {
 	recordFn func(bool)
 }
 
-func (b *testBreaker) Allow() error      { return b.allowFn() }
+func (b *testBreaker) Allow() error        { return b.allowFn() }
 func (b *testBreaker) Record(success bool) { b.recordFn(success) }
 
 func TestBatch(t *testing.T) {

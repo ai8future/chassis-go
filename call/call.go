@@ -2,6 +2,7 @@ package call
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,6 +20,10 @@ import (
 )
 
 const tracerName = "github.com/ai8future/chassis-go/v11/call"
+
+// ErrBodyNotRewindable is returned when a retry would need to resend a
+// request body that cannot be recreated through Request.GetBody.
+var ErrBodyNotRewindable = errors.New("call: request body is not rewindable")
 
 var getClientDuration = otelutil.LazyHistogram(
 	tracerName,
@@ -79,10 +84,11 @@ func WithTimeout(d time.Duration) Option {
 // WithRetry enables automatic retries for transient (5xx) errors using
 // exponential backoff with jitter. MaxAttempts is clamped to a minimum of 1.
 //
-// Note: retries re-send the same *http.Request. For requests with a non-nil
-// Body, the body must be rewindable (implement GetBody) or the retry will
-// send an empty/consumed body. Requests with nil Body (GET, DELETE, HEAD)
-// are always safe to retry.
+// Note: retries re-send the same *http.Request. Requests with a non-nil Body
+// must be rewindable through Request.GetBody. If a retry is required and the
+// body cannot be recreated, Do returns ErrBodyNotRewindable instead of sending
+// an empty or partially consumed body. Requests with nil Body (GET, DELETE,
+// HEAD) are always safe to retry.
 func WithRetry(maxAttempts int, baseDelay time.Duration) Option {
 	return func(c *Client) {
 		c.retrier = &Retrier{
@@ -198,8 +204,15 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	// Retrier struct which would race under concurrent use.
 	var attempt int
 	exec := func() (*http.Response, error) {
-		if attempt > 0 && req.GetBody != nil {
-			if body, err := req.GetBody(); err == nil {
+		if attempt > 0 {
+			if req.Body != nil && req.Body != http.NoBody && req.GetBody == nil {
+				return nil, ErrBodyNotRewindable
+			}
+			if req.GetBody != nil {
+				body, err := req.GetBody()
+				if err != nil {
+					return nil, fmt.Errorf("%w: %w", ErrBodyNotRewindable, err)
+				}
 				req.Body = body
 			}
 		}

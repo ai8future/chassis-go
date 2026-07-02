@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [11.1.15] - 2026-07-02
+
+### Fixed
+- **posthogkit**: Make `Capture` after `Close` safe by replacing closed flush-channel sends with a shutdown signal.
+- **call**: Stop retries from resending consumed request bodies; return `ErrBodyNotRewindable` when retry body rewind is unavailable or fails.
+- **lakekit**: Bound successful JSON response decoding to 32 MiB to avoid untrusted unbounded response streams.
+- **ollamakit**: Let `ChatStream` and `PullModel` outlive the regular request timeout while still respecting caller context cancellation.
+
+### Tests
+- Added regressions for post-close PostHog capture, non-rewindable HTTP retry bodies, bounded lakekit decoding, and long Ollama stream/pull operations.
+- Verified with `go test -race ./posthogkit ./call ./lakekit ./ollamakit`, `go build ./...`, and `git diff --check -- posthogkit call lakekit ollamakit`.
+
+*(Codex:gpt-5.5)*
+
 ## [11.1.14] - 2026-06-10
 
 ### Added

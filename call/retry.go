@@ -2,6 +2,7 @@ package call
 
 import (
 	"context"
+	"errors"
 	"io"
 	"math/rand/v2"
 	"net/http"
@@ -24,8 +25,8 @@ type Retrier struct {
 // cancellation and deadline, stopping immediately when the context is done.
 //
 // If the request has a GetBody function, it is called before each retry to
-// rewind the request body. Without GetBody, retries of requests with a body
-// will send an empty/consumed body.
+// rewind the request body. Requests with a body but no working GetBody fail
+// with ErrBodyNotRewindable instead of sending an empty/consumed body.
 func (r *Retrier) Do(ctx context.Context, fn func() (*http.Response, error)) (*http.Response, error) {
 	var (
 		resp *http.Response
@@ -44,6 +45,9 @@ func (r *Retrier) Do(ctx context.Context, fn func() (*http.Response, error)) (*h
 			if resp != nil && resp.Body != nil {
 				io.Copy(io.Discard, resp.Body)
 				resp.Body.Close()
+			}
+			if errors.Is(err, ErrBodyNotRewindable) {
+				return nil, err
 			}
 			// Network-level error — worth retrying.
 			if attempt < r.MaxAttempts-1 {

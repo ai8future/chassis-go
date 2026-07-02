@@ -659,7 +659,25 @@ func TestFlush_ServerErrorEmptyBody(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// 22. Health check — healthy when enabled with API key
+// 22. Capture after Close is safe
+// --------------------------------------------------------------------------
+
+func TestCaptureAfterCloseDoesNotPanic(t *testing.T) {
+	client := New(Config{
+		APIKey:    "phc_test",
+		Host:      "http://127.0.0.1:1",
+		Enabled:   true,
+		FlushSize: 1,
+	})
+	client.Close()
+
+	for range 10 {
+		client.Capture("user-1", "event", nil)
+	}
+}
+
+// --------------------------------------------------------------------------
+// 23. Health check — healthy when enabled with API key
 // --------------------------------------------------------------------------
 
 func TestCheck_Healthy(t *testing.T) {
@@ -674,7 +692,7 @@ func TestCheck_Healthy(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// 23. Health check — healthy when disabled (no-op)
+// 24. Health check — healthy when disabled (no-op)
 // --------------------------------------------------------------------------
 
 func TestCheck_Disabled(t *testing.T) {
@@ -688,7 +706,7 @@ func TestCheck_Disabled(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// 24. Health check — unhealthy when enabled without API key
+// 25. Health check — unhealthy when enabled without API key
 // --------------------------------------------------------------------------
 
 func TestCheck_MissingAPIKey(t *testing.T) {

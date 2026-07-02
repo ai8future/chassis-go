@@ -134,9 +134,10 @@ type ModelDetail struct {
 
 // Client is an HTTP client for an Ollama server.
 type Client struct {
-	host  string
-	model string
-	http  *http.Client
+	host       string
+	model      string
+	http       *http.Client
+	streamHTTP *http.Client
 }
 
 // Option configures a Client.
@@ -163,9 +164,10 @@ func New(cfg Config, opts ...Option) *Client {
 		model = "llama3.2"
 	}
 	c := &Client{
-		host:  strings.TrimRight(host, "/"),
-		model: model,
-		http:  &http.Client{Timeout: timeout},
+		host:       strings.TrimRight(host, "/"),
+		model:      model,
+		http:       &http.Client{Timeout: timeout},
+		streamHTTP: &http.Client{},
 	}
 	for _, o := range opts {
 		o(c)
@@ -243,7 +245,7 @@ func (c *Client) ChatStream(ctx context.Context, req ChatRequest) (<-chan ChatCh
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.http.Do(httpReq)
+	resp, err := c.streamHTTP.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrOllamaUnavailable, err)
 	}
@@ -433,7 +435,7 @@ func (c *Client) PullModel(ctx context.Context, name string) error {
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.http.Do(httpReq)
+	resp, err := c.streamHTTP.Do(httpReq)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrOllamaUnavailable, err)
 	}
