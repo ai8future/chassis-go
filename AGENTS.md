@@ -23,6 +23,7 @@
 
 - **Durable Workflows (inngestkit)**: `inngestkit` is available for services with durable workflow needs (multi-step processes, event-driven pipelines, webhook fanout, code-defined scheduled tasks). It is **not** required for service completion. Services without durable workflow needs should not integrate it. Use the native inngest SDK (`inngestgo`) directly for function definitions and step logic — `inngestkit` only provides config, mount, and send. See INNGEST.md for the integration guide.
 
-- Stay out of the _studies, _proposals, _rcodegen, _bugs_open, _bugs_fixed directories. Do not go into them or read from them unless specifically told to do so.
+- Don't read or browse `_studies`, `_proposals`, `_rcodegen`, `_bugs_open`, or `_bugs_fixed` for context — they're scratch/output folders, not code you need to understand. Only open one if a task explicitly sends you there. (Writing your own bug notes into `_bugs_fixed` is fine, per the rule below.)
+- These folders are version-controlled and must stay in sync with the remote. When you commit, stage the whole tree with `git add -A` so any files created in them — by you, another agent, or a human — get committed and pushed. You never need to open the files to commit them, and changes limited to these folders require no VERSION bump or CHANGELOG entry and must never block a commit.
 
 - When you fix a bug, write short details on that bug and store it in _bugs_fixed. Depending on the severity or complexity, decide if you think you should be very brief - or less brief. Give your bug file a good name but always prepend the date. For example: 2026-12-31-failed-to-check-values-bug.md is a perfect name. Always lowercase. Always include the date in the filename.
