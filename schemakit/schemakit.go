@@ -131,8 +131,15 @@ func (r *Registry) Validate(schema *Schema, data map[string]any) error {
 // Serialize encodes data according to the schema and prepends the Confluent
 // wire format header: magic byte (0x00) + 4-byte schema ID (big-endian).
 func (r *Registry) Serialize(schema *Schema, data map[string]any) ([]byte, error) {
+	if schema == nil {
+		return nil, fmt.Errorf("schemakit: schema is nil")
+	}
 	if schema.parsed == nil {
 		return nil, fmt.Errorf("schemakit: schema %q has no parsed schema", schema.Subject)
+	}
+	id := r.schemaID(schema)
+	if id == 0 {
+		return nil, fmt.Errorf("schemakit: schema %q has SchemaID 0; call Register before Serialize", schema.Subject)
 	}
 
 	payload, err := avro.Marshal(schema.parsed, data)
@@ -144,7 +151,7 @@ func (r *Registry) Serialize(schema *Schema, data map[string]any) ([]byte, error
 	var buf bytes.Buffer
 	buf.WriteByte(0x00)
 	idBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(idBytes, uint32(r.schemaID(schema)))
+	binary.BigEndian.PutUint32(idBytes, uint32(id))
 	buf.Write(idBytes)
 	buf.Write(payload)
 
@@ -162,6 +169,9 @@ func (r *Registry) Deserialize(raw []byte) (map[string]any, error) {
 	}
 
 	schemaID := int(binary.BigEndian.Uint32(raw[1:5]))
+	if schemaID == 0 {
+		return nil, fmt.Errorf("schemakit: payload carries schema ID 0; refusing ambiguous decode")
+	}
 
 	// Find schema by ID in cache
 	r.mu.RLock()

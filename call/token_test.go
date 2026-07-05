@@ -9,8 +9,13 @@ import (
 	"testing"
 	"time"
 
+	chassis "github.com/ai8future/chassis-go/v11"
 	"github.com/ai8future/chassis-go/v11/call"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func TestWithTokenSource(t *testing.T) {
 	var gotAuth string

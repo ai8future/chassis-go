@@ -7,8 +7,13 @@ import (
 	"testing"
 	"time"
 
+	chassis "github.com/ai8future/chassis-go/v11"
 	"github.com/ai8future/chassis-go/v11/guard"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func TestTimeoutSetsDeadline(t *testing.T) {
 	var gotDeadline bool

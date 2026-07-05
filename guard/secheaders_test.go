@@ -7,8 +7,13 @@ import (
 	"strings"
 	"testing"
 
+	chassis "github.com/ai8future/chassis-go/v11"
 	"github.com/ai8future/chassis-go/v11/guard"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func TestSecurityHeadersDefaults(t *testing.T) {
 	mw := guard.SecurityHeaders(guard.DefaultSecurityHeaders)
@@ -21,10 +26,10 @@ func TestSecurityHeadersDefaults(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	checks := map[string]string{
-		"Content-Security-Policy":   "default-src 'self'",
-		"X-Content-Type-Options":    "nosniff",
-		"X-Frame-Options":           "DENY",
-		"Referrer-Policy":           "strict-origin-when-cross-origin",
+		"Content-Security-Policy":    "default-src 'self'",
+		"X-Content-Type-Options":     "nosniff",
+		"X-Frame-Options":            "DENY",
+		"Referrer-Policy":            "strict-origin-when-cross-origin",
 		"Cross-Origin-Opener-Policy": "same-origin",
 	}
 	for header, want := range checks {

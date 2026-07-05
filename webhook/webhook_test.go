@@ -2,6 +2,7 @@ package webhook_test
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -54,6 +55,41 @@ func TestSendAndVerify(t *testing.T) {
 	json.Unmarshal(verified, &payload)
 	if payload["event"] != "test" {
 		t.Fatalf("expected event=test, got %v", payload)
+	}
+}
+
+func TestVerifyPayloadIDRoundTripAndTamperedID(t *testing.T) {
+	secret := "whsec_test"
+	var gotHeaders http.Header
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeaders = r.Header.Clone()
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	sender := webhook.NewSender(webhook.MaxAttempts(1))
+	sentID, err := sender.Send(srv.URL, map[string]string{"k": "v"}, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id, payload, err := webhook.VerifyPayloadID(gotHeaders, gotBody, secret)
+	if err != nil {
+		t.Fatalf("verify failed: %v", err)
+	}
+	if id != sentID {
+		t.Fatalf("expected id %q, got %q", sentID, id)
+	}
+	if string(payload) != string(gotBody) {
+		t.Fatalf("expected payload round trip, got %q want %q", payload, gotBody)
+	}
+
+	tampered := gotHeaders.Clone()
+	tampered.Set("X-Webhook-Id", "ffffffffffffffffffffffffffffffff")
+	if _, _, err := webhook.VerifyPayloadID(tampered, gotBody, secret); !errors.Is(err, webhook.ErrBadSignature) {
+		t.Fatalf("expected ErrBadSignature for tampered id, got %v", err)
 	}
 }
 

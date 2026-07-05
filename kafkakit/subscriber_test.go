@@ -9,8 +9,13 @@ import (
 	"testing"
 	"time"
 
+	chassis "github.com/ai8future/chassis-go/v11"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func TestSubscriberConfig_ConcurrencyDefault(t *testing.T) {
 	cfg := SubscriberConfig{}
@@ -220,6 +225,40 @@ func TestHandleRecordAllowsCommitAfterSuccessfulHandler(t *testing.T) {
 	record := testRecord(t, "ai8.test.subject")
 	if handled := s.handleRecord(context.Background(), record); !handled {
 		t.Fatal("successful handler should allow commit")
+	}
+}
+
+func TestSelectHandlerPrefersMostSpecificPattern(t *testing.T) {
+	cfg := Config{BootstrapServers: "localhost:9092"}
+	s, err := NewSubscriber(cfg, "test-group")
+	if err != nil {
+		t.Fatalf("NewSubscriber error: %v", err)
+	}
+
+	var chosen string
+	generic := HandlerFunc(func(context.Context, Event) error { chosen = "generic"; return nil })
+	specific := HandlerFunc(func(context.Context, Event) error { chosen = "specific"; return nil })
+	exact := HandlerFunc(func(context.Context, Event) error { chosen = "exact"; return nil })
+
+	if err := s.Subscribe("ai8.>", generic); err != nil {
+		t.Fatalf("Subscribe generic: %v", err)
+	}
+	if err := s.Subscribe("ai8.test.>", specific); err != nil {
+		t.Fatalf("Subscribe specific: %v", err)
+	}
+	if err := s.Subscribe("ai8.test.subject", exact); err != nil {
+		t.Fatalf("Subscribe exact: %v", err)
+	}
+
+	got := s.selectHandler("ai8.test.subject")
+	if got == nil {
+		t.Fatal("expected handler")
+	}
+	if err := got(context.Background(), Event{Subject: "ai8.test.subject"}); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if chosen != "exact" {
+		t.Fatal("expected exact pattern to beat wildcard patterns")
 	}
 }
 

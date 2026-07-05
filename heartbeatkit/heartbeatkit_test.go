@@ -2,6 +2,7 @@ package heartbeatkit_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -43,18 +44,39 @@ type mockPublisherWithStats struct {
 	mockPublisher
 }
 
+type blockingPublisher struct {
+	once     sync.Once
+	started  chan struct{}
+	finished chan error
+}
+
+func newBlockingPublisher() *blockingPublisher {
+	return &blockingPublisher{
+		started:  make(chan struct{}),
+		finished: make(chan error, 1),
+	}
+}
+
+func (b *blockingPublisher) Publish(ctx context.Context, _ string, _ any) error {
+	b.once.Do(func() { close(b.started) })
+	<-ctx.Done()
+	err := ctx.Err()
+	b.finished <- err
+	return err
+}
+
 func (m *mockPublisherWithStats) Stats() struct {
-	EventsPublished1h int64
-	Errors1h          int64
+	EventsPublished1h  int64
+	Errors1h           int64
 	LastEventPublished time.Time
 } {
 	return struct {
-		EventsPublished1h int64
-		Errors1h          int64
+		EventsPublished1h  int64
+		Errors1h           int64
 		LastEventPublished time.Time
 	}{
-		EventsPublished1h: 42,
-		Errors1h:          3,
+		EventsPublished1h:  42,
+		Errors1h:           3,
 		LastEventPublished: time.Date(2026, 3, 22, 10, 0, 0, 0, time.UTC),
 	}
 }
@@ -247,5 +269,33 @@ func TestStatsProviderIncludesStats(t *testing.T) {
 	}
 	if _, exists := payload["last_event_published"]; !exists {
 		t.Error("expected last_event_published in payload")
+	}
+}
+
+func TestPublishCannotBlockForever(t *testing.T) {
+	pub := newBlockingPublisher()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	defer heartbeatkit.Stop()
+
+	heartbeatkit.Start(ctx, pub, heartbeatkit.Config{
+		Interval:    10 * time.Millisecond,
+		ServiceName: "test-svc",
+		Version:     "1.0.0",
+	})
+
+	select {
+	case <-pub.started:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("expected heartbeat publish to start")
+	}
+
+	select {
+	case err := <-pub.finished:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("expected bounded publish context deadline, got %v", err)
+		}
+	case <-time.After(1500 * time.Millisecond):
+		t.Fatal("publish remained blocked past its heartbeat timeout")
 	}
 }

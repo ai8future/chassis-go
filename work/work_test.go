@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"sort"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -128,6 +129,23 @@ func TestMap_EmptySlice(t *testing.T) {
 	}
 }
 
+func TestMapRecoversPanic(t *testing.T) {
+	_, err := Map(context.Background(), []int{1, 2}, func(_ context.Context, n int) (int, error) {
+		if n == 2 {
+			panic("boom")
+		}
+		return n, nil
+	})
+
+	var workErrs *Errors
+	if !errors.As(err, &workErrs) || len(workErrs.Failures) != 1 {
+		t.Fatalf("expected 1 recovered failure, got %v", err)
+	}
+	if !strings.Contains(workErrs.Failures[0].Err.Error(), "panicked") {
+		t.Fatalf("expected panic-derived error, got %v", workErrs.Failures[0].Err)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // All tests
 // ---------------------------------------------------------------------------
@@ -209,6 +227,21 @@ func TestAll_ContextCancellation(t *testing.T) {
 	}
 }
 
+func TestAllRecoversPanic(t *testing.T) {
+	err := All(context.Background(), []func(context.Context) error{
+		func(context.Context) error { return nil },
+		func(context.Context) error { panic("boom") },
+	})
+
+	var workErrs *Errors
+	if !errors.As(err, &workErrs) || len(workErrs.Failures) != 1 {
+		t.Fatalf("expected 1 recovered failure, got %v", err)
+	}
+	if !strings.Contains(workErrs.Failures[0].Err.Error(), "panicked") {
+		t.Fatalf("expected panic-derived error, got %v", workErrs.Failures[0].Err)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Race tests
 // ---------------------------------------------------------------------------
@@ -281,6 +314,16 @@ func TestRace_ContextCancelled(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if !cancelled.Load() {
 		t.Fatal("expected loser to observe context cancellation")
+	}
+}
+
+func TestRaceRecoversPanic(t *testing.T) {
+	got, err := Race(context.Background(),
+		func(context.Context) (string, error) { panic("boom") },
+		func(context.Context) (string, error) { return "ok", nil },
+	)
+	if err != nil || got != "ok" {
+		t.Fatalf("expected surviving winner, got %q err %v", got, err)
 	}
 }
 
@@ -370,6 +413,28 @@ func TestStream_ClosedChannel(t *testing.T) {
 
 	if count != 0 {
 		t.Fatalf("expected 0 results from closed channel, got %d", count)
+	}
+}
+
+func TestStreamRecoversPanic(t *testing.T) {
+	in := make(chan int, 2)
+	in <- 1
+	in <- 2
+	close(in)
+
+	var sawPanicErr bool
+	for result := range Stream(context.Background(), in, func(_ context.Context, n int) (int, error) {
+		if n == 2 {
+			panic("boom")
+		}
+		return n, nil
+	}) {
+		if result.Err != nil && strings.Contains(result.Err.Error(), "panicked") {
+			sawPanicErr = true
+		}
+	}
+	if !sawPanicErr {
+		t.Fatal("expected recovered panic error from Stream")
 	}
 }
 

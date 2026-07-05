@@ -6,13 +6,13 @@ A composable Go service toolkit for building production-grade microservices. Too
 go get github.com/ai8future/chassis-go/v11
 ```
 
-**Current version:** 11.2.0 &middot; **Go:** 1.26.2+ &middot; **License:** MIT
+**Current version:** 11.3.0 &middot; **Go:** 1.26.x (module floor 1.26.0; tested with 1.26.4) &middot; **License:** MIT
 
 ---
 
 ## Requirements
 
-chassis-go v11 declares `go 1.26.0` in `go.mod`, so Go 1.26 is the compiler floor and Go 1.25 toolchains cannot build this module. Build, test, and deploy with Go 1.26.2 or later; the patch floor is required for security fixes in the Go standard library and toolchain.
+chassis-go v11 declares `go 1.26.0` in `go.mod`, so Go 1.26 is the compiler floor and Go 1.25 toolchains cannot build this module. Build, test, and deploy with the latest Go 1.26 patch release; this repository is currently verified with Go 1.26.4.
 
 ---
 
@@ -55,7 +55,7 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 | `flagz` | `.../v11/flagz` | Feature flags with percentage rollouts (FNV-1a), pluggable sources, OTel span events |
 | `metrics` | `.../v11/metrics` | OTel-native metrics recorder with cardinality protection (max 1000 label combos) |
 | `otel` | `.../v11/otel` | OpenTelemetry bootstrap: OTLP gRPC traces + metrics, configurable samplers |
-| `errors` | `.../v11/errors` | Unified error type with dual HTTP/gRPC codes, RFC 9457 Problem Details, stable retry classes |
+| `errors` | `.../v11/errors` | Unified error type with dual HTTP/gRPC codes, RFC 9457 Problem Details, and stable retry classes |
 | `authkit` | `.../v11/authkit` | Scoped inbound bearer-token validation for Windmill-callable HTTP/gRPC endpoints |
 | `idemkit` | `.../v11/idemkit` | Tenant-scoped HTTP idempotency middleware with replay, mismatch, in-flight, and 5xx release handling |
 | `orchestration` | `.../v11/orchestration` | Windmill capability manifests, registry metadata, and authored OpenAPI handlers |
@@ -70,7 +70,7 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 | `cache` | `.../v11/cache` | Generic LRU+TTL in-memory cache with `Prune()` |
 | `seal` | `.../v11/seal` | AES-256-GCM encrypt/decrypt, HMAC-SHA256 sign/verify, temporary tokens |
 | `tick` | `.../v11/tick` | Periodic task components for `lifecycle.Run` (`Every` with `Immediate`/`OnError` options) |
-| `webhook` | `.../v11/webhook` | HMAC-signed webhook send with retry, delivery tracking, `VerifyPayload` |
+| `webhook` | `.../v11/webhook` | HMAC-signed webhook send with retry, delivery tracking, `VerifyPayloadID` for signed delivery IDs, and legacy-compatible `VerifyPayload` wrapper |
 | `deploy` | `.../v11/deploy` | Convention-based deploy directory discovery, environment detection, endpoints, dependencies, health |
 
 ### Tier 5: Integrations
@@ -79,22 +79,27 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 |---------|--------|---------|
 | `kafkakit` | `.../v11/kafkakit` | Publish/subscribe to Redpanda event bus with Avro envelopes, tenant filtering, DLQ, AtLeastOnce delivery. Depends on `schemakit`. Uses `github.com/twmb/franz-go` |
 | `schemakit` | `.../v11/schemakit` | Avro schema validation, registration, serialization. Confluent Schema Registry client |
-| `tracekit` | `.../v11/tracekit` | Distributed trace ID propagation (`tr_` + 32 hex canonical, bounded 12-hex legacy inbound). HTTP middleware. Wraps OTel when available |
+| `tracekit` | `.../v11/tracekit` | Distributed trace ID propagation (`tr_` + 32 lowercase hex canonical, bounded 12-hex legacy inbound). HTTP middleware. Can be used alongside OTel/httpkit tracing |
 | `heartbeatkit` | `.../v11/heartbeatkit` | Auto liveness heartbeats every 30s. Depends on `kafkakit`. Auto-activates with kafkakit |
 | `announcekit` | `.../v11/announcekit` | Service/job lifecycle events. Depends on `kafkakit`. Auto-activates with kafkakit |
 | `registrykit` | `.../v11/registrykit` | HTTP client to registry_svc for entity resolution. Depends on `call` |
-| `lakekit` | `.../v11/lakekit` | HTTP client to lake_svc for data lake access. Depends on `call` |
+| `lakekit` | `.../v11/lakekit` | Stdlib HTTP client to lake_svc for data lake access with tenant/trace headers and bounded response decoding |
 | `phasekit` | `.../v11/phasekit` | Startup secret hydration from Phase via the `phase` CLI before `config.MustLoad` |
-| `inngestkit` | `.../v11/inngestkit` | Thin setup glue for Inngest's Go SDK: config validation, handler mount, and event sending |
-| `inferkit` | `.../v11/inferkit` | Provider-agnostic OpenAI-compatible inference client for chat, SSE streaming, and embeddings |
-| `ollamakit` | `.../v11/ollamakit` | Ollama native `/api` client for chat, generate, embeddings, model listing, show, and pull |
-| `meilikit` | `.../v11/meilikit` | Meilisearch HTTP client for index configuration, search/multi-search, documents, bulk import, and task waits |
-| `qdrantkit` | `.../v11/qdrantkit` | Qdrant vector database HTTP client for collections, upsert/delete, search, scroll, and payload indexes |
-| `posthogkit` | `.../v11/posthogkit` | Non-blocking batched PostHog analytics client with health check, periodic flush, and optional HMAC ID hashing |
+| `inngestkit` | `.../v11/inngestkit` | Thin setup glue for the Inngest Go SDK (config, HTTP mount, send). Functions/steps use `inngestgo` directly. Optional |
+
+### Tier 6: External Service Clients
+
+Most client packages below are built on `call.Client` (retry, circuit breaker, OTel spans). Exceptions are `lakekit` and `ollamakit`, which intentionally use stdlib `http.Client` for their current APIs/streaming behavior.
+
+| Package | Import | Purpose |
+|---------|--------|---------|
+| `inferkit` | `.../v11/inferkit` | Provider-agnostic client for OpenAI-compatible LLM APIs: chat completions, SSE streaming, embeddings. Works with OpenAI, DeepInfra, Groq, Ollama (compat mode) |
+| `ollamakit` | `.../v11/ollamakit` | Stdlib HTTP client for Ollama's native `/api/` endpoints: chat, generate, embeddings, model management; streaming/pull operations use a no-timeout client while caller context controls cancellation |
+| `meilikit` | `.../v11/meilikit` | Client for Meilisearch: index and document management, search |
+| `qdrantkit` | `.../v11/qdrantkit` | Client for the Qdrant vector database: collections, points, filtered search |
+| `posthogkit` | `.../v11/posthogkit` | Non-blocking, batched PostHog analytics client; buffered capture flushed periodically or by size. No-op when disabled |
 
 **Tier isolation**: Foundation packages avoid transport/runtime stacks such as gRPC and the OTel SDK unless you import packages that need them. `clikit` adds no CLI framework and reuses existing chassis/logz plumbing; its trace-aware logging path may include the already-present OTel trace API, but not the OTel SDK.
-
-For Windmill orchestration readiness, see [`docs/windmill-orchestration.md`](docs/windmill-orchestration.md).
 
 ---
 
@@ -298,12 +303,12 @@ registry.Errorf("failed to connect to %s: %v", host, err)
 
 // Register custom commands (must be called before lifecycle.Run)
 registry.Handle("flush-cache", "Clear all cached data", func() error {
-    cache.Flush()
+    // clear application cache here
     return nil
 })
 ```
 
-The service name is resolved from `CHASSIS_SERVICE_NAME` env var, falling back to the working directory name. The service version is read from a `VERSION` file in the working directory.
+The service name is resolved from `CHASSIS_SERVICE_NAME` env var, falling back to the working directory name. The service version comes from `chassis.SetAppVersion` when set, otherwise from a `VERSION` file in the working directory.
 
 ### `call` — Resilient HTTP Client
 
@@ -603,6 +608,43 @@ func TestMyHandler(t *testing.T) {
 }
 ```
 
+### Integration & Client Kits
+
+The integration kits are optional. Import only the ones a service needs — each
+keeps its heavier dependencies out of the core import graph.
+
+**Event bus (`kafkakit` + `schemakit`)** — publish/subscribe to Redpanda over
+the Kafka protocol with a standard event envelope (event ID, ms timestamp,
+source, subject, trace ID, tenant ID, entity refs), tenant-based delivery
+filtering, dead-letter routing on handler error, wildcard subscriptions, and
+at-most-once (default) or `AtLeastOnce` delivery. `schemakit` loads `.avsc`
+Avro schemas and serializes/registers them in Confluent wire format against a
+Schema Registry.
+
+**Liveness & lifecycle (`heartbeatkit` + `announcekit`)** — `heartbeatkit`
+publishes liveness payloads to `ai8.infra.heartbeat` on a fixed interval;
+`announcekit` publishes service- and job-lifecycle events to
+`ai8.infra.{service}.lifecycle.{state}` and `ai8.infra.{service}.job.{state}`.
+Both depend on `kafkakit` and auto-activate when it is configured.
+
+**Platform clients (`registrykit` + `lakekit`)** — typed HTTP clients for
+`registry_svc` (entity resolution, relationship/graph traversal, entity
+management) and `lake_svc` (SQL queries, entity history, dataset
+listing/stats). `registrykit` is `call`-backed; `lakekit` uses stdlib HTTP
+with bounded response reads. Both set `X-Tenant-ID` and `X-Trace-ID` on every
+request.
+
+**Inference & search clients** — `inferkit` (OpenAI-compatible chat/stream/
+embeddings), `meilikit` (Meilisearch), and `qdrantkit` (Qdrant vector DB) are
+thin `call`-backed clients for common backends. `ollamakit` uses stdlib HTTP
+for Ollama native APIs and long-running streams/pulls. `posthogkit` is a
+non-blocking batched analytics client that no-ops when disabled.
+
+**Durable workflows (`inngestkit`)** — thin setup glue (config, HTTP mount,
+event send) for the Inngest Go SDK. Function and step definitions use
+`inngestgo` directly; see [`INNGEST.md`](INNGEST.md). Optional — services
+without durable-workflow needs should skip it.
+
 ---
 
 ## Version Gate
@@ -686,24 +728,20 @@ When OTel is initialized, the following telemetry is collected automatically:
 
 ## Dependencies
 
-Direct dependencies are intentionally tied to the packages that need them:
+The core packages keep a thin direct-dependency surface (OTel, `golang.org/x/sync`, `golang.org/x/crypto`, `google.golang.org/grpc`). Heavier dependencies are isolated to the integration kits that need them, so they are only pulled in when you import those packages:
 
 ```
-github.com/hamba/avro/v2                         v2.31.0   (schemakit)
-github.com/inngest/inngestgo                     v0.15.1   (inngestkit)
-github.com/twmb/franz-go                         v1.20.7   (kafkakit)
-go.opentelemetry.io/otel                         v1.40.0   (logz/httpkit/grpckit/call/work/metrics/otel)
-go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.40.0 (otel metrics export)
-go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc   v1.40.0 (otel trace export)
-go.opentelemetry.io/otel/metric                  v1.40.0   (metrics)
-go.opentelemetry.io/otel/sdk                     v1.40.0   (otel)
-go.opentelemetry.io/otel/sdk/metric              v1.40.0   (otel)
-go.opentelemetry.io/otel/trace                   v1.40.0   (logz/trace-aware packages)
-golang.org/x/crypto                              v0.48.0   (authkit scrypt)
-golang.org/x/sync                                v0.19.0   (lifecycle/work)
-golang.org/x/text                                v0.34.0   (transitive-facing text support)
-google.golang.org/grpc                           v1.79.3   (grpckit/authkit interceptors)
+go.opentelemetry.io/otel          v1.40.0   (core)
+go.opentelemetry.io/otel/sdk      v1.40.0   (otel)
+golang.org/x/sync                 v0.21.0   (core)
+golang.org/x/crypto               v0.53.0   (seal)
+google.golang.org/grpc            v1.79.3   (grpckit, otel)
+github.com/twmb/franz-go          v1.20.7   (kafkakit)
+github.com/hamba/avro/v2          v2.31.0   (schemakit)
+github.com/inngest/inngestgo      v0.15.1   (inngestkit)
 ```
+
+See `go.mod` for the full, pinned dependency list.
 
 chassis-go core still ships no database driver; durable stores belong in service code or addons.
 

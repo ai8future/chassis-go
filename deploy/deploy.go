@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -88,7 +89,7 @@ type Environment struct {
 	PodName   string `json:"pod_name,omitempty"`
 }
 
-func (d *Deploy) Found() bool { return d.found }
+func (d *Deploy) Found() bool  { return d.found }
 func (d *Deploy) Dir() string  { return d.dir }
 func (d *Deploy) Name() string { return d.name }
 
@@ -342,6 +343,7 @@ func parseEnvFile(path string) map[string]string {
 	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -358,6 +360,10 @@ func parseEnvFile(path string) map[string]string {
 		}
 		result[strings.TrimSpace(k)] = v
 	}
+	if err := scanner.Err(); err != nil {
+		slog.Warn("deploy: env file scan failed", "path", path, "error", err)
+		return map[string]string{}
+	}
 	return result
 }
 
@@ -366,8 +372,15 @@ func runHookExec(path string) error {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path)
 	cmd.Dir = filepath.Dir(path)
-	_, err := cmd.CombinedOutput()
-	return err
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		tail := out
+		if len(tail) > 2048 {
+			tail = tail[len(tail)-2048:]
+		}
+		return fmt.Errorf("deploy: hook %s failed: %w: %s", filepath.Base(path), err, strings.TrimSpace(string(tail)))
+	}
+	return nil
 }
 
 // detectRuntime returns the detected runtime environment.

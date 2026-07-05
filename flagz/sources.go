@@ -94,6 +94,11 @@ type multiSource struct {
 // Multi creates a Source that layers multiple sources. Later sources in the
 // list take precedence over earlier ones.
 func Multi(sources ...Source) Source {
+	for i, s := range sources {
+		if s == nil {
+			panic(fmt.Sprintf("flagz: Multi received nil source at index %d", i))
+		}
+	}
 	return &multiSource{sources: sources}
 }
 

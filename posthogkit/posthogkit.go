@@ -63,6 +63,7 @@ type Client struct {
 	mu        sync.Mutex
 	buf       []event
 	flushCh   chan struct{}
+	done      chan struct{}
 	closeOnce sync.Once
 }
 
@@ -85,11 +86,17 @@ func New(cfg Config) *Client {
 		log:     slog.Default(),
 		buf:     make([]event, 0, cfg.FlushSize),
 		flushCh: make(chan struct{}, 1),
+		done:    make(chan struct{}),
 	}
 	go func() {
-		for range c.flushCh {
-			if err := c.flush(context.Background()); err != nil {
-				c.log.Warn("posthogkit: auto-flush failed", "error", err)
+		for {
+			select {
+			case <-c.done:
+				return
+			case <-c.flushCh:
+				if err := c.flush(context.Background()); err != nil {
+					c.log.Warn("posthogkit: auto-flush failed", "error", err)
+				}
 			}
 		}
 	}()
@@ -200,7 +207,7 @@ func (c *Client) Flusher() func(context.Context) error {
 // Safe to call multiple times.
 func (c *Client) Close() {
 	c.closeOnce.Do(func() {
-		close(c.flushCh)
+		close(c.done)
 		if err := c.flush(context.Background()); err != nil {
 			c.log.Warn("posthogkit: final flush failed", "error", err)
 		}
@@ -230,6 +237,12 @@ func (c *Client) Check() health.Check {
 const maxBuffer = 10000
 
 func (c *Client) enqueue(e event) {
+	select {
+	case <-c.done:
+		return
+	default:
+	}
+
 	c.mu.Lock()
 	if len(c.buf) >= maxBuffer {
 		c.mu.Unlock()
@@ -240,6 +253,7 @@ func (c *Client) enqueue(e event) {
 	c.mu.Unlock()
 	if shouldFlush {
 		select {
+		case <-c.done:
 		case c.flushCh <- struct{}{}:
 		default: // flush already pending
 		}

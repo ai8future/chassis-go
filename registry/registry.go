@@ -10,8 +10,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ai8future/chassis-go/v11/internal/appversion"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -244,6 +246,10 @@ func Init(cancel context.CancelFunc, chassisVersion string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
+	if err := validateBasePath(); err != nil {
+		return err
+	}
+
 	startedAt = time.Now().UTC()
 	cancelFn = cancel
 	pid := os.Getpid()
@@ -375,6 +381,10 @@ func Shutdown(reason string) {
 func InitCLI(chassisVersion string) error {
 	mu.Lock()
 	defer mu.Unlock()
+
+	if err := validateBasePath(); err != nil {
+		return err
+	}
 
 	startedAt = time.Now().UTC()
 	cliMode = true
@@ -639,6 +649,28 @@ func djb2Port(name string) int {
 
 // --- internal helpers ---
 
+func validateBasePath() error {
+	info, err := os.Lstat(BasePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("registry: inspect base path %s: %w", BasePath, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("registry: base path %s must not be a symlink", BasePath)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("registry: base path %s is not a directory", BasePath)
+	}
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm&0o022 != 0 {
+			return fmt.Errorf("registry: base path %s has unsafe permissions %o (group/world writable)", BasePath, perm)
+		}
+	}
+	return nil
+}
+
 func resolveName() string {
 	if name := os.Getenv("CHASSIS_SERVICE_NAME"); name != "" {
 		for _, c := range name {
@@ -656,17 +688,14 @@ func resolveName() string {
 	return filepath.Base(wd)
 }
 
-var appVersion atomic.Value // stores string; set by SetAppVersion
-
 // SetAppVersion sets the application version for the registry manifest.
 // When set, this takes priority over reading a VERSION file from the CWD.
-// Typically called by chassis.SetAppVersion which forwards here.
 func SetAppVersion(v string) {
-	appVersion.Store(v)
+	appversion.Set(v)
 }
 
 func readVersion() string {
-	if v, ok := appVersion.Load().(string); ok && v != "" {
+	if v := appversion.Get(); v != "" {
 		return v
 	}
 	b, err := os.ReadFile("VERSION")
@@ -844,11 +873,16 @@ func pollOnce() {
 	path := cmdPath
 	mu.Unlock()
 
-	data, err := os.ReadFile(path)
+	claimed := fmt.Sprintf("%s.claimed.%d", path, os.Getpid())
+	if err := os.Rename(path, claimed); err != nil {
+		return
+	}
+	defer os.Remove(claimed)
+
+	data, err := os.ReadFile(claimed)
 	if err != nil {
 		return
 	}
-	os.Remove(path)
 
 	var req cmdRequest
 	if json.Unmarshal(data, &req) != nil {

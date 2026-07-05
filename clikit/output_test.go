@@ -8,9 +8,14 @@ import (
 	"strings"
 	"testing"
 
+	chassis "github.com/ai8future/chassis-go/v11"
 	"github.com/ai8future/chassis-go/v11/logz"
 	"go.opentelemetry.io/otel/trace"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func TestEmitterJSONModeSuppressesHumanText(t *testing.T) {
 	var buf bytes.Buffer

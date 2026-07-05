@@ -2,8 +2,6 @@
 
 ## [Unreleased]
 
-## [11.2.0] - 2026-07-05
-
 ### Added
 - Add Windmill readiness Wave 0 primitives: `authkit` scoped inbound bearer validation, `idemkit` tenant-scoped HTTP idempotency, `orchestration` capability manifests/registry metadata, and `conformance` L0-L2 evidence helpers with declaration-only L3 reporting.
 - Pin shared Windmill contract schemas and fixtures under `testdata/windmill/contracts` with provenance and checksums.
@@ -15,6 +13,100 @@
 
 ### Documentation
 - Document Windmill middleware ordering, resource provisioning, canonical trace IDs, idempotency limits, and conformance usage.
+
+## [11.3.0] - 2026-07-02
+
+### Changed
+- Promote to minor release `11.3.0`. No functional code changes since `11.2.4`; version marker consolidating the recent tracekit documentation/test corrections into a new minor line.
+
+*(Claude:Opus 4.8)*
+
+## [11.2.4] - 2026-07-02
+
+### Documentation
+- **tracekit**: Correct current docs to describe generated lightweight trace IDs as `tr_` + 32 lowercase hex chars (16 random bytes / 128-bit entropy). Middleware continues to accept safe opaque incoming `X-Trace-ID` values, including legacy `tr_` + 12 hex IDs, during transition.
+
+### Tests
+- **tracekit**: Add explicit middleware coverage for preserving both legacy `tr_` + 12 hex and canonical `tr_` + 32 hex incoming trace IDs.
+
+*(Claude:Opus 4.8)*
+
+## [11.2.3] - 2026-07-02
+
+### Fixed
+- **chassis/registry**: Move process app-version storage into an internal shared package so registry internal tests can call `chassis.RequireMajor(11)` without an import cycle while preserving `chassis.SetAppVersion` and `registry.SetAppVersion` behavior.
+
+### Tests
+- Ensure every tracked Go test file calls `chassis.RequireMajor(11)` and verify the missing-test-file count is zero.
+- Verified with `go test ./...`, `go build ./...`, `go vet ./...`, `go test -race -count=1 ./...`, and `go test -count=2 ./phasekit/`.
+
+*(Codex:gpt-5.5)*
+
+## [11.2.2] - 2026-07-02
+
+### Fixed
+- **phasekit**: Restore hydrated env keys between tests and use a load-tolerant fake CLI timeout so repeated in-process runs are isolated.
+- **call**: Use method-only client span names and cap retry response-body drains to 1 MiB.
+- **flagz**: Fail fast when `Multi` receives a nil source.
+- **errors**: Avoid nil-request panics when logging `WriteProblem` encode failures.
+- **tick**: Stop jitter timers on cancellation to avoid timer leaks.
+- **guard**: Document the trust boundary for `HeaderKey` rate-limit keys.
+- **deploy**: Include a bounded tail of failing hook output in hook errors.
+- **inferkit**: Defer response-body close around successful JSON decode paths.
+
+### Dependencies
+- Updated `golang.org/x/crypto` from v0.48.0 to v0.53.0 and refreshed related `x/*` modules with `go mod tidy`.
+
+### Tests
+- Verified with `go test -race -count=3 ./phasekit/`, `go test -race ./call/ ./seal/ ./flagz/ ./errors/ ./tick/ ./webhook/ ./guard/ ./deploy/ ./inferkit/ -v`, `go build ./...`, `go vet ./...`, `go test -race -count=1 ./...`, and `go test -count=2 ./phasekit/`.
+
+*(Codex:gpt-5.5)*
+
+## [11.2.1] - 2026-07-02
+
+### Fixed
+- **freshness**: Build stale binaries to unique temp files beside the target binary and chmod before atomic rename.
+- **registry**: Reject symlinked or group/world-writable registry base paths and atomically claim command files before reading.
+- **work**: Recover panics in `Map`, `All`, `Race`, and `Stream` as task errors instead of crashing worker goroutines.
+- **config**: Preserve regex quantifier commas when splitting validation constraints.
+- **schemakit**: Reject SchemaID 0 during serialize/deserialize to avoid ambiguous unregistered wire payloads.
+- **kafkakit**: Apply configured producer record retries with bounded exponential jitter backoff and choose the most-specific matching subscriber handler deterministically.
+- **heartbeatkit**: Bound each heartbeat publish with a per-publish timeout so a blocked publisher cannot halt the loop forever.
+- **deploy**: Increase `.env` scanner capacity to 1 MiB and surface scanner errors instead of silently ignoring long lines.
+
+### Tests
+- Added regressions for freshness temp paths, registry base-path hardening, work panic recovery, config regex validation splitting, schemakit SchemaID 0 rejection, kafkakit retry/backoff and handler selection, heartbeat bounded publishing, and deploy long env lines.
+- Verified with `go test -race ./ ./registry ./work ./config ./schemakit ./kafkakit ./heartbeatkit ./deploy`, `go build ./...`, `git diff --check -- freshness.go freshness_test.go registry/registry.go registry/registry_test.go work/work.go work/work_test.go config/config.go config/config_test.go schemakit/schemakit.go schemakit/schemakit_test.go kafkakit/publisher.go kafkakit/publisher_test.go kafkakit/subscriber.go kafkakit/subscriber_test.go heartbeatkit/heartbeatkit.go heartbeatkit/heartbeatkit_test.go deploy/deploy.go deploy/env_internal_test.go`, and `go test ./...`.
+
+*(Codex:gpt-5.5)*
+
+## [11.2.0] - 2026-07-02
+
+### Breaking / API / Wire
+- **webhook**: Signatures now cover the delivery ID with `timestamp.id.body` instead of `timestamp.body`; senders and receivers must upgrade together. Added `VerifyPayloadID` so receivers can deduplicate signed delivery IDs.
+- **meilikit**: `Index.BulkImport` now returns `([]TaskInfo, error)` so callers can observe and poll every asynchronous import task.
+- **kafkakit**: `Publisher.PublishBatch` now returns `*BatchError` on per-record publish failures so callers can retry only failed records.
+- **seal**: `Sign` now panics for empty secrets, `Verify` rejects empty secrets, and `Encrypt`/`Decrypt` reject empty passphrases.
+
+### Tests
+- Added regressions for kafkakit per-record batch failures, webhook signed delivery IDs, meilikit bulk task returns, and seal empty-secret/passphrase guards.
+- Verified with `grep -rn "BulkImport" --include="*.go" .`, `go test -race ./kafkakit ./webhook ./meilikit ./seal`, `go build ./...`, and `git diff --check -- kafkakit webhook meilikit seal`.
+
+*(Codex:gpt-5.5)*
+
+## [11.1.15] - 2026-07-02
+
+### Fixed
+- **posthogkit**: Make `Capture` after `Close` safe by replacing closed flush-channel sends with a shutdown signal.
+- **call**: Stop retries from resending consumed request bodies; return `ErrBodyNotRewindable` when retry body rewind is unavailable or fails.
+- **lakekit**: Bound successful JSON response decoding to 32 MiB to avoid untrusted unbounded response streams.
+- **ollamakit**: Let `ChatStream` and `PullModel` outlive the regular request timeout while still respecting caller context cancellation.
+
+### Tests
+- Added regressions for post-close PostHog capture, non-rewindable HTTP retry bodies, bounded lakekit decoding, and long Ollama stream/pull operations.
+- Verified with `go test -race ./posthogkit ./call ./lakekit ./ollamakit`, `go build ./...`, and `git diff --check -- posthogkit call lakekit ollamakit`.
+
+*(Codex:gpt-5.5)*
 
 ## [11.1.14] - 2026-06-10
 

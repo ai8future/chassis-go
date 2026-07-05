@@ -2,6 +2,7 @@ package call
 
 import (
 	"context"
+	"errors"
 	"io"
 	"math/rand/v2"
 	"net/http"
@@ -48,8 +49,8 @@ type RetryPolicy func(RetryContext) RetryDecision
 // context is done.
 //
 // If the request has a GetBody function, it is called before each retry to
-// rewind the request body. Without GetBody, retries of requests with a body
-// will send an empty/consumed body.
+// rewind the request body. Requests with a body but no working GetBody fail
+// with ErrBodyNotRewindable instead of sending an empty/consumed body.
 func (r *Retrier) Do(ctx context.Context, fn func() (*http.Response, error)) (*http.Response, error) {
 	var (
 		resp *http.Response
@@ -67,6 +68,11 @@ func (r *Retrier) Do(ctx context.Context, fn func() (*http.Response, error)) (*h
 			drainAndClose(resp)
 			return nil, ctx.Err()
 		}
+		if errors.Is(err, ErrBodyNotRewindable) {
+			drainAndClose(resp)
+			return nil, err
+		}
+
 		decision := r.policy()(RetryContext{
 			Attempt:  attempt + 1,
 			Method:   r.method,
@@ -220,7 +226,7 @@ func drainAndClose(resp *http.Response) {
 	if resp == nil || resp.Body == nil {
 		return
 	}
-	io.Copy(io.Discard, resp.Body)
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 	resp.Body.Close()
 }
 

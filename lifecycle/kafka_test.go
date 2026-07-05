@@ -10,9 +10,14 @@ import (
 	"testing"
 	"time"
 
+	chassis "github.com/ai8future/chassis-go/v11"
 	"github.com/ai8future/chassis-go/v11/kafkakit"
 	"github.com/ai8future/chassis-go/v11/registry"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func resetKafkaTest(t *testing.T) string {
 	t.Helper()

@@ -3,6 +3,7 @@ package lakekit
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -365,5 +366,34 @@ func TestQuery_Forbidden(t *testing.T) {
 	}
 	if got := err.Error(); got != "lakekit: forbidden: tenant not authorized" {
 		t.Errorf("expected 'lakekit: forbidden: tenant not authorized', got %q", got)
+	}
+}
+
+type infiniteSpaceReader struct{}
+
+func (infiniteSpaceReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = ' '
+	}
+	return len(p), nil
+}
+
+func TestDecodeJSONIsBounded(t *testing.T) {
+	done := make(chan error, 1)
+	go func() {
+		resp := &http.Response{Body: io.NopCloser(infiniteSpaceReader{})}
+		defer resp.Body.Close()
+
+		var result QueryResult
+		done <- decodeJSON(resp, &result)
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected error from bounded non-JSON response, got nil")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("decodeJSON did not return for an unbounded response stream")
 	}
 }

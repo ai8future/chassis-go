@@ -9,6 +9,10 @@ import (
 	"testing"
 )
 
+func init() {
+	RequireMajor(11)
+}
+
 func TestRequireMajorMatchesVersion(t *testing.T) {
 	ResetVersionCheck()
 	defer ResetVersionCheck()

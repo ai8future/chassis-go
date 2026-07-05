@@ -5,10 +5,15 @@ import (
 	"sync"
 	"testing"
 
+	chassis "github.com/ai8future/chassis-go/v11"
 	otelapi "go.opentelemetry.io/otel"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func TestLazyHistogramReturnsSameInstance(t *testing.T) {
 	reader := sdkmetric.NewManualReader()

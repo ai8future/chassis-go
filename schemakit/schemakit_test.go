@@ -6,10 +6,32 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	chassis "github.com/ai8future/chassis-go/v11"
 	"github.com/ai8future/chassis-go/v11/schemakit"
 )
+
+func init() { chassis.RequireMajor(11) }
+
+func newTestRegistryWithLoadedSchema(t *testing.T) (*schemakit.Registry, *schemakit.Schema) {
+	t.Helper()
+
+	r, err := schemakit.NewRegistry("http://localhost:8081")
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	if err := r.LoadSchemas("testdata/schemas"); err != nil {
+		t.Fatalf("LoadSchemas: %v", err)
+	}
+
+	s := r.GetSchema("ai8.scanner.gdelt.v1.SignalSurge")
+	if s == nil {
+		t.Fatal("schema not found")
+	}
+	return r, s
+}
 
 func TestNewRegistry(t *testing.T) {
 	r, err := schemakit.NewRegistry("http://localhost:8081")
@@ -124,18 +146,7 @@ func TestValidate_Invalid(t *testing.T) {
 }
 
 func TestSerializeDeserialize(t *testing.T) {
-	r, err := schemakit.NewRegistry("http://localhost:8081")
-	if err != nil {
-		t.Fatalf("NewRegistry: %v", err)
-	}
-	if err := r.LoadSchemas("testdata/schemas"); err != nil {
-		t.Fatalf("LoadSchemas: %v", err)
-	}
-
-	s := r.GetSchema("ai8.scanner.gdelt.v1.SignalSurge")
-	if s == nil {
-		t.Fatal("schema not found")
-	}
+	r, s := newTestRegistryWithLoadedSchema(t)
 	// Set a schema ID so serialize can prepend the header
 	s.SchemaID = 42
 
@@ -183,6 +194,55 @@ func TestSerializeDeserialize(t *testing.T) {
 	}
 	if got["window_minutes"] != 15 {
 		t.Fatalf("expected window_minutes=15, got %v", got["window_minutes"])
+	}
+}
+
+func TestSerializeRejectsUnregisteredSchema(t *testing.T) {
+	r, s := newTestRegistryWithLoadedSchema(t)
+
+	_, err := r.Serialize(s, map[string]any{
+		"entity":         "AAPL",
+		"tier":           "flash",
+		"kind":           "volume_spike",
+		"current":        float32(150.5),
+		"baseline":       float32(50.0),
+		"multiplier":     float32(3.01),
+		"window_minutes": 15,
+	})
+	if err == nil {
+		t.Fatal("expected Serialize to reject SchemaID 0")
+	}
+	if !strings.Contains(err.Error(), "SchemaID 0") {
+		t.Fatalf("expected SchemaID 0 error, got %v", err)
+	}
+}
+
+func TestDeserializeRejectsSchemaIDZero(t *testing.T) {
+	r, s := newTestRegistryWithLoadedSchema(t)
+	s.SchemaID = 42
+
+	raw, err := r.Serialize(s, map[string]any{
+		"entity":         "AAPL",
+		"tier":           "flash",
+		"kind":           "volume_spike",
+		"current":        float32(150.5),
+		"baseline":       float32(50.0),
+		"multiplier":     float32(3.01),
+		"window_minutes": 15,
+	})
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	for i := 1; i <= 4; i++ {
+		raw[i] = 0
+	}
+
+	_, err = r.Deserialize(raw)
+	if err == nil {
+		t.Fatal("expected Deserialize to reject SchemaID 0")
+	}
+	if !strings.Contains(err.Error(), "schema ID 0") {
+		t.Fatalf("expected schema ID 0 error, got %v", err)
 	}
 }
 

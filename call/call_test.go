@@ -2,6 +2,7 @@ package call
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -96,6 +97,52 @@ func TestRetryOn5xx(t *testing.T) {
 
 	if n := int(hits.Load()); n != 3 {
 		t.Fatalf("expected 3 attempts, got %d", n)
+	}
+}
+
+func TestRetryReturnsBodyNotRewindableWhenGetBodyFails(t *testing.T) {
+	srv, hits := counterServer(http.StatusServiceUnavailable)
+	defer srv.Close()
+
+	c := New(
+		WithTimeout(5*time.Second),
+		WithRetry(3, time.Millisecond),
+	)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader("payload"))
+	rewindErr := errors.New("rewind failed")
+	req.GetBody = func() (io.ReadCloser, error) {
+		return nil, rewindErr
+	}
+
+	_, err := c.Do(req)
+	if !errors.Is(err, ErrBodyNotRewindable) {
+		t.Fatalf("expected ErrBodyNotRewindable, got %v", err)
+	}
+	if !errors.Is(err, rewindErr) {
+		t.Fatalf("expected wrapped rewind error, got %v", err)
+	}
+	if n := int(hits.Load()); n != 1 {
+		t.Fatalf("expected 1 attempt before rewind failure, got %d", n)
+	}
+}
+
+func TestRetryReturnsBodyNotRewindableForNonRewindableBody(t *testing.T) {
+	srv, hits := counterServer(http.StatusServiceUnavailable)
+	defer srv.Close()
+
+	c := New(
+		WithTimeout(5*time.Second),
+		WithRetry(3, time.Millisecond),
+	)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL, io.NopCloser(strings.NewReader("payload")))
+	req.GetBody = nil
+
+	_, err := c.Do(req)
+	if !errors.Is(err, ErrBodyNotRewindable) {
+		t.Fatalf("expected ErrBodyNotRewindable, got %v", err)
+	}
+	if n := int(hits.Load()); n != 1 {
+		t.Fatalf("expected 1 attempt before non-rewindable retry, got %d", n)
 	}
 }
 
@@ -388,6 +435,96 @@ func TestRetrySpanEvents(t *testing.T) {
 	}
 }
 
+func TestClientSpanNameUsesMethodOnly(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	defer tp.Shutdown(context.Background())
+
+	prevTP := otelapi.GetTracerProvider()
+	otelapi.SetTracerProvider(tp)
+	defer otelapi.SetTracerProvider(prevTP)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(WithTimeout(5 * time.Second))
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/users/123?verbose=true", nil)
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	resp.Body.Close()
+
+	tp.ForceFlush(context.Background())
+
+	for _, s := range exporter.GetSpans() {
+		if s.SpanKind != trace.SpanKindClient {
+			continue
+		}
+		if s.Name != http.MethodGet {
+			t.Fatalf("client span name = %q, want %q", s.Name, http.MethodGet)
+		}
+		for _, attr := range s.Attributes {
+			if string(attr.Key) == "url.path" && attr.Value.AsString() == "/users/123" {
+				return
+			}
+		}
+		t.Fatal("expected client span to include url.path attribute")
+	}
+	t.Fatal("expected a client span")
+}
+
+type countingReadCloser struct {
+	remaining int
+	read      int
+	closed    bool
+}
+
+func (b *countingReadCloser) Read(p []byte) (int, error) {
+	if b.remaining == 0 {
+		return 0, io.EOF
+	}
+	n := len(p)
+	if n > b.remaining {
+		n = b.remaining
+	}
+	b.remaining -= n
+	b.read += n
+	return n, nil
+}
+
+func (b *countingReadCloser) Close() error {
+	b.closed = true
+	return nil
+}
+
+func TestRetrierCapsRetryBodyDrain(t *testing.T) {
+	firstBody := &countingReadCloser{remaining: 2 << 20}
+	attempts := 0
+	retrier := &Retrier{MaxAttempts: 2, BaseDelay: time.Nanosecond}
+
+	resp, err := retrier.Do(context.Background(), func() (*http.Response, error) {
+		attempts++
+		if attempts == 1 {
+			return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: firstBody}, nil
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok"))}, nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	resp.Body.Close()
+
+	if firstBody.read > 1<<20 {
+		t.Fatalf("retry drain read %d bytes, want at most 1MiB", firstBody.read)
+	}
+	if !firstBody.closed {
+		t.Fatal("expected retry response body to be closed")
+	}
+}
+
 func TestCircuitBreakerSpanEvents(t *testing.T) {
 	// Set up in-memory span exporter.
 	exporter := tracetest.NewInMemoryExporter()
@@ -573,7 +710,7 @@ type testBreaker struct {
 	recordFn func(bool)
 }
 
-func (b *testBreaker) Allow() error      { return b.allowFn() }
+func (b *testBreaker) Allow() error        { return b.allowFn() }
 func (b *testBreaker) Record(success bool) { b.recordFn(success) }
 
 func TestBatch(t *testing.T) {

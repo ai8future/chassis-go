@@ -10,8 +10,13 @@ import (
 	"strings"
 	"testing"
 
+	chassis "github.com/ai8future/chassis-go/v11"
 	"github.com/ai8future/chassis-go/v11/registry"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 type greetOptions struct {
 	Name string `flag:"name" env:"GREET_NAME" default:"world" usage:"name to greet"`

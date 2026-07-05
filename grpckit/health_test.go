@@ -7,11 +7,16 @@ import (
 	"testing"
 	"time"
 
+	chassis "github.com/ai8future/chassis-go/v11"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/test/bufconn"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 const bufSize = 1024 * 1024
 

@@ -6,8 +6,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	chassis "github.com/ai8future/chassis-go/v11"
 	"github.com/ai8future/chassis-go/v11/guard"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func TestIPFilterAllowOnly(t *testing.T) {
 	mw := guard.IPFilter(guard.IPFilterConfig{

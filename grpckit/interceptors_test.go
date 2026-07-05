@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	chassis "github.com/ai8future/chassis-go/v11"
 	otelapi "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -11,6 +12,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func TestUnaryTracingCreatesSpan(t *testing.T) {
 	// Set up in-memory span exporter.

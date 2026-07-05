@@ -7,8 +7,13 @@ import (
 	"strings"
 	"testing"
 
+	chassis "github.com/ai8future/chassis-go/v11"
 	"github.com/ai8future/chassis-go/v11/guard"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func TestMaxBodyRejectsOversizedRequest(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

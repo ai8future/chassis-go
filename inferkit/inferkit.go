@@ -601,10 +601,12 @@ func (c *Client) doWithRetry(ctx context.Context, url string, body []byte, dst a
 				StatusCode: resp.StatusCode,
 				Header:     resp.Header.Clone(),
 			}
-			err := json.NewDecoder(resp.Body).Decode(dst)
-			resp.Body.Close()
-			if err != nil {
-				return ResponseMeta{}, fmt.Errorf("inferkit: decode response: %w", err)
+			decErr := func() error {
+				defer resp.Body.Close()
+				return json.NewDecoder(resp.Body).Decode(dst)
+			}()
+			if decErr != nil {
+				return ResponseMeta{}, fmt.Errorf("inferkit: decode response: %w", decErr)
 			}
 			return meta, nil
 		}

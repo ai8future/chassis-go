@@ -17,6 +17,10 @@ import (
 	"github.com/ai8future/chassis-go/v11/registry"
 )
 
+func init() {
+	chassis.RequireMajor(11)
+}
+
 // testSvcDir mirrors registry.resolveName() so tests look in the correct directory.
 func testSvcDir(base string) string {
 	name := os.Getenv("CHASSIS_SERVICE_NAME")
@@ -43,6 +47,24 @@ func initRegistry(t *testing.T) string {
 
 	_ = ctx // cancel is passed to Init
 	return testSvcDir(tmp)
+}
+
+func TestInitRejectsSymlinkBasePath(t *testing.T) {
+	target := t.TempDir()
+	link := filepath.Join(t.TempDir(), "chassis-link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	registry.ResetForTest(link)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := registry.Init(cancel, "11.0.0")
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected symlink rejection, got %v", err)
+	}
+	_ = ctx
 }
 
 func TestInitCreatesDirectoryAndFiles(t *testing.T) {

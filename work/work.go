@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"runtime/debug"
 	"sync"
 
 	chassis "github.com/ai8future/chassis-go/v11"
@@ -49,6 +50,12 @@ type Errors struct {
 type Failure struct {
 	Index int
 	Err   error
+}
+
+func recoverErr(err *error) {
+	if r := recover(); r != nil {
+		*err = fmt.Errorf("work: task panicked: %v\n%s", r, debug.Stack())
+	}
 }
 
 func (e *Errors) Error() string {
@@ -104,7 +111,10 @@ func Map[T, R any](ctx context.Context, items []T, fn func(context.Context, T) (
 			)
 			defer childSpan.End()
 
-			val, err := fn(childCtx, item)
+			val, err := func() (val R, err error) {
+				defer recoverErr(&err)
+				return fn(childCtx, item)
+			}()
 			results[i] = val
 			errs[i] = err
 			if err != nil {
@@ -172,7 +182,10 @@ func All(ctx context.Context, tasks []func(context.Context) error, opts ...Optio
 			)
 			defer childSpan.End()
 
-			err := task(childCtx)
+			err := func() (err error) {
+				defer recoverErr(&err)
+				return task(childCtx)
+			}()
 			errs[i] = err
 			if err != nil {
 				childSpan.RecordError(err)
@@ -231,7 +244,10 @@ func Race[R any](ctx context.Context, tasks ...func(context.Context) (R, error))
 	ch := make(chan raceResult, len(tasks))
 	for i, task := range tasks {
 		go func() {
-			val, err := task(ctx)
+			val, err := func() (val R, err error) {
+				defer recoverErr(&err)
+				return task(ctx)
+			}()
 			ch <- raceResult{value: val, err: err, index: i}
 		}()
 	}
@@ -302,11 +318,15 @@ func Stream[T, R any](ctx context.Context, in <-chan T, fn func(context.Context,
 				childCtx, childSpan := tracer.Start(ctx, "work.Stream.item",
 					trace.WithAttributes(attribute.Int("work.index", currentIdx)),
 				)
-				val, err := fn(childCtx, currentItem)
+				defer childSpan.End()
+
+				val, err := func() (val R, err error) {
+					defer recoverErr(&err)
+					return fn(childCtx, currentItem)
+				}()
 				if err != nil {
 					childSpan.RecordError(err)
 				}
-				childSpan.End()
 				select {
 				case out <- Result[R]{Value: val, Err: err, Index: currentIdx}:
 				case <-ctx.Done():

@@ -177,7 +177,7 @@ func setField(fieldVal reflect.Value, raw string) error {
 // comma-separated (e.g. validate:"min=1,max=65535").
 func Check(name string, v any, validateTag string) error {
 	val := reflect.ValueOf(v)
-	parts := strings.Split(validateTag, ",")
+	parts := splitConstraints(validateTag)
 	for _, part := range parts {
 		key, value, _ := strings.Cut(strings.TrimSpace(part), "=")
 		switch key {
@@ -224,6 +224,40 @@ func Check(name string, v any, validateTag string) error {
 		}
 	}
 	return nil
+}
+
+func splitConstraints(tag string) []string {
+	parts := make([]string, 0, 4)
+	start := 0
+	depth := 0
+	escaped := false
+
+	for i, r := range tag {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+			continue
+		}
+
+		switch r {
+		case '[', '{', '(':
+			depth++
+		case ']', '}', ')':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				parts = append(parts, tag[start:i])
+				start = i + 1
+			}
+		}
+	}
+	parts = append(parts, tag[start:])
+	return parts
 }
 
 // validateField checks a populated field against constraints in the validate

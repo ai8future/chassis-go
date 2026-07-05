@@ -139,6 +139,50 @@ func TestMiddleware_RegeneratesInvalidHeader(t *testing.T) {
 	}
 }
 
+func TestMiddleware_AcceptsLegacyShortHeader(t *testing.T) {
+	const legacyTraceID = "tr_a1b2c3d4e5f6"
+	var captured string
+	handler := tracekit.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured = tracekit.TraceID(r.Context())
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("X-Trace-ID", legacyTraceID)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if captured != legacyTraceID {
+		t.Fatalf("expected %q, got %q", legacyTraceID, captured)
+	}
+	if rr.Header().Get("X-Trace-ID") != legacyTraceID {
+		t.Fatalf("response header: expected %q, got %q", legacyTraceID, rr.Header().Get("X-Trace-ID"))
+	}
+}
+
+func TestMiddleware_AcceptsCanonicalHeader(t *testing.T) {
+	const canonicalTraceID = "tr_0123456789abcdef0123456789abcdef"
+	var captured string
+	handler := tracekit.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured = tracekit.TraceID(r.Context())
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("X-Trace-ID", canonicalTraceID)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if captured != canonicalTraceID {
+		t.Fatalf("expected %q, got %q", canonicalTraceID, captured)
+	}
+	if rr.Header().Get("X-Trace-ID") != canonicalTraceID {
+		t.Fatalf("response header: expected %q, got %q", canonicalTraceID, rr.Header().Get("X-Trace-ID"))
+	}
+}
+
 func TestMiddleware_GeneratesIfMissing(t *testing.T) {
 	var captured string
 	handler := tracekit.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

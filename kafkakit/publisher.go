@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand/v2"
 	"strings"
 	"time"
 
@@ -16,6 +17,33 @@ type Publisher struct {
 	source   string // from Config.Source
 	tenantID string
 	stats    publisherStats
+}
+
+// BatchFailure records one failed record in a batch publish.
+type BatchFailure struct {
+	Index   int
+	Subject string
+	Err     error
+}
+
+// BatchError reports per-record outcomes of PublishBatch. Records not listed
+// in Failures were durably produced; retry only failed records to avoid
+// duplicate publishes.
+type BatchError struct {
+	Failures  []BatchFailure
+	Succeeded int
+}
+
+func (e *BatchError) Error() string {
+	return fmt.Sprintf("kafkakit: %d of %d batch record(s) failed", len(e.Failures), e.Succeeded+len(e.Failures))
+}
+
+func (e *BatchError) Unwrap() []error {
+	out := make([]error, len(e.Failures))
+	for i, failure := range e.Failures {
+		out[i] = failure.Err
+	}
+	return out
 }
 
 // NewPublisher creates a Publisher connected to the configured Kafka brokers.
@@ -34,10 +62,16 @@ func NewPublisher(cfg Config) (*Publisher, error) {
 
 	// Apply publisher-specific settings
 	if cfg.Publisher.MaxRetries > 0 {
-		backoffMs := cfg.Publisher.RetryBackoffMs
-		opts = append(opts, kgo.RetryBackoffFn(func(int) time.Duration {
-			return time.Duration(backoffMs) * time.Millisecond
-		}))
+		backoff := time.Duration(cfg.Publisher.RetryBackoffMs) * time.Millisecond
+		if backoff <= 0 {
+			backoff = 100 * time.Millisecond
+		}
+		opts = append(opts,
+			kgo.RecordRetries(cfg.Publisher.MaxRetries),
+			kgo.RetryBackoffFn(func(attempt int) time.Duration {
+				return publisherRetryBackoff(backoff, attempt)
+			}),
+		)
 	}
 
 	client, err := kgo.NewClient(opts...)
@@ -50,6 +84,22 @@ func NewPublisher(cfg Config) (*Publisher, error) {
 		source:   cfg.Source,
 		tenantID: cfg.TenantID,
 	}, nil
+}
+
+func publisherRetryBackoff(base time.Duration, attempt int) time.Duration {
+	if base <= 0 {
+		base = 100 * time.Millisecond
+	}
+	if attempt < 1 {
+		attempt = 1
+	}
+	shift := attempt - 1
+	if shift > 6 {
+		shift = 6
+	}
+	delay := base << shift
+	half := delay / 2
+	return half + time.Duration(rand.Int64N(int64(half)+1))
 }
 
 // Publish sends a single event to the topic derived from the subject.
@@ -120,13 +170,30 @@ func (p *Publisher) PublishBatch(ctx context.Context, events []OutboundEvent) er
 		})
 	}
 
+	recordIndex := make(map[*kgo.Record]int, len(records))
+	for i, record := range records {
+		recordIndex[record] = i
+	}
+
 	results := p.client.ProduceSync(ctx, records...)
-	for i, r := range results {
+	failures := make([]BatchFailure, 0)
+	var succeeded int
+	for _, r := range results {
 		if r.Err != nil {
 			p.stats.incErrors()
-			return fmt.Errorf("kafkakit: produce record %d failed: %w", i, r.Err)
+			idx := recordIndex[r.Record]
+			failures = append(failures, BatchFailure{
+				Index:   idx,
+				Subject: events[idx].Subject,
+				Err:     r.Err,
+			})
+			continue
 		}
 		p.stats.incPublished()
+		succeeded++
+	}
+	if len(failures) > 0 {
+		return &BatchError{Failures: failures, Succeeded: succeeded}
 	}
 	return nil
 }

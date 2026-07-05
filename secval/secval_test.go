@@ -4,7 +4,13 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	chassis "github.com/ai8future/chassis-go/v11"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func TestCleanJSONPasses(t *testing.T) {
 	if err := ValidateJSON([]byte(`{"name": "Alice", "age": 30}`)); err != nil {

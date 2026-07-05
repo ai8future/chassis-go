@@ -1495,7 +1495,7 @@ These packages support publishing and subscribing to the Redpanda event bus. For
 ```go
 import "github.com/ai8future/chassis-go/v11/tracekit"
 
-// Generate a new canonical trace ID (tr_ + 32 lowercase hex chars)
+// Generate a new canonical trace ID (tr_ + 32 lowercase hex chars, 128-bit entropy)
 id := tracekit.GenerateID() // "tr_0123456789abcdef0123456789abcdef"
 
 // Set on context

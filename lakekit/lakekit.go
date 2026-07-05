@@ -22,6 +22,8 @@ import (
 // Types
 // --------------------------------------------------------------------------
 
+const maxResponseBytes = 32 << 20 // 32 MiB
+
 // QueryResult represents the result of a SQL query against the data lake.
 type QueryResult struct {
 	Columns  []string `json:"columns"`
@@ -125,7 +127,7 @@ func (c *Client) Query(ctx context.Context, sql string, params ...any) (*QueryRe
 	}
 
 	var result QueryResult
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := decodeJSON(resp, &result); err != nil {
 		return nil, fmt.Errorf("lakekit: decode query result: %w", err)
 	}
 	return &result, nil
@@ -159,7 +161,7 @@ func (c *Client) EntityHistory(ctx context.Context, entityID string) ([]HistoryE
 	}
 
 	var entries []HistoryEntry
-	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+	if err := decodeJSON(resp, &entries); err != nil {
 		return nil, fmt.Errorf("lakekit: decode history: %w", err)
 	}
 	return entries, nil
@@ -188,7 +190,7 @@ func (c *Client) Datasets(ctx context.Context) ([]Dataset, error) {
 	}
 
 	var datasets []Dataset
-	if err := json.NewDecoder(resp.Body).Decode(&datasets); err != nil {
+	if err := decodeJSON(resp, &datasets); err != nil {
 		return nil, fmt.Errorf("lakekit: decode datasets: %w", err)
 	}
 	return datasets, nil
@@ -222,7 +224,7 @@ func (c *Client) DatasetStats(ctx context.Context, name string) (*Dataset, error
 	}
 
 	var dataset Dataset
-	if err := json.NewDecoder(resp.Body).Decode(&dataset); err != nil {
+	if err := decodeJSON(resp, &dataset); err != nil {
 		return nil, fmt.Errorf("lakekit: decode dataset: %w", err)
 	}
 	return &dataset, nil
@@ -240,6 +242,12 @@ func (c *Client) setHeaders(ctx context.Context, req *http.Request) {
 	if tid := tracekit.TraceID(ctx); tid != "" {
 		req.Header.Set("X-Trace-ID", tid)
 	}
+}
+
+// decodeJSON bounds successful response decoding to prevent an untrusted server
+// from streaming unbounded JSON input forever.
+func decodeJSON(resp *http.Response, dst any) error {
+	return json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(dst)
 }
 
 // checkStatus inspects the HTTP response status and returns an appropriate error.

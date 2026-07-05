@@ -5,7 +5,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	chassis "github.com/ai8future/chassis-go/v11"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func TestRemoteAddrKeyFunc(t *testing.T) {
 	cases := []struct {
