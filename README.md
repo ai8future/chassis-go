@@ -73,7 +73,7 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 | `webhook` | `.../v11/webhook` | HMAC-signed webhook send with retry, delivery tracking, `VerifyPayload` |
 | `deploy` | `.../v11/deploy` | Convention-based deploy directory discovery, environment detection, endpoints, dependencies, health |
 
-### Tier 4: Integrations
+### Tier 5: Integrations
 
 | Package | Import | Purpose |
 |---------|--------|---------|
@@ -85,6 +85,12 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 | `registrykit` | `.../v11/registrykit` | HTTP client to registry_svc for entity resolution. Depends on `call` |
 | `lakekit` | `.../v11/lakekit` | HTTP client to lake_svc for data lake access. Depends on `call` |
 | `phasekit` | `.../v11/phasekit` | Startup secret hydration from Phase via the `phase` CLI before `config.MustLoad` |
+| `inngestkit` | `.../v11/inngestkit` | Thin setup glue for Inngest's Go SDK: config validation, handler mount, and event sending |
+| `inferkit` | `.../v11/inferkit` | Provider-agnostic OpenAI-compatible inference client for chat, SSE streaming, and embeddings |
+| `ollamakit` | `.../v11/ollamakit` | Ollama native `/api` client for chat, generate, embeddings, model listing, show, and pull |
+| `meilikit` | `.../v11/meilikit` | Meilisearch HTTP client for index configuration, search/multi-search, documents, bulk import, and task waits |
+| `qdrantkit` | `.../v11/qdrantkit` | Qdrant vector database HTTP client for collections, upsert/delete, search, scroll, and payload indexes |
+| `posthogkit` | `.../v11/posthogkit` | Non-blocking batched PostHog analytics client with health check, periodic flush, and optional HMAC ID hashing |
 
 **Tier isolation**: Foundation packages avoid transport/runtime stacks such as gRPC and the OTel SDK unless you import packages that need them. `clikit` adds no CLI framework and reuses existing chassis/logz plumbing; its trace-aware logging path may include the already-present OTel trace API, but not the OTel SDK.
 
@@ -341,6 +347,48 @@ Write RFC 9457 responses directly:
 ```go
 errors.WriteProblem(w, r, err, requestID)
 ```
+
+Windmill-compatible problem responses also expose stable retry metadata:
+
+```go
+err := errors.DependencyError("upstream unavailable").
+    WithRetryAfter(2 * time.Second)
+
+errors.WriteProblem(w, r, err, traceID) // JSON includes code, retryable, retry_after; header includes Retry-After
+```
+
+Use `errors.IsRetryable(err)` / `errors.Retryable(err)` when callers need the same classification outside HTTP.
+
+### Windmill orchestration readiness
+
+The Windmill readiness slice is additive v11 core functionality. Core ships the callable-service primitives, contract fixtures, and conformance helpers; durable DB-backed idempotency/outbox implementations remain service/addon responsibilities.
+
+```go
+manifest := orchestration.Manifest{
+    Service:         "orders",
+    Version:         "1.2.3",
+    Profile:         orchestration.ProfileL2Prod,
+    ContractVersion: orchestration.DefaultContractVersion,
+    Capabilities:    []string{"problem-json", "authkit", "idemkit"},
+    Idempotency:     &orchestration.Idempotency{Store: "postgres", Durable: true, TTLSeconds: 604800},
+    Endpoints:       []orchestration.Endpoint{{Name: "submit", URL: "/v1/orders", Kind: "http"}},
+    OpenAPIPath:     "/openapi.yaml",
+}
+
+mux.Handle(orchestration.WellKnownPath, orchestration.Handler(manifest))
+
+conformance.Require(t, conformance.LevelL2, conformance.Evidence{
+    Manifest:                         &manifest,
+    AcceptsXTraceID:                  conformance.AcceptsTraceID("tr_0123456789abcdef0123456789abcdef"),
+    EmitsProblemJSONErrors:           true,
+    ErrorProblemJSONRetryClass:       true,
+    ScopedBearerAuthOnMutatingRoutes: true,
+    IdempotencyKeyReplayForMutating:  true,
+    IdempotencyKeyTenantScoped:       true,
+})
+```
+
+For production wiring, middleware order, resource provisioning, trace ID rules, idempotency behavior, and the L3 declaration-only boundary, see [`docs/windmill-orchestration.md`](docs/windmill-orchestration.md).
 
 ### `httpkit` — HTTP Middleware
 
@@ -638,16 +686,26 @@ When OTel is initialized, the following telemetry is collected automatically:
 
 ## Dependencies
 
-Only the OTel API, `golang.org/x/sync`, and `google.golang.org/grpc` are direct dependencies:
+Direct dependencies are intentionally tied to the packages that need them:
 
 ```
-go.opentelemetry.io/otel          v1.40.0
-go.opentelemetry.io/otel/sdk      v1.40.0
-golang.org/x/sync                 v0.19.0
-google.golang.org/grpc            v1.78.0
-github.com/twmb/franz-go          (kafkakit)
-github.com/hamba/avro/v2           (schemakit)
+github.com/hamba/avro/v2                         v2.31.0   (schemakit)
+github.com/inngest/inngestgo                     v0.15.1   (inngestkit)
+github.com/twmb/franz-go                         v1.20.7   (kafkakit)
+go.opentelemetry.io/otel                         v1.40.0   (logz/httpkit/grpckit/call/work/metrics/otel)
+go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.40.0 (otel metrics export)
+go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc   v1.40.0 (otel trace export)
+go.opentelemetry.io/otel/metric                  v1.40.0   (metrics)
+go.opentelemetry.io/otel/sdk                     v1.40.0   (otel)
+go.opentelemetry.io/otel/sdk/metric              v1.40.0   (otel)
+go.opentelemetry.io/otel/trace                   v1.40.0   (logz/trace-aware packages)
+golang.org/x/crypto                              v0.48.0   (authkit scrypt)
+golang.org/x/sync                                v0.19.0   (lifecycle/work)
+golang.org/x/text                                v0.34.0   (transitive-facing text support)
+google.golang.org/grpc                           v1.79.3   (grpckit/authkit interceptors)
 ```
+
+chassis-go core still ships no database driver; durable stores belong in service code or addons.
 
 ---
 
