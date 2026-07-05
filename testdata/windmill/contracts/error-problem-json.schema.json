@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai8.dev/contracts/windmill/error-problem-json.schema.json",
+  "title": "RFC problem+json with Windmill retry extensions",
+  "type": "object",
+  "required": ["type", "title", "status", "code"],
+  "additionalProperties": true,
+  "properties": {
+    "type": { "type": "string" },
+    "title": { "type": "string" },
+    "status": { "type": "integer", "minimum": 100, "maximum": 599 },
+    "detail": { "type": "string" },
+    "instance": { "type": "string" },
+    "code": { "type": "string", "minLength": 1 },
+    "retryable": { "type": "boolean" },
+    "retry_after": { "type": "integer", "minimum": 0 },
+    "trace_id": { "type": "string", "pattern": "^tr_[0-9a-f]{12}([0-9a-f]{20})?$" }
+  }
+}

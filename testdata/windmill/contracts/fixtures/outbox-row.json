@@ -1,0 +1,10 @@
+{
+  "event_id": "evt_01J00000000000000000000000",
+  "subject": "ai8.registry.entity.updated",
+  "payload": { "entity_ref": "company:example" },
+  "entity_refs": ["company:example"],
+  "trace_id": "tr_0123456789abcdef0123456789abcdef",
+  "tenant_id": "tenant_demo",
+  "status": "pending",
+  "attempts": 0
+}

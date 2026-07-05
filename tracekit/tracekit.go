@@ -7,11 +7,17 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"regexp"
 
 	chassis "github.com/ai8future/chassis-go/v11"
 )
 
 type contextKey struct{}
+
+var (
+	canonicalTraceID = regexp.MustCompile(`^tr_[0-9a-f]{32}$`)
+	legacyTraceID    = regexp.MustCompile(`^tr_[0-9a-f]{12}$`)
+)
 
 // GenerateID creates tr_ + 32 hex random chars (16 bytes / 128-bit entropy).
 func GenerateID() string {
@@ -23,17 +29,10 @@ func GenerateID() string {
 	return "tr_" + hex.EncodeToString(b)
 }
 
-// isValidTraceID checks that an external trace ID contains only safe characters.
+// isValidTraceID checks that an external trace ID is either the canonical
+// Windmill/chassis trace format or the bounded legacy migration format.
 func isValidTraceID(id string) bool {
-	if len(id) > 128 {
-		return false
-	}
-	for _, c := range id {
-		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
-			return false
-		}
-	}
-	return true
+	return canonicalTraceID.MatchString(id) || legacyTraceID.MatchString(id)
 }
 
 // NewTrace creates a new trace ID and sets it on context.

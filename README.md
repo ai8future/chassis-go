@@ -6,7 +6,7 @@ A composable Go service toolkit for building production-grade microservices. Too
 go get github.com/ai8future/chassis-go/v11
 ```
 
-**Current version:** 11.1.14 &middot; **Go:** 1.26.2+ &middot; **License:** MIT
+**Current version:** 11.2.0 &middot; **Go:** 1.26.2+ &middot; **License:** MIT
 
 ---
 
@@ -55,7 +55,11 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 | `flagz` | `.../v11/flagz` | Feature flags with percentage rollouts (FNV-1a), pluggable sources, OTel span events |
 | `metrics` | `.../v11/metrics` | OTel-native metrics recorder with cardinality protection (max 1000 label combos) |
 | `otel` | `.../v11/otel` | OpenTelemetry bootstrap: OTLP gRPC traces + metrics, configurable samplers |
-| `errors` | `.../v11/errors` | Unified error type with dual HTTP/gRPC codes and RFC 9457 Problem Details |
+| `errors` | `.../v11/errors` | Unified error type with dual HTTP/gRPC codes, RFC 9457 Problem Details, stable retry classes |
+| `authkit` | `.../v11/authkit` | Scoped inbound bearer-token validation for Windmill-callable HTTP/gRPC endpoints |
+| `idemkit` | `.../v11/idemkit` | Tenant-scoped HTTP idempotency middleware with replay, mismatch, in-flight, and 5xx release handling |
+| `orchestration` | `.../v11/orchestration` | Windmill capability manifests, registry metadata, and authored OpenAPI handlers |
+| `conformance` | `.../v11/conformance` | Windmill L0-L2 runtime evidence helpers plus declaration-only L3 reporting |
 | `secval` | `.../v11/secval` | JSON security validation: blocks prototype pollution keys (`__proto__`, `constructor`, `prototype`) and deep nesting |
 | `work` | `.../v11/work` | Structured concurrency: `Map`, `All`, `Race`, `Stream` — all OTel-traced |
 
@@ -75,7 +79,7 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 |---------|--------|---------|
 | `kafkakit` | `.../v11/kafkakit` | Publish/subscribe to Redpanda event bus with Avro envelopes, tenant filtering, DLQ, AtLeastOnce delivery. Depends on `schemakit`. Uses `github.com/twmb/franz-go` |
 | `schemakit` | `.../v11/schemakit` | Avro schema validation, registration, serialization. Confluent Schema Registry client |
-| `tracekit` | `.../v11/tracekit` | Distributed trace ID propagation (`tr_` + 12 hex). HTTP middleware. Wraps OTel when available |
+| `tracekit` | `.../v11/tracekit` | Distributed trace ID propagation (`tr_` + 32 hex canonical, bounded 12-hex legacy inbound). HTTP middleware. Wraps OTel when available |
 | `heartbeatkit` | `.../v11/heartbeatkit` | Auto liveness heartbeats every 30s. Depends on `kafkakit`. Auto-activates with kafkakit |
 | `announcekit` | `.../v11/announcekit` | Service/job lifecycle events. Depends on `kafkakit`. Auto-activates with kafkakit |
 | `registrykit` | `.../v11/registrykit` | HTTP client to registry_svc for entity resolution. Depends on `call` |
@@ -83,6 +87,8 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 | `phasekit` | `.../v11/phasekit` | Startup secret hydration from Phase via the `phase` CLI before `config.MustLoad` |
 
 **Tier isolation**: Foundation packages avoid transport/runtime stacks such as gRPC and the OTel SDK unless you import packages that need them. `clikit` adds no CLI framework and reuses existing chassis/logz plumbing; its trace-aware logging path may include the already-present OTel trace API, but not the OTel SDK.
+
+For Windmill orchestration readiness, see [`docs/windmill-orchestration.md`](docs/windmill-orchestration.md).
 
 ---
 

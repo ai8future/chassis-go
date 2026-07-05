@@ -1495,8 +1495,8 @@ These packages support publishing and subscribing to the Redpanda event bus. For
 ```go
 import "github.com/ai8future/chassis-go/v11/tracekit"
 
-// Generate a new trace ID (tr_ + 12 hex chars)
-id := tracekit.GenerateID() // "tr_a1b2c3d4e5f6"
+// Generate a new canonical trace ID (tr_ + 32 lowercase hex chars)
+id := tracekit.GenerateID() // "tr_0123456789abcdef0123456789abcdef"
 
 // Set on context
 ctx = tracekit.NewTrace(ctx)            // generate + set
@@ -1505,14 +1505,16 @@ ctx = tracekit.WithTraceID(ctx, myID)   // set explicit ID
 // Extract from context
 id := tracekit.TraceID(ctx)
 
-// HTTP middleware — extracts X-Trace-ID from request (or generates new),
-// sets on context, adds to response header
+// HTTP middleware — accepts canonical X-Trace-ID (or bounded legacy
+// tr_[0-9a-f]{12}), otherwise generates a new canonical ID; sets on context
+// and adds to response header
 mux := http.NewServeMux()
 handler := tracekit.Middleware(mux)
 ```
 
 **Integration notes**:
 - `tracekit` operates independently of OTel. It uses a simple `X-Trace-ID` header for lightweight trace correlation. Use it alongside `httpkit.Tracing()` (OTel spans) or as a standalone alternative for services that don't need full distributed tracing.
+- New trace IDs are canonical `tr_[0-9a-f]{32}`. During migration, ingress accepts bounded legacy `tr_[0-9a-f]{12}` values; arbitrary trace strings are regenerated.
 - Service client kits (`registrykit`, `lakekit`) read `tracekit.TraceID(ctx)` and set the `X-Trace-ID` header automatically. Wire `tracekit.Middleware` at your HTTP ingress to complete the chain.
 
 ### schemakit — Avro schema management and validation

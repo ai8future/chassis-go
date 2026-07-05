@@ -1,0 +1,12 @@
+{
+  "service": "delphi_api",
+  "version": "11.2.0",
+  "profile": "L2-prod",
+  "contract_version": "0.1",
+  "capabilities": ["authkit", "idemkit", "problem-json"],
+  "idempotency": { "store": "postgres", "durable": true, "ttl_seconds": 604800 },
+  "endpoints": [
+    { "name": "http", "kind": "http", "url": "http://delphi-api.local:8080" }
+  ],
+  "openapi_path": "/openapi.yaml"
+}

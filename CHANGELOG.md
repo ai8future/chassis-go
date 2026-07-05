@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [11.2.0] - 2026-07-05
+
+### Added
+- Add Windmill readiness Wave 0 primitives: `authkit` scoped inbound bearer validation, `idemkit` tenant-scoped HTTP idempotency, `orchestration` capability manifests/registry metadata, and `conformance` L0-L2 evidence helpers with declaration-only L3 reporting.
+- Pin shared Windmill contract schemas and fixtures under `testdata/windmill/contracts` with provenance and checksums.
+
+### Changed
+- Extend `errors` problem JSON with stable `code`, `retryable`, `retry_after`, retry helpers, and `Retry-After` response headers.
+- Extend `call` retries with policy hooks, idempotent-only retry mode, and 429/503 `Retry-After` parsing.
+- Tighten `tracekit` inbound `X-Trace-ID` acceptance to canonical `tr_[0-9a-f]{32}` plus bounded legacy `tr_[0-9a-f]{12}` only.
+
+### Documentation
+- Document Windmill middleware ordering, resource provisioning, canonical trace IDs, idempotency limits, and conformance usage.
+
 ## [11.1.14] - 2026-06-10
 
 ### Added

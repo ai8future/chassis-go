@@ -92,6 +92,28 @@ func WithRetry(maxAttempts int, baseDelay time.Duration) Option {
 	}
 }
 
+// WithRetryPolicy configures a custom retry policy. If retries were not already
+// enabled, it enables a default 3-attempt retrier with the provided policy.
+func WithRetryPolicy(policy RetryPolicy) Option {
+	return func(c *Client) {
+		if c.retrier == nil {
+			c.retrier = &Retrier{MaxAttempts: 3, BaseDelay: 100 * time.Millisecond}
+		}
+		c.retrier.Policy = policy
+	}
+}
+
+// WithIdempotentOnlyRetries suppresses retries for non-idempotent HTTP methods.
+// It is opt-in so existing WithRetry behavior remains backward compatible.
+func WithIdempotentOnlyRetries() Option {
+	return func(c *Client) {
+		if c.retrier == nil {
+			c.retrier = &Retrier{MaxAttempts: 3, BaseDelay: 100 * time.Millisecond}
+		}
+		c.retrier.IdempotentOnly = true
+	}
+}
+
 // WithCircuitBreaker protects the client with a named circuit breaker that
 // opens after threshold consecutive failures and resets after resetTimeout.
 func WithCircuitBreaker(name string, threshold int, resetTimeout time.Duration) Option {
@@ -211,7 +233,9 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	var err error
 
 	if c.retrier != nil {
-		resp, err = c.retrier.Do(ctx, exec)
+		retrier := *c.retrier
+		retrier.method = req.Method
+		resp, err = retrier.Do(ctx, exec)
 	} else {
 		resp, err = exec()
 	}

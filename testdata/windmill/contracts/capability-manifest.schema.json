@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai8.dev/contracts/windmill/capability-manifest.schema.json",
+  "title": "Chassis capability manifest (minimal Windmill scaffold)",
+  "type": "object",
+  "required": ["service", "version", "profile", "contract_version", "capabilities"],
+  "additionalProperties": false,
+  "properties": {
+    "service": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "minLength": 1 },
+    "profile": { "type": "string", "enum": ["L0", "L1", "L2-local", "L2-prod", "L3", "C1", "D1"] },
+    "contract_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+    "capabilities": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "idempotency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["store", "durable", "ttl_seconds"],
+      "properties": {
+        "store": { "type": "string", "enum": ["none", "memory", "postgres", "redis"] },
+        "durable": { "type": "boolean" },
+        "ttl_seconds": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "endpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["name", "url"],
+        "properties": {
+          "name": { "type": "string" },
+          "url": { "type": "string" },
+          "kind": { "type": "string" }
+        }
+      }
+    },
+    "openapi_path": { "type": "string" },
+    "daemon_commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "description"],
+        "additionalProperties": true,
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "args_schema": { "type": "object" }
+        }
+      }
+    }
+  }
+}

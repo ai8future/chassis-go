@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"time"
 )
 
 const typeBaseURI = "https://chassis.ai8future.com/errors/"
@@ -40,6 +42,9 @@ type ProblemDetail struct {
 	Status     int            `json:"status"`
 	Detail     string         `json:"detail"`
 	Instance   string         `json:"instance,omitempty"`
+	Code       string         `json:"code"`
+	Retryable  bool           `json:"retryable"`
+	RetryAfter int            `json:"retry_after,omitempty"`
 	Extensions map[string]any `json:"-"` // serialized as top-level members
 }
 
@@ -47,17 +52,22 @@ type ProblemDetail struct {
 // the top level of the JSON object, as required by RFC 9457.
 func (pd ProblemDetail) MarshalJSON() ([]byte, error) {
 	m := map[string]any{
-		"type":   pd.Type,
-		"title":  pd.Title,
-		"status": pd.Status,
-		"detail": pd.Detail,
+		"type":      pd.Type,
+		"title":     pd.Title,
+		"status":    pd.Status,
+		"detail":    pd.Detail,
+		"code":      pd.Code,
+		"retryable": pd.Retryable,
 	}
 	if pd.Instance != "" {
 		m["instance"] = pd.Instance
 	}
+	if pd.RetryAfter > 0 {
+		m["retry_after"] = pd.RetryAfter
+	}
 	for k, v := range pd.Extensions {
 		switch k {
-		case "type", "title", "status", "detail", "instance":
+		case "type", "title", "status", "detail", "instance", "code", "retryable", "retry_after":
 			continue // skip reserved RFC 9457 fields
 		}
 		m[k] = v
@@ -84,11 +94,14 @@ func (e *ServiceError) ProblemDetail(r *http.Request) ProblemDetail {
 		instance = r.URL.Path
 	}
 	pd := ProblemDetail{
-		Type:     typeURI,
-		Title:    title,
-		Status:   e.HTTPCode,
-		Detail:   e.Message,
-		Instance: instance,
+		Type:       typeURI,
+		Title:      title,
+		Status:     e.HTTPCode,
+		Detail:     e.Message,
+		Instance:   instance,
+		Code:       e.code(),
+		Retryable:  IsRetryable(e),
+		RetryAfter: retryAfterSeconds(e.RetryAfter),
 	}
 	if len(e.Details) > 0 {
 		pd.Extensions = make(map[string]any, len(e.Details))
@@ -118,9 +131,19 @@ func WriteProblem(w http.ResponseWriter, r *http.Request, err error, requestID s
 	}
 
 	w.Header().Set("Content-Type", "application/problem+json")
+	if svcErr.RetryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds(svcErr.RetryAfter)))
+	}
 	w.WriteHeader(svcErr.HTTPCode)
 
 	if encErr := json.NewEncoder(w).Encode(pd); encErr != nil {
 		slog.ErrorContext(r.Context(), "errors: failed to encode problem detail", "error", encErr)
 	}
+}
+
+func retryAfterSeconds(d time.Duration) int {
+	if d <= 0 {
+		return 0
+	}
+	return int((d + time.Second - 1) / time.Second)
 }

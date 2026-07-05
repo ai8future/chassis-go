@@ -1,0 +1,23 @@
+{
+  "note": "BRIDGE A12 / RISKS R23 — a deterministic Idempotency-Key reused across tenants MUST isolate. With a (tenant_id, key) store, tenant B's request under the same key is a distinct claim, so B's handler executes and returns B's own result. Tenant B must never be served tenant A's stored response.",
+  "business_key": "report:2026-07-03:recipient:ops",
+  "step": "send_email",
+  "shared_idempotency_key": "idem_v1_example",
+  "tenant_a": {
+    "request": { "tenant_id": "tenant_a", "headers": { "Idempotency-Key": "idem_v1_example" } },
+    "response_status": 202,
+    "response_body": { "message_id": "msg_A" }
+  },
+  "tenant_b": {
+    "request": { "tenant_id": "tenant_b", "headers": { "Idempotency-Key": "idem_v1_example" } },
+    "isolated": true,
+    "must_not_replay_from": "tenant_a",
+    "response_status": 202,
+    "response_body": { "message_id": "msg_B" }
+  },
+  "forbidden_outcome": {
+    "description": "Tenant B receiving tenant A's response_body — or an Idempotency-Replayed:true response sourced from tenant A's claim — is a cross-tenant leak and MUST fail L2 conformance. A single-namespace store (key PRIMARY KEY without tenant) produces exactly this.",
+    "response_headers": { "Idempotency-Replayed": "true" },
+    "response_body": { "message_id": "msg_A" }
+  }
+}

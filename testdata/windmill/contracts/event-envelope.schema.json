@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai8.dev/contracts/windmill/event-envelope.schema.json",
+  "title": "Chassis event envelope (minimal Windmill scaffold)",
+  "type": "object",
+  "required": ["event_id", "ts", "source", "subject", "trace_id", "tenant_id", "entity_refs", "data"],
+  "additionalProperties": true,
+  "properties": {
+    "event_id": { "type": "string", "pattern": "^evt_[A-Za-z0-9_-]+$" },
+    "ts": { "type": "string", "format": "date-time" },
+    "source": { "type": "string", "minLength": 1 },
+    "subject": { "type": "string", "minLength": 1 },
+    "trace_id": { "type": "string", "pattern": "^tr_[0-9a-f]{32}$" },
+    "tenant_id": { "type": "string" },
+    "entity_refs": { "type": "array", "items": { "type": "string" } },
+    "data": { "type": ["object", "array", "string", "number", "boolean", "null"] },
+    "version": { "type": "string" }
+  }
+}

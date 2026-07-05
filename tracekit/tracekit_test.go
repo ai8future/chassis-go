@@ -87,16 +87,55 @@ func TestMiddleware_ExtractsHeader(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("X-Trace-ID", "tr_0123456789abcdef0123456789abcdef")
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if captured != "tr_0123456789abcdef0123456789abcdef" {
+		t.Fatalf("expected canonical trace id, got %q", captured)
+	}
+	if rr.Header().Get("X-Trace-ID") != "tr_0123456789abcdef0123456789abcdef" {
+		t.Fatalf("response header: expected canonical trace id, got %q", rr.Header().Get("X-Trace-ID"))
+	}
+}
+
+func TestMiddleware_AcceptsBoundedLegacyHeader(t *testing.T) {
+	var captured string
+	handler := tracekit.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured = tracekit.TraceID(r.Context())
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("X-Trace-ID", "tr_0123456789ab")
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if captured != "tr_0123456789ab" {
+		t.Fatalf("expected bounded legacy trace id, got %q", captured)
+	}
+}
+
+func TestMiddleware_RegeneratesInvalidHeader(t *testing.T) {
+	var captured string
+	handler := tracekit.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured = tracekit.TraceID(r.Context())
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	req.Header.Set("X-Trace-ID", "tr_fromrequest1")
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, req)
 
-	if captured != "tr_fromrequest1" {
-		t.Fatalf("expected tr_fromrequest1, got %q", captured)
+	if captured == "tr_fromrequest1" {
+		t.Fatal("invalid trace id should be regenerated")
 	}
-	if rr.Header().Get("X-Trace-ID") != "tr_fromrequest1" {
-		t.Fatalf("response header: expected tr_fromrequest1, got %q", rr.Header().Get("X-Trace-ID"))
+	if !strings.HasPrefix(captured, "tr_") || len(captured) != 35 {
+		t.Fatalf("expected generated canonical trace ID, got %q", captured)
 	}
 }
 

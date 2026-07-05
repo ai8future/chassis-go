@@ -1,0 +1,10 @@
+{
+  "type": "https://ai8.dev/problems/dependency_unavailable",
+  "title": "Dependency unavailable",
+  "status": 503,
+  "detail": "upstream timeout",
+  "code": "dependency_unavailable",
+  "retryable": true,
+  "retry_after": 2,
+  "trace_id": "tr_0123456789abcdef0123456789abcdef"
+}

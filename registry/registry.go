@@ -28,23 +28,48 @@ const (
 
 // Registration is the JSON structure written to the PID file.
 type Registration struct {
-	Name           string            `json:"name"`
-	PID            int               `json:"pid"`
-	Hostname       string            `json:"hostname"`
-	StartedAt      string            `json:"started_at"`
-	Version        string            `json:"version"`
-	Language       string            `json:"language"`
-	ChassisVersion string            `json:"chassis_version"`
-	BasePort       int               `json:"base_port"`
-	Args           []string          `json:"args"`
-	Ports          []PortInfo        `json:"ports"`
-	Commands       []CmdInfo         `json:"commands"`
-	Mode           string            `json:"mode"`
-	Flags          map[string]string `json:"flags,omitempty"`
-	Status         string            `json:"status"`
-	ExitedAt       string            `json:"exited_at,omitempty"`
-	ExitCode       *int              `json:"exit_code,omitempty"`
-	Summary        *ProgressSummary  `json:"summary,omitempty"`
+	Name           string             `json:"name"`
+	PID            int                `json:"pid"`
+	Hostname       string             `json:"hostname"`
+	StartedAt      string             `json:"started_at"`
+	Version        string             `json:"version"`
+	Language       string             `json:"language"`
+	ChassisVersion string             `json:"chassis_version"`
+	BasePort       int                `json:"base_port"`
+	Args           []string           `json:"args"`
+	Ports          []PortInfo         `json:"ports"`
+	Commands       []CmdInfo          `json:"commands"`
+	Mode           string             `json:"mode"`
+	Flags          map[string]string  `json:"flags,omitempty"`
+	Status         string             `json:"status"`
+	ExitedAt       string             `json:"exited_at,omitempty"`
+	ExitCode       *int               `json:"exit_code,omitempty"`
+	Summary        *ProgressSummary   `json:"summary,omitempty"`
+	Orchestration  *OrchestrationInfo `json:"orchestration,omitempty"`
+}
+
+// OrchestrationInfo is optional machine-readable metadata for workflow engines.
+type OrchestrationInfo struct {
+	Profile         string                  `json:"profile,omitempty"`
+	ContractVersion string                  `json:"contract_version,omitempty"`
+	Capabilities    []string                `json:"capabilities,omitempty"`
+	Idempotency     *IdempotencyInfo        `json:"idempotency,omitempty"`
+	Endpoints       []OrchestrationEndpoint `json:"endpoints,omitempty"`
+	OpenAPIPath     string                  `json:"openapi_path,omitempty"`
+}
+
+// IdempotencyInfo declares the service idempotency store shape.
+type IdempotencyInfo struct {
+	Store      string `json:"store"`
+	Durable    bool   `json:"durable"`
+	TTLSeconds int    `json:"ttl_seconds"`
+}
+
+// OrchestrationEndpoint declares a named callable endpoint.
+type OrchestrationEndpoint struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+	Kind string `json:"kind,omitempty"`
 }
 
 // ProgressSummary holds progress tracking state for CLI/batch processes.
@@ -98,6 +123,7 @@ var (
 	lastProgress  *ProgressSummary
 	cliMode       bool
 	cliDone       chan struct{}
+	orchestration atomic.Pointer[OrchestrationInfo]
 
 	// BasePath is the root directory for service registrations.
 	// Set before calling lifecycle.Run; not safe for concurrent modification.
@@ -157,6 +183,31 @@ func Port(role int, port int, label string, opts ...PortOption) {
 		opt(&info)
 	}
 	ports = append(ports, info)
+}
+
+// SetOrchestration stores optional orchestration metadata to include in future
+// service registrations. It is additive: leaving it unset preserves the legacy
+// registration JSON shape.
+func SetOrchestration(info *OrchestrationInfo) {
+	orchestration.Store(cloneOrchestration(info))
+}
+
+func currentOrchestration() *OrchestrationInfo {
+	return cloneOrchestration(orchestration.Load())
+}
+
+func cloneOrchestration(info *OrchestrationInfo) *OrchestrationInfo {
+	if info == nil {
+		return nil
+	}
+	out := *info
+	out.Capabilities = append([]string(nil), info.Capabilities...)
+	out.Endpoints = append([]OrchestrationEndpoint(nil), info.Endpoints...)
+	if info.Idempotency != nil {
+		idem := *info.Idempotency
+		out.Idempotency = &idem
+	}
+	return &out
 }
 
 // AssertActive crashes the process if the registry has not been initialized.
@@ -246,6 +297,9 @@ func Init(cancel context.CancelFunc, chassisVersion string) error {
 		Commands:       cmds,
 		Mode:           "service",
 		Status:         "running",
+	}
+	if info := currentOrchestration(); info != nil {
+		reg.Orchestration = info
 	}
 
 	if err := atomicWrite(pidPath, reg); err != nil {
@@ -375,6 +429,9 @@ func InitCLI(chassisVersion string) error {
 		Mode:           "cli",
 		Flags:          flags,
 		Status:         "running",
+	}
+	if info := currentOrchestration(); info != nil {
+		reg.Orchestration = info
 	}
 
 	if err := atomicWrite(pidPath, reg); err != nil {
@@ -565,6 +622,7 @@ func ResetForTest(path string) {
 	CmdPollInterval = DefaultCmdPollInterval
 	handlers = map[string]handlerEntry{}
 	ports = nil
+	orchestration.Store(nil)
 	reg = nil
 	cancelFn = nil
 }

@@ -1,0 +1,9 @@
+{
+  "ok": false,
+  "data": null,
+  "error": {
+    "code": "temporary_unavailable",
+    "message": "upstream not ready",
+    "retryable": true
+  }
+}

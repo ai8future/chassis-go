@@ -1,0 +1,46 @@
+# Minimal Windmill orchestration conformance vocabulary.
+# Phase 0.5 scaffold only: this is a normative data shape for flow tooling and
+# fixture tests, not the full Phase 2 chassis checker rollout.
+contract_version: "0.1"
+levels:
+  L0:
+    name: traceable
+    requires:
+      - accepts_x_trace_id
+      - emits_problem_json_errors
+  L1:
+    name: callable
+    requires:
+      - scoped_bearer_auth_on_mutating_routes
+      - error_problem_json_retry_class
+      - capability_manifest
+  L2:
+    name: retry_safe
+    requires:
+      - idempotency_key_replay_for_mutating_routes
+      - idempotency_store_declared
+      - idempotency_key_tenant_scoped   # BRIDGE A12 / R23 — same key, different tenant must isolate; never replay A's response to B
+    production_rule: durable_store_required_for_multi_instance_services
+  L3:
+    name: event_ready
+    requires:
+      - chassis_outbox_or_equivalent_declared
+      - domain_events_preserve_trace_and_entity_refs
+profiles:
+  C1:
+    name: cli_profile
+    requires:
+      - json_stdout_envelope
+      - sysexits_retry_classes
+    exit_codes:            # normative mapping — flow exec steps decide retry-vs-fail from these
+      "0": success
+      "64": terminal       # EX_USAGE
+      "65": terminal       # EX_DATAERR
+      "75": retryable      # EX_TEMPFAIL — the only retryable exit class
+      "78": terminal       # EX_CONFIG
+      default: terminal
+  D1:
+    name: daemon_profile
+    requires:
+      - declared_registry_commands
+      - args_schema_for_custom_commands

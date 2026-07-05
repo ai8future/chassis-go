@@ -1,0 +1,9 @@
+{
+  "type": "https://ai8.dev/problems/validation_failed",
+  "title": "Validation failed",
+  "status": 422,
+  "detail": "field is required",
+  "code": "validation_failed",
+  "retryable": false,
+  "trace_id": "tr_0123456789abcdef0123456789abcdef"
+}
