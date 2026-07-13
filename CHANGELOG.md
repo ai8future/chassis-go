@@ -14,6 +14,20 @@
 ### Documentation
 - Document Windmill middleware ordering, resource provisioning, canonical trace IDs, idempotency limits, and conformance usage.
 
+## [11.3.2] - 2026-07-13
+
+### Added
+- **idemkit**: Add optional token-aware `LeaseStore` claims, bounded request/response capture controls, and bounded `MemoryStore` capacity without changing the legacy `Store` interface.
+
+### Fixed
+- **idemkit**: Fail closed with HTTP 503 and `Retry-After: 1` when claim persistence is ambiguous instead of exposing an unpersisted successful response.
+- **idemkit**: Prevent stale claim owners from completing or releasing replacement leases, safely expire in-flight claims, restore the default tenant resolver for nil options, and reject oversized keyed bodies deterministically.
+
+### Tests
+- Add legacy third-party store compatibility, ambiguous completion, lease ABA/expiry, capacity, ownership cloning, capture-limit, panic-release, and repeated race regressions.
+
+*(Codex:gpt-5.5-high)*
+
 ## [11.3.1] - 2026-07-13
 
 ### Added
