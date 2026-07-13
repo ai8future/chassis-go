@@ -65,23 +65,42 @@ func All(checks map[string]Check) func(ctx context.Context) ([]Result, error) {
 			entries = append(entries, namedCheck{name: name, check: checks[name]})
 		}
 
-		crs, _ := work.Map(ctx, entries, func(ctx context.Context, nc namedCheck) (checkResult, error) {
+		crs, mapErr := work.Map(ctx, entries, func(ctx context.Context, nc namedCheck) (checkResult, error) {
 			err := nc.check(ctx)
 			r := Result{Name: nc.name, Healthy: err == nil}
 			if err != nil {
 				r.Error = err.Error()
 			}
-			// Always return nil error so Map collects all results.
-			return checkResult{result: r, err: err}, nil
+			return checkResult{result: r, err: err}, err
 		})
 
-		results := make([]Result, len(crs))
-		var errs []error
-		for i, cr := range crs {
-			results[i] = cr.result
-			if cr.err != nil {
-				errs = append(errs, fmt.Errorf("%s: %w", cr.result.Name, cr.err))
+		failures := make(map[int]error)
+		var workErrs *work.Errors
+		if errors.As(mapErr, &workErrs) {
+			for _, failure := range workErrs.Failures {
+				failures[failure.Index] = failure.Err
 			}
+		}
+
+		results := make([]Result, len(entries))
+		var errs []error
+		for i, entry := range entries {
+			result := crs[i].result
+			result.Name = entry.name
+			checkErr := crs[i].err
+			if failure, ok := failures[i]; ok {
+				checkErr = failure
+			}
+			result.Healthy = checkErr == nil
+			result.Error = ""
+			if checkErr != nil {
+				result.Error = checkErr.Error()
+				errs = append(errs, fmt.Errorf("%s: %w", entry.name, checkErr))
+			}
+			results[i] = result
+		}
+		if mapErr != nil && workErrs == nil {
+			errs = append(errs, mapErr)
 		}
 
 		return results, errors.Join(errs...)

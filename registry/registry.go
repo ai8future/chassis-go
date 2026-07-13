@@ -329,8 +329,9 @@ func Init(cancel context.CancelFunc, chassisVersion string) error {
 }
 
 // RunHeartbeat periodically logs heartbeat events until ctx is cancelled.
+// A non-positive HeartbeatInterval uses DefaultHeartbeatInterval.
 func RunHeartbeat(ctx context.Context) error {
-	t := time.NewTicker(HeartbeatInterval)
+	t := time.NewTicker(normalizedTickerInterval(HeartbeatInterval, DefaultHeartbeatInterval))
 	defer t.Stop()
 	for {
 		select {
@@ -343,8 +344,9 @@ func RunHeartbeat(ctx context.Context) error {
 }
 
 // RunCommandPoll periodically checks for command files and executes them.
+// A non-positive CmdPollInterval uses DefaultCmdPollInterval.
 func RunCommandPoll(ctx context.Context) error {
-	t := time.NewTicker(CmdPollInterval)
+	t := time.NewTicker(normalizedTickerInterval(CmdPollInterval, DefaultCmdPollInterval))
 	defer t.Stop()
 	for {
 		select {
@@ -464,7 +466,7 @@ func InitCLI(chassisVersion string) error {
 
 	// Start command polling goroutine for stop support (no heartbeat in CLI mode).
 	done := make(chan struct{})
-	interval := CmdPollInterval
+	interval := normalizedTickerInterval(CmdPollInterval, DefaultCmdPollInterval)
 	cliDone = done
 	go func(done <-chan struct{}, interval time.Duration) {
 		t := time.NewTicker(interval)
@@ -483,6 +485,13 @@ func InitCLI(chassisVersion string) error {
 	}(done, interval)
 
 	return nil
+}
+
+func normalizedTickerInterval(interval, fallback time.Duration) time.Duration {
+	if interval <= 0 {
+		return fallback
+	}
+	return interval
 }
 
 // parseFlags parses command-line arguments into a map of flag names to values.

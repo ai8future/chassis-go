@@ -784,6 +784,38 @@ func TestInitCLI(t *testing.T) {
 	}
 }
 
+func TestNonPositiveTickerIntervalsUseDefaults(t *testing.T) {
+	for name, run := range map[string]func(context.Context) error{
+		"heartbeat": func(ctx context.Context) error {
+			registry.HeartbeatInterval = -time.Second
+			return registry.RunHeartbeat(ctx)
+		},
+		"command poll": func(ctx context.Context) error {
+			registry.CmdPollInterval = 0
+			return registry.RunCommandPoll(ctx)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			registry.ResetForTest(t.TempDir())
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			if err := run(ctx); err != nil {
+				t.Fatalf("ticker runner returned %v", err)
+			}
+		})
+	}
+}
+
+func TestInitCLINonPositivePollIntervalUsesDefault(t *testing.T) {
+	registry.ResetForTest(t.TempDir())
+	registry.CmdPollInterval = -time.Second
+	if err := registry.InitCLI("7.0.0-test"); err != nil {
+		t.Fatalf("InitCLI failed: %v", err)
+	}
+	t.Cleanup(func() { registry.ShutdownCLI(0) })
+	time.Sleep(20 * time.Millisecond)
+}
+
 func TestInitServiceMode(t *testing.T) {
 	svcDir := initRegistry(t)
 	pid := strconv.Itoa(os.Getpid())

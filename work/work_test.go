@@ -556,6 +556,55 @@ func TestStreamContextCancellation(t *testing.T) {
 	}
 }
 
+func TestStream_CancelWhileInputIsOpenAndIdle(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	in := make(chan int)
+	out := Stream(ctx, in, func(context.Context, int) (int, error) {
+		t.Fatal("worker must not run without input")
+		return 0, nil
+	})
+
+	cancel()
+	select {
+	case _, ok := <-out:
+		if ok {
+			t.Fatal("unexpected stream result")
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("output did not close after cancellation while input was idle")
+	}
+}
+
+func TestStream_CancelWithWorkerInFlight(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	in := make(chan int, 1)
+	in <- 1
+	started := make(chan struct{})
+	out := Stream(ctx, in, func(ctx context.Context, _ int) (int, error) {
+		close(started)
+		<-ctx.Done()
+		return 0, ctx.Err()
+	})
+
+	select {
+	case <-started:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("worker did not start")
+	}
+	cancel()
+	deadline := time.After(500 * time.Millisecond)
+	for {
+		select {
+		case _, ok := <-out:
+			if !ok {
+				return
+			}
+		case <-deadline:
+			t.Fatal("output did not close after cancelling in-flight work")
+		}
+	}
+}
+
 func TestWorkers_ClampsToOne(t *testing.T) {
 	items := []int{1, 2, 3}
 	results, err := Map(context.Background(), items, func(_ context.Context, n int) (int, error) {

@@ -14,6 +14,23 @@
 ### Documentation
 - Document Windmill middleware ordering, resource provisioning, canonical trace IDs, idempotency limits, and conformance usage.
 
+## [11.3.1] - 2026-07-13
+
+### Added
+- **webhook**: Add `SendContext` for caller-cancellable requests and retry backoff while preserving `Send` as a background-context compatibility wrapper.
+
+### Fixed
+- **seal**: Validate decoded salt, nonce, and authentication-tag lengths so malformed encrypted envelopes return `ErrDecrypt` instead of panicking.
+- **health**: Preserve every named result and report recovered panic or cancellation failures as unhealthy, including HTTP 503 responses.
+- **work**: Stop idle `Stream` input waits when the context is cancelled and drain cooperative in-flight work before closing output.
+- **webhook**: Normalize non-positive attempt counts to three, cap exponential backoff, and drain response bodies with a bounded read.
+- **heartbeatkit/registry**: Normalize all non-positive ticker intervals to their documented defaults before creating tickers.
+
+### Tests
+- Add targeted panic/cancellation regressions, seal envelope fuzz coverage, affected-package race checks, repository-wide tests, vet, and static analysis.
+
+*(Codex:gpt-5.5-high)*
+
 ## [11.3.0] - 2026-07-02
 
 ### Changed

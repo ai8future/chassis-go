@@ -211,6 +211,28 @@ func TestDefaultInterval(t *testing.T) {
 	}
 }
 
+func TestNonPositiveIntervalUsesDefault(t *testing.T) {
+	for _, interval := range []time.Duration{0, -time.Second} {
+		t.Run(interval.String(), func(t *testing.T) {
+			pub := &mockPublisher{}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			heartbeatkit.Start(ctx, pub, heartbeatkit.Config{
+				Interval:    interval,
+				ServiceName: "test-svc",
+				Version:     "1.0.0",
+			})
+			t.Cleanup(heartbeatkit.Stop)
+			time.Sleep(20 * time.Millisecond)
+			heartbeatkit.Stop()
+			if got := len(pub.getMessages()); got != 0 {
+				t.Fatalf("published %d messages before the 30s default interval", got)
+			}
+		})
+	}
+}
+
 func TestContextCancellationStopsPublishing(t *testing.T) {
 	pub := &mockPublisher{}
 	ctx, cancel := context.WithCancel(context.Background())

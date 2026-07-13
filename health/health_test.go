@@ -199,6 +199,68 @@ func TestAll_ContextCancellation(t *testing.T) {
 	// Also acceptable: check ran and returned nil (raced through).
 }
 
+func TestAll_PanicPreservesEveryNamedResult(t *testing.T) {
+	checks := map[string]Check{
+		"cache": func(context.Context) error { return nil },
+		"db": func(context.Context) error {
+			panic("health check panic")
+		},
+		"queue": func(context.Context) error { return errors.New("queue unavailable") },
+	}
+
+	results, err := All(checks)(context.Background())
+	if err == nil {
+		t.Fatal("expected aggregate error")
+	}
+	if len(results) != len(checks) {
+		t.Fatalf("got %d results, want %d", len(results), len(checks))
+	}
+
+	byName := make(map[string]Result, len(results))
+	for _, result := range results {
+		if _, duplicate := byName[result.Name]; duplicate {
+			t.Fatalf("duplicate result for %q", result.Name)
+		}
+		byName[result.Name] = result
+	}
+	for name := range checks {
+		if _, ok := byName[name]; !ok {
+			t.Errorf("missing result for %q", name)
+		}
+	}
+	if db := byName["db"]; db.Healthy || !strings.Contains(db.Error, "panicked") {
+		t.Errorf("panic result = %+v, want unhealthy panic error", db)
+	}
+	if cache := byName["cache"]; !cache.Healthy {
+		t.Errorf("cache result = %+v, want healthy", cache)
+	}
+}
+
+func TestAll_PreCancelledContextPreservesEveryNamedResult(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	checks := map[string]Check{
+		"cache": func(ctx context.Context) error { return ctx.Err() },
+		"db":    func(ctx context.Context) error { return ctx.Err() },
+	}
+
+	results, err := All(checks)(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("All error = %v, want context.Canceled", err)
+	}
+	if len(results) != len(checks) {
+		t.Fatalf("got %d results, want %d", len(results), len(checks))
+	}
+	for i, result := range results {
+		if result.Name == "" {
+			t.Errorf("result %d lost its name", i)
+		}
+		if result.Healthy || !strings.Contains(result.Error, context.Canceled.Error()) {
+			t.Errorf("result %q = %+v, want unhealthy cancellation", result.Name, result)
+		}
+	}
+}
+
 func TestAll_PreservesOriginalError(t *testing.T) {
 	sentinel := errors.New("sentinel error")
 	checks := map[string]Check{
@@ -331,5 +393,26 @@ func TestHandler_Unhealthy(t *testing.T) {
 	}
 	if !foundFailure {
 		t.Error("expected to find unhealthy db check with error 'gone'")
+	}
+}
+
+func TestHandler_PanickingCheckReturnsServiceUnavailable(t *testing.T) {
+	checks := map[string]Check{
+		"db": func(context.Context) error { panic("boom") },
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+
+	Handler(checks).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+	var body response
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Status != "unhealthy" || len(body.Checks) != 1 || body.Checks[0].Name != "db" || body.Checks[0].Healthy {
+		t.Fatalf("unexpected response: %+v", body)
 	}
 }

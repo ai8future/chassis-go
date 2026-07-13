@@ -1,6 +1,8 @@
 package seal_test
 
 import (
+	"encoding/base64"
+	"errors"
 	"testing"
 
 	chassis "github.com/ai8future/chassis-go/v11"
@@ -101,6 +103,95 @@ func TestDecryptEmptyPassphraseErrors(t *testing.T) {
 	if _, err := seal.Decrypt(env, ""); err == nil {
 		t.Fatal("expected error for empty passphrase")
 	}
+}
+
+func TestDecryptMalformedEnvelopeNeverPanics(t *testing.T) {
+	passphrase := "test-passphrase-32chars-minimum!"
+	valid, err := seal.Encrypt([]byte("secret"), passphrase)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	tests := map[string]func(seal.Envelope) seal.Envelope{
+		"malformed salt base64": func(env seal.Envelope) seal.Envelope {
+			env.Salt = "%%%"
+			return env
+		},
+		"short salt": func(env seal.Envelope) seal.Envelope {
+			env.Salt = base64.StdEncoding.EncodeToString(make([]byte, 15))
+			return env
+		},
+		"long salt": func(env seal.Envelope) seal.Envelope {
+			env.Salt = base64.StdEncoding.EncodeToString(make([]byte, 17))
+			return env
+		},
+		"short nonce": func(env seal.Envelope) seal.Envelope {
+			env.IV = base64.StdEncoding.EncodeToString([]byte{1})
+			return env
+		},
+		"long nonce": func(env seal.Envelope) seal.Envelope {
+			env.IV = base64.StdEncoding.EncodeToString(make([]byte, 13))
+			return env
+		},
+		"short tag": func(env seal.Envelope) seal.Envelope {
+			env.Tag = base64.StdEncoding.EncodeToString(make([]byte, 15))
+			return env
+		},
+		"long tag": func(env seal.Envelope) seal.Envelope {
+			env.Tag = base64.StdEncoding.EncodeToString(make([]byte, 17))
+			return env
+		},
+		"empty ciphertext with mismatched tag": func(env seal.Envelope) seal.Envelope {
+			env.CT = ""
+			return env
+		},
+	}
+
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := seal.Decrypt(mutate(valid), passphrase)
+			if !errors.Is(err, seal.ErrDecrypt) {
+				t.Fatalf("Decrypt error = %v, want ErrDecrypt", err)
+			}
+		})
+	}
+}
+
+func TestEncryptDecryptEmptyPlaintext(t *testing.T) {
+	const passphrase = "test-passphrase-32chars-minimum!"
+	env, err := seal.Encrypt(nil, passphrase)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	plaintext, err := seal.Decrypt(env, passphrase)
+	if err != nil {
+		t.Fatalf("Decrypt: %v", err)
+	}
+	if len(plaintext) != 0 {
+		t.Fatalf("Decrypt returned %d bytes, want empty plaintext", len(plaintext))
+	}
+}
+
+func FuzzDecryptEnvelopeNeverPanics(f *testing.F) {
+	const passphrase = "test-passphrase-32chars-minimum!"
+	valid, err := seal.Encrypt([]byte("seed"), passphrase)
+	if err != nil {
+		f.Fatalf("Encrypt seed: %v", err)
+	}
+	f.Add(valid.Version, valid.Algorithm, valid.Salt, valid.IV, valid.Tag, valid.CT)
+	f.Add(1, "aes-256-gcm", "%%%", "AQ==", "", "")
+	f.Add(0, "", "", "", "", "")
+
+	f.Fuzz(func(t *testing.T, version int, algorithm, salt, iv, tag, ct string) {
+		_, _ = seal.Decrypt(seal.Envelope{
+			Version:   version,
+			Algorithm: algorithm,
+			Salt:      salt,
+			IV:        iv,
+			Tag:       tag,
+			CT:        ct,
+		}, passphrase)
+	})
 }
 
 func TestNewTokenValidateToken(t *testing.T) {

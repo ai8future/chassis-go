@@ -45,6 +45,7 @@ const (
 	scryptKeyLen = 32
 	saltLen      = 16
 	ivLen        = 12
+	tagLen       = 16
 )
 
 // Encrypt encrypts plaintext using AES-256-GCM with a scrypt-derived key.
@@ -121,6 +122,15 @@ func Decrypt(env Envelope, passphrase string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid ciphertext", ErrDecrypt)
 	}
+	if len(salt) != saltLen {
+		return nil, fmt.Errorf("%w: invalid salt length", ErrDecrypt)
+	}
+	if len(iv) != ivLen {
+		return nil, fmt.Errorf("%w: invalid IV length", ErrDecrypt)
+	}
+	if len(tag) != tagLen {
+		return nil, fmt.Errorf("%w: invalid tag length", ErrDecrypt)
+	}
 
 	key, err := scrypt.Key([]byte(passphrase), salt, scryptN, scryptR, scryptP, scryptKeyLen)
 	if err != nil {
@@ -137,7 +147,9 @@ func Decrypt(env Envelope, passphrase string) ([]byte, error) {
 		return nil, fmt.Errorf("%w: GCM creation failed", ErrDecrypt)
 	}
 
-	sealed := append(ct, tag...)
+	sealed := make([]byte, 0, len(ct)+len(tag))
+	sealed = append(sealed, ct...)
+	sealed = append(sealed, tag...)
 	plaintext, err := gcm.Open(nil, iv, sealed, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrDecrypt, err)

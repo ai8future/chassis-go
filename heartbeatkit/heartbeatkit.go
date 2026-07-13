@@ -39,12 +39,12 @@ var (
 )
 
 // Start begins publishing heartbeat events at the configured interval.
-// If cfg.Interval is zero, it defaults to 30 seconds.
+// If cfg.Interval is non-positive, it defaults to 30 seconds.
 func Start(ctx context.Context, pub publisher, cfg Config) {
 	chassis.AssertVersionChecked()
 	mu.Lock()
 	defer mu.Unlock()
-	if cfg.Interval == 0 {
+	if cfg.Interval <= 0 {
 		cfg.Interval = 30 * time.Second
 	}
 	// If a previous goroutine is still running, stop it first to prevent a leak.

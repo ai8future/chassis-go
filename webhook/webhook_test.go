@@ -1,13 +1,17 @@
 package webhook_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	chassis "github.com/ai8future/chassis-go/v11"
 	"github.com/ai8future/chassis-go/v11/webhook"
@@ -130,6 +134,119 @@ func TestSendNoRetryOn4xx(t *testing.T) {
 	}
 	if attempts.Load() != 1 {
 		t.Fatalf("expected 1 attempt (no retry on 4xx), got %d", attempts.Load())
+	}
+}
+
+func TestMaxAttemptsNonPositiveDefaultsToThree(t *testing.T) {
+	for _, attempts := range []int{0, -1} {
+		t.Run(fmt.Sprintf("attempts_%d", attempts), func(t *testing.T) {
+			var got atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				got.Add(1)
+				w.WriteHeader(http.StatusInternalServerError)
+			}))
+			defer srv.Close()
+
+			sender := webhook.NewSender(webhook.MaxAttempts(attempts))
+			_, err := sender.Send(srv.URL, "payload", "secret")
+			if !errors.Is(err, webhook.ErrServerError) {
+				t.Fatalf("Send error = %v, want ErrServerError", err)
+			}
+			if got.Load() != 3 {
+				t.Fatalf("attempts = %d, want exactly 3", got.Load())
+			}
+		})
+	}
+}
+
+func TestSendContextCancellationStopsRequest(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := webhook.NewSender(webhook.MaxAttempts(5)).SendContext(ctx, srv.URL, "payload", "secret")
+		done <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("request did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("SendContext error = %v, want context.Canceled", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("SendContext did not stop after request cancellation")
+	}
+}
+
+func TestSendContextCancellationStopsBackoff(t *testing.T) {
+	firstAttempt := make(chan struct{})
+	var once sync.Once
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		once.Do(func() { close(firstAttempt) })
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := webhook.NewSender(webhook.MaxAttempts(5)).SendContext(ctx, srv.URL, "payload", "secret")
+		done <- err
+	}()
+	select {
+	case <-firstAttempt:
+	case <-time.After(time.Second):
+		t.Fatal("first request did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("SendContext error = %v, want context.Canceled", err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("SendContext remained blocked in retry backoff")
+	}
+}
+
+func TestSendDrainsSuccessfulResponseForConnectionReuse(t *testing.T) {
+	var mu sync.Mutex
+	connections := map[string]struct{}{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		connections[r.RemoteAddr] = struct{}{}
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(make([]byte, 1024))
+	}))
+	defer srv.Close()
+
+	sender := webhook.NewSender(webhook.MaxAttempts(1))
+	for range 2 {
+		if _, err := sender.Send(srv.URL, "payload", "secret"); err != nil {
+			t.Fatalf("Send: %v", err)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(connections) != 1 {
+		t.Fatalf("used %d connections, want one reused connection", len(connections))
 	}
 }
 

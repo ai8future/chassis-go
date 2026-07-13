@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand/v2"
 	"net/http"
 	"strconv"
@@ -18,7 +19,12 @@ import (
 	"github.com/ai8future/chassis-go/v11/seal"
 )
 
-const maxDeliveries = 10000
+const (
+	defaultMaxAttempts    = 3
+	maxDeliveries         = 10000
+	maxResponseDrainBytes = 64 << 10
+	maxRetryBackoff       = 5 * time.Second
+)
 
 var (
 	ErrBadSignature = errors.New("webhook: signature verification failed")
@@ -45,6 +51,8 @@ type Sender struct {
 
 type Option func(*Sender)
 
+// MaxAttempts sets the maximum delivery attempts. Non-positive values use
+// the documented default of three attempts.
 func MaxAttempts(n int) Option {
 	return func(s *Sender) { s.maxAttempts = n }
 }
@@ -52,17 +60,31 @@ func MaxAttempts(n int) Option {
 func NewSender(opts ...Option) *Sender {
 	chassis.AssertVersionChecked()
 	s := &Sender{
-		maxAttempts: 3,
+		maxAttempts: defaultMaxAttempts,
 		deliveries:  make(map[string]*Delivery),
 		httpClient:  &http.Client{Timeout: 10 * time.Second},
 	}
 	for _, o := range opts {
 		o(s)
 	}
+	if s.maxAttempts <= 0 {
+		s.maxAttempts = defaultMaxAttempts
+	}
 	return s
 }
 
+// Send delivers a webhook using a background context. Use SendContext when
+// the caller needs request and retry cancellation.
 func (s *Sender) Send(url string, payload any, secret string) (string, error) {
+	return s.SendContext(context.Background(), url, payload, secret)
+}
+
+// SendContext delivers a webhook and stops the active request or retry
+// backoff when ctx is cancelled.
+func (s *Sender) SendContext(ctx context.Context, url string, payload any, secret string) (string, error) {
+	if ctx == nil {
+		return "", errors.New("webhook: nil context")
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return "", fmt.Errorf("webhook: marshal payload: %w", err)
@@ -100,9 +122,15 @@ func (s *Sender) Send(url string, payload any, secret string) (string, error) {
 		delivery.Attempts = attempt
 		s.mu.Unlock()
 
-		req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 		if err != nil {
 			lastErr = err
+			if attempt < s.maxAttempts {
+				if err := waitForRetry(ctx, attempt); err != nil {
+					s.failDelivery(delivery, err)
+					return id, fmt.Errorf("%w: %w", ErrServerError, err)
+				}
+			}
 			continue
 		}
 		req.Header.Set("Content-Type", "application/json")
@@ -113,16 +141,23 @@ func (s *Sender) Send(url string, payload any, secret string) (string, error) {
 		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			lastErr = err
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				s.failDelivery(delivery, ctxErr)
+				return id, fmt.Errorf("%w: %w", ErrServerError, ctxErr)
+			}
 			if attempt < s.maxAttempts {
-				delay := 100 * time.Millisecond
-				for i := 1; i < attempt; i++ {
-					delay *= 2
+				if err := waitForRetry(ctx, attempt); err != nil {
+					s.failDelivery(delivery, err)
+					return id, fmt.Errorf("%w: %w", ErrServerError, err)
 				}
-				time.Sleep(delay + time.Duration(rand.Int64N(int64(delay/2))))
 			}
 			continue
 		}
-		resp.Body.Close()
+		drainAndClose(resp.Body)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			s.failDelivery(delivery, ctxErr)
+			return id, fmt.Errorf("%w: %w", ErrServerError, ctxErr)
+		}
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			s.mu.Lock()
@@ -142,19 +177,48 @@ func (s *Sender) Send(url string, payload any, secret string) (string, error) {
 		// 5xx — retry
 		lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
 		if attempt < s.maxAttempts {
-			delay := 100 * time.Millisecond
-			for i := 1; i < attempt; i++ {
-				delay *= 2
+			if err := waitForRetry(ctx, attempt); err != nil {
+				s.failDelivery(delivery, err)
+				return id, fmt.Errorf("%w: %w", ErrServerError, err)
 			}
-			time.Sleep(delay + time.Duration(rand.Int64N(int64(delay/2))))
 		}
 	}
 
-	s.mu.Lock()
-	delivery.Status = "failed"
-	delivery.LastError = lastErr.Error()
-	s.mu.Unlock()
+	s.failDelivery(delivery, lastErr)
 	return id, fmt.Errorf("%w: %v", ErrServerError, lastErr)
+}
+
+func (s *Sender) failDelivery(delivery *Delivery, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delivery.Status = "failed"
+	if err != nil {
+		delivery.LastError = err.Error()
+	}
+}
+
+func waitForRetry(ctx context.Context, attempt int) error {
+	delay := 100 * time.Millisecond
+	for i := 1; i < attempt && delay < maxRetryBackoff; i++ {
+		delay *= 2
+		if delay > maxRetryBackoff {
+			delay = maxRetryBackoff
+		}
+	}
+	delay += time.Duration(rand.Int64N(int64(delay / 2)))
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func drainAndClose(body io.ReadCloser) {
+	_, _ = io.CopyN(io.Discard, body, maxResponseDrainBytes)
+	_ = body.Close()
 }
 
 func (s *Sender) Status(id string) (Delivery, bool) {

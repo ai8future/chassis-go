@@ -298,12 +298,27 @@ func Stream[T, R any](ctx context.Context, in <-chan T, fn func(context.Context,
 		sem := make(chan struct{}, cfg.workers)
 		idx := 0
 
-		for item := range in {
+		for {
+			var item T
+			var ok bool
+			select {
+			case <-ctx.Done():
+				goto drain
+			case item, ok = <-in:
+				if !ok {
+					goto drain
+				}
+			}
+
 			select {
 			case <-ctx.Done():
 				// Stop accepting new items but wait for in-flight workers.
 				goto drain
 			case sem <- struct{}{}:
+				if ctx.Err() != nil {
+					<-sem
+					goto drain
+				}
 			}
 
 			wg.Add(1)
