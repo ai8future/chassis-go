@@ -539,6 +539,30 @@ func TestResolve_WithRetryRetriesTransientFailures(t *testing.T) {
 	}
 }
 
+func TestCreateEntity_WithRetryDoesNotRetryMutation(t *testing.T) {
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, WithRetry(3, time.Millisecond))
+	_, err := client.CreateEntity(context.Background(), CreateEntityRequest{
+		EntityTypes:   []string{"organization"},
+		CanonicalName: "No Duplicate Co",
+	})
+	if err == nil {
+		t.Fatal("expected service unavailable error")
+	}
+	if attempts.Load() != 1 {
+		t.Fatalf("POST attempts = %d, want 1", attempts.Load())
+	}
+}
+
 // --------------------------------------------------------------------------
 // 17. WithCircuitBreaker rejects after threshold
 // --------------------------------------------------------------------------

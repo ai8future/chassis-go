@@ -55,15 +55,20 @@ type event struct {
 // Client
 // --------------------------------------------------------------------------
 
-// Client is a non-blocking, batched PostHog analytics client.
+// Client is a non-blocking, batched PostHog analytics client. Capture methods
+// synchronously snapshot event data before returning, so callers retain
+// ownership of their maps and slices.
 type Client struct {
 	cfg       Config
 	http      *call.Client
 	log       *slog.Logger
 	mu        sync.Mutex
-	buf       []event
+	buf       []json.RawMessage
+	closed    bool
+	flushMu   sync.Mutex
 	flushCh   chan struct{}
 	done      chan struct{}
+	workerWG  sync.WaitGroup
 	closeOnce sync.Once
 }
 
@@ -84,11 +89,13 @@ func New(cfg Config) *Client {
 		cfg:     cfg,
 		http:    call.New(call.WithTimeout(10 * time.Second)),
 		log:     slog.Default(),
-		buf:     make([]event, 0, cfg.FlushSize),
+		buf:     make([]json.RawMessage, 0, cfg.FlushSize),
 		flushCh: make(chan struct{}, 1),
 		done:    make(chan struct{}),
 	}
+	c.workerWG.Add(1)
 	go func() {
+		defer c.workerWG.Done()
 		for {
 			select {
 			case <-c.done:
@@ -203,11 +210,15 @@ func (c *Client) Flusher() func(context.Context) error {
 	return tick.Every(c.cfg.FlushInterval, c.flush)
 }
 
-// Close stops the flush goroutine and performs a final synchronous flush.
-// Safe to call multiple times.
+// Close stops and joins the flush goroutine before performing a final
+// synchronous flush. Safe to call multiple times and concurrently.
 func (c *Client) Close() {
 	c.closeOnce.Do(func() {
+		c.mu.Lock()
+		c.closed = true
+		c.mu.Unlock()
 		close(c.done)
+		c.workerWG.Wait()
 		if err := c.flush(context.Background()); err != nil {
 			c.log.Warn("posthogkit: final flush failed", "error", err)
 		}
@@ -232,23 +243,27 @@ func (c *Client) Check() health.Check {
 // Internal
 // --------------------------------------------------------------------------
 
-// enqueue appends an event and triggers an async flush when the buffer
-// reaches FlushSize.
+// enqueue serializes and owns an event before appending it, then triggers an
+// async flush when the buffer reaches FlushSize.
 const maxBuffer = 10000
 
 func (c *Client) enqueue(e event) {
-	select {
-	case <-c.done:
+	owned, err := json.Marshal(e)
+	if err != nil {
+		c.log.Warn("posthogkit: event serialization failed", "error", err)
 		return
-	default:
 	}
 
 	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return
+	}
 	if len(c.buf) >= maxBuffer {
 		c.mu.Unlock()
 		return // drop to prevent OOM
 	}
-	c.buf = append(c.buf, e)
+	c.buf = append(c.buf, owned)
 	shouldFlush := len(c.buf) >= c.cfg.FlushSize
 	c.mu.Unlock()
 	if shouldFlush {
@@ -262,13 +277,16 @@ func (c *Client) enqueue(e event) {
 
 // flush sends all buffered events to the PostHog /batch endpoint.
 func (c *Client) flush(ctx context.Context) error {
+	c.flushMu.Lock()
+	defer c.flushMu.Unlock()
+
 	c.mu.Lock()
 	if len(c.buf) == 0 {
 		c.mu.Unlock()
 		return nil
 	}
 	batch := c.buf
-	c.buf = make([]event, 0, c.cfg.FlushSize)
+	c.buf = make([]json.RawMessage, 0, c.cfg.FlushSize)
 	c.mu.Unlock()
 
 	requeue := func() {
@@ -280,9 +298,12 @@ func (c *Client) flush(ctx context.Context) error {
 		c.mu.Unlock()
 	}
 
-	payload := map[string]any{
-		"api_key": c.cfg.APIKey,
-		"batch":   batch,
+	payload := struct {
+		APIKey string            `json:"api_key"`
+		Batch  []json.RawMessage `json:"batch"`
+	}{
+		APIKey: c.cfg.APIKey,
+		Batch:  batch,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

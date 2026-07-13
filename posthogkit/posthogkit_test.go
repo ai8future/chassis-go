@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -594,6 +596,142 @@ func TestClose_Double(t *testing.T) {
 	client.Capture("u1", "e1", nil)
 	client.Close()
 	client.Close() // must not panic or send empty batch
+}
+
+func TestCaptureSnapshotsNestedCallerDataAtEnqueue(t *testing.T) {
+	var received batchRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Errorf("decode batch: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := New(Config{APIKey: "test-key", Host: srv.URL, Enabled: true})
+	nested := map[string]any{"name": "original"}
+	items := []any{"first", map[string]any{"deep": "original"}}
+	props := map[string]any{"nested": nested, "items": items}
+	client.Capture("user", "snapshot", props)
+
+	nested["name"] = "mutated"
+	items[0] = "mutated"
+	items[1].(map[string]any)["deep"] = "mutated"
+	props["late"] = "mutated"
+	client.Close()
+
+	if len(received.Batch) != 1 {
+		t.Fatalf("batch size = %d, want 1", len(received.Batch))
+	}
+	want := map[string]any{
+		"nested": map[string]any{"name": "original"},
+		"items":  []any{"first", map[string]any{"deep": "original"}},
+	}
+	if got := received.Batch[0].Properties; !reflect.DeepEqual(got, want) {
+		t.Fatalf("snapshotted properties = %#v, want %#v", got, want)
+	}
+}
+
+func TestCloseWaitsForActiveFlushWithoutDoubleSend(t *testing.T) {
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-release
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := New(Config{APIKey: "test-key", Host: srv.URL, Enabled: true, FlushSize: 1})
+	client.Capture("user", "active-flush", nil)
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("auto-flush did not start")
+	}
+
+	closed := make(chan struct{})
+	go func() {
+		client.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+		t.Fatal("Close returned while a flush worker was active")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close did not return after active flush completed")
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("batch requests = %d, want 1", got)
+	}
+}
+
+func TestConcurrentCloseAndFlushAreIdempotent(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := New(Config{APIKey: "test-key", Host: srv.URL, Enabled: true})
+	client.Capture("user", "close-once", nil)
+	var wg sync.WaitGroup
+	for range 10 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			client.Close()
+		}()
+	}
+	wg.Wait()
+	if err := client.flush(context.Background()); err != nil {
+		t.Fatalf("flush after Close: %v", err)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("batch requests = %d, want 1", got)
+	}
+}
+
+func TestCaptureConcurrentWithCloseIsRaceSafe(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := New(Config{APIKey: "test-key", Host: srv.URL, Enabled: true, FlushSize: maxBuffer})
+	client.Capture("seed", "before-close", nil)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for worker := range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			for eventIndex := range 25 {
+				client.Capture("user", "concurrent", map[string]any{"worker": worker, "event": eventIndex})
+			}
+		}()
+	}
+	close(start)
+	client.Close()
+	wg.Wait()
+	client.Close()
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("batch requests = %d, want exactly one final flush", got)
+	}
 }
 
 // --------------------------------------------------------------------------

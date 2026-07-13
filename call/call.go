@@ -81,8 +81,11 @@ func WithTimeout(d time.Duration) Option {
 	}
 }
 
-// WithRetry enables automatic retries for transient (5xx) errors using
-// exponential backoff with jitter. MaxAttempts is clamped to a minimum of 1.
+// WithRetry enables the historical method-agnostic retries for transient (5xx)
+// errors using exponential backoff with jitter. MaxAttempts is clamped to a
+// minimum of 1. This option can retry mutation methods such as POST; callers
+// must ensure those operations are duplicate-safe or also apply
+// [WithIdempotentOnlyRetries].
 //
 // Note: retries re-send the same *http.Request. Requests with a non-nil Body
 // must be rewindable through Request.GetBody. If a retry is required and the

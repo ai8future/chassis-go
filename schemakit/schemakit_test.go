@@ -2,10 +2,13 @@ package schemakit_test
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -246,6 +249,52 @@ func TestDeserializeRejectsSchemaIDZero(t *testing.T) {
 	}
 }
 
+func TestSerializeValidatesPortableSchemaIDBounds(t *testing.T) {
+	r, schema := newTestRegistryWithLoadedSchema(t)
+	for _, id := range []int{-1, 0} {
+		schema.SchemaID = id
+		if _, err := r.Serialize(schema, validSignalData()); err == nil {
+			t.Fatalf("Serialize accepted SchemaID %d", id)
+		} else if !strings.Contains(err.Error(), fmt.Sprintf("SchemaID %d", id)) {
+			t.Fatalf("SchemaID %d error = %v", id, err)
+		}
+	}
+
+	if strconv.IntSize == 64 {
+		tooLarge := uint64(^uint32(0)) + 1
+		schema.SchemaID = int(tooLarge)
+		if _, err := r.Serialize(schema, validSignalData()); err == nil {
+			t.Fatalf("Serialize accepted SchemaID %d above uint32", tooLarge)
+		}
+	}
+
+	for _, id := range []int{1, int(testMaxSchemaID())} {
+		schema.SchemaID = id
+		raw, err := r.Serialize(schema, validSignalData())
+		if err != nil {
+			t.Fatalf("Serialize SchemaID %d: %v", id, err)
+		}
+		if got := binary.BigEndian.Uint32(raw[1:5]); uint64(got) != uint64(id) {
+			t.Fatalf("wire SchemaID = %d, want %d", got, id)
+		}
+	}
+}
+
+func TestDeserializeRejectsSchemaIDAboveRuntimeInt(t *testing.T) {
+	if strconv.IntSize != 32 {
+		t.Skip("runtime int can represent all uint32 schema IDs")
+	}
+	r, err := schemakit.NewRegistry("http://localhost:8081")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte{0, 0xff, 0xff, 0xff, 0xff}
+	_, err = r.Deserialize(raw)
+	if err == nil || !strings.Contains(err.Error(), "exceeds runtime maximum") {
+		t.Fatalf("Deserialize max uint32 error = %v", err)
+	}
+}
+
 func TestRegister(t *testing.T) {
 	// Mock Schema Registry: responds with {"id": 99}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -302,4 +351,66 @@ func TestRegister(t *testing.T) {
 	if s.SchemaID != 99 {
 		t.Fatalf("expected SchemaID=99 after registration, got %d", s.SchemaID)
 	}
+}
+
+func TestRegisterRejectsOutOfRangeSchemaIDs(t *testing.T) {
+	tests := []struct {
+		name string
+		id   string
+	}{
+		{name: "negative", id: "-1"},
+		{name: "zero", id: "0"},
+		{name: "uint32 overflow", id: "4294967296"},
+	}
+	if strconv.IntSize == 32 {
+		tests = append(tests, struct {
+			name string
+			id   string
+		}{name: "runtime int overflow", id: "2147483648"})
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"id":%s}`, tt.id)
+			}))
+			defer server.Close()
+			r, err := schemakit.NewRegistry(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := r.LoadSchemas("testdata/schemas"); err != nil {
+				t.Fatal(err)
+			}
+			schema := r.GetSchema("ai8.scanner.gdelt.v1.SignalSurge")
+			if err := r.Register(context.Background(), schema); err == nil {
+				t.Fatalf("Register accepted schema ID %s", tt.id)
+			}
+			if schema.SchemaID != 0 {
+				t.Fatalf("SchemaID mutated to %d after rejected response", schema.SchemaID)
+			}
+		})
+	}
+}
+
+func validSignalData() map[string]any {
+	return map[string]any{
+		"entity":         "AAPL",
+		"tier":           "flash",
+		"kind":           "volume_spike",
+		"current":        float32(150.5),
+		"baseline":       float32(50.0),
+		"multiplier":     float32(3.01),
+		"window_minutes": 15,
+	}
+}
+
+func testMaxSchemaID() uint64 {
+	maxWire := uint64(^uint32(0))
+	maxRuntime := uint64(^uint(0) >> 1)
+	if maxRuntime < maxWire {
+		return maxRuntime
+	}
+	return maxWire
 }

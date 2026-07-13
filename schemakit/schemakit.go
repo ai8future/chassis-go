@@ -138,8 +138,8 @@ func (r *Registry) Serialize(schema *Schema, data map[string]any) ([]byte, error
 		return nil, fmt.Errorf("schemakit: schema %q has no parsed schema", schema.Subject)
 	}
 	id := r.schemaID(schema)
-	if id == 0 {
-		return nil, fmt.Errorf("schemakit: schema %q has SchemaID 0; call Register before Serialize", schema.Subject)
+	if err := validateSchemaID(id); err != nil {
+		return nil, fmt.Errorf("schemakit: schema %q has invalid SchemaID %d: %w", schema.Subject, id, err)
 	}
 
 	payload, err := avro.Marshal(schema.parsed, data)
@@ -168,10 +168,14 @@ func (r *Registry) Deserialize(raw []byte) (map[string]any, error) {
 		return nil, fmt.Errorf("schemakit: invalid magic byte 0x%02x, expected 0x00", raw[0])
 	}
 
-	schemaID := int(binary.BigEndian.Uint32(raw[1:5]))
-	if schemaID == 0 {
+	wireID := uint64(binary.BigEndian.Uint32(raw[1:5]))
+	if wireID == 0 {
 		return nil, fmt.Errorf("schemakit: payload carries schema ID 0; refusing ambiguous decode")
 	}
+	if wireID > maxSupportedSchemaID() {
+		return nil, fmt.Errorf("schemakit: payload schema ID %d exceeds runtime maximum %d", wireID, maxSupportedSchemaID())
+	}
+	schemaID := int(wireID)
 
 	// Find schema by ID in cache
 	r.mu.RLock()
@@ -201,6 +205,9 @@ func (r *Registry) Deserialize(raw []byte) (map[string]any, error) {
 // Register registers the schema with the Schema Registry via HTTP POST.
 // On success, the schema's SchemaID is updated with the ID returned by the registry.
 func (r *Registry) Register(ctx context.Context, schema *Schema) error {
+	if schema == nil {
+		return fmt.Errorf("schemakit: schema is nil")
+	}
 	// Build the request body per Schema Registry API
 	body := map[string]string{
 		"schema":     schema.AvroJSON,
@@ -234,14 +241,17 @@ func (r *Registry) Register(ctx context.Context, schema *Schema) error {
 	}
 
 	var result struct {
-		ID int `json:"id"`
+		ID int64 `json:"id"`
 	}
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return fmt.Errorf("schemakit: decode register response: %w", err)
 	}
+	if result.ID <= 0 || uint64(result.ID) > maxSupportedSchemaID() {
+		return fmt.Errorf("schemakit: registry returned invalid schema ID %d; supported range is 1..%d", result.ID, maxSupportedSchemaID())
+	}
 
 	r.mu.Lock()
-	schema.SchemaID = result.ID
+	schema.SchemaID = int(result.ID)
 	r.mu.Unlock()
 	return nil
 }
@@ -253,4 +263,23 @@ func (r *Registry) schemaID(schema *Schema) int {
 	id := schema.SchemaID
 	r.mu.RUnlock()
 	return id
+}
+
+func validateSchemaID(id int) error {
+	if id <= 0 {
+		return fmt.Errorf("must be positive")
+	}
+	if uint64(id) > maxSupportedSchemaID() {
+		return fmt.Errorf("exceeds supported maximum %d", maxSupportedSchemaID())
+	}
+	return nil
+}
+
+func maxSupportedSchemaID() uint64 {
+	const maxWireSchemaID = uint64(^uint32(0))
+	maxRuntimeInt := uint64(^uint(0) >> 1)
+	if maxRuntimeInt < maxWireSchemaID {
+		return maxRuntimeInt
+	}
+	return maxWireSchemaID
 }

@@ -14,6 +14,21 @@
 ### Documentation
 - Document Windmill middleware ordering, resource provisioning, canonical trace IDs, idempotency limits, and conformance usage.
 
+## [11.3.3] - 2026-07-13
+
+### Changed
+- **registrykit/call**: Restrict registry retries to idempotent HTTP methods while preserving and explicitly documenting the generic `call.WithRetry` v11 behavior for duplicate-safe mutations.
+
+### Fixed
+- **schemakit**: Reject zero, negative, uint32-overflowing, and runtime-int-overflowing schema IDs before wire conversion or registry-cache mutation.
+- **config**: Reject unknown validation operators and known operators applied to incompatible field types instead of silently accepting invalid configuration.
+- **posthogkit**: Snapshot nested event data during enqueue and make concurrent capture, flush, and repeated `Close` ownership race-safe without double sending.
+
+### Tests
+- Add GET/POST retry-attempt, schema boundary and 386 compile, strict validation, nested ownership, active-flush shutdown, and repeated race regressions.
+
+*(Codex:gpt-5.5-high)*
+
 ## [11.3.2] - 2026-07-13
 
 ### Added

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -321,6 +322,8 @@ func TestConvertInvalidValues(t *testing.T) {
 }
 
 func TestCheckValidationPasses(t *testing.T) {
+	type port uint16
+	type label string
 	tests := []struct {
 		name string
 		v    any
@@ -331,6 +334,9 @@ func TestCheckValidationPasses(t *testing.T) {
 		{name: "oneof", v: "info", tag: "oneof=debug info warn error"},
 		{name: "pattern", v: "host-01", tag: "pattern=^[a-z0-9\\-]+$"},
 		{name: "combined", v: 8080, tag: "min=1,max=65535"},
+		{name: "named unsigned numeric", v: port(8080), tag: "min=1,max=65535"},
+		{name: "named string pattern", v: label("host-01"), tag: "pattern=^[a-z0-9\\-]+$"},
+		{name: "duration numeric", v: 2 * time.Second, tag: "min=1000000000,max=3000000000"},
 	}
 
 	for _, tt := range tests {
@@ -369,6 +375,57 @@ func TestCheckValidationFailures(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCheckRejectsUnknownAndIncompatibleOperators(t *testing.T) {
+	type label string
+	type port uint16
+	tests := []struct {
+		name    string
+		value   any
+		tag     string
+		wantMsg string
+	}{
+		{name: "unknown operator", value: 1, tag: "minimum=1", wantMsg: `field Field has unknown validation operator "minimum"`},
+		{name: "missing equals", value: 1, tag: "min", wantMsg: "malformed validation constraint"},
+		{name: "empty constraint", value: 1, tag: "min=1,", wantMsg: "empty validation constraint"},
+		{name: "min string", value: "10", tag: "min=1", wantMsg: `operator "min" is incompatible with type string`},
+		{name: "min named string", value: label("10"), tag: "min=1", wantMsg: `operator "min" is incompatible with type config.label`},
+		{name: "max bool", value: true, tag: "max=1", wantMsg: `operator "max" is incompatible with type bool`},
+		{name: "pattern int", value: 42, tag: "pattern=^[0-9]+$", wantMsg: `operator "pattern" is incompatible with type int`},
+		{name: "pattern named unsigned", value: port(42), tag: "pattern=^[0-9]+$", wantMsg: `operator "pattern" is incompatible with type config.port`},
+		{name: "min time struct", value: time.Now(), tag: "min=1", wantMsg: `operator "min" is incompatible with type time.Time`},
+		{name: "oneof slice", value: []string{"a"}, tag: "oneof=a b", wantMsg: `operator "oneof" is incompatible with type []string`},
+		{name: "empty oneof", value: "a", tag: "oneof=", wantMsg: "requires at least one allowed value"},
+		{name: "nil value", value: nil, tag: "min=1", wantMsg: `operator "min" is incompatible with type <nil>`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Check("Field", tt.value, tt.tag)
+			if err == nil {
+				t.Fatalf("Check(%q) returned nil error", tt.tag)
+			}
+			if !strings.Contains(err.Error(), tt.wantMsg) {
+				t.Fatalf("Check error = %q, want substring %q", err, tt.wantMsg)
+			}
+		})
+	}
+}
+
+func TestMustLoadRejectsUnknownValidationOperator(t *testing.T) {
+	type cfg struct {
+		Port int `env:"STRICT_PORT" default:"8080" validate:"minimum=1"`
+	}
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatal("MustLoad accepted an unknown validation operator")
+		}
+		if !strings.Contains(fmt.Sprint(recovered), `field Port has unknown validation operator "minimum"`) {
+			t.Fatalf("panic = %v", recovered)
+		}
+	}()
+	_ = MustLoad[cfg]()
 }
 
 // ---------- validate tag tests ----------

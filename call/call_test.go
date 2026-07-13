@@ -100,6 +100,36 @@ func TestRetryOn5xx(t *testing.T) {
 	}
 }
 
+func TestWithRetryPreservesExplicitUnsafePostRetries(t *testing.T) {
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		attempt := attempts.Add(1)
+		if attempt == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := New(WithRetry(2, time.Millisecond))
+	req, err := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader("duplicate-safe payload"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if attempts.Load() != 2 {
+		t.Fatalf("POST attempts = %d, want 2 for explicit historical WithRetry", attempts.Load())
+	}
+}
+
 func TestRetryReturnsBodyNotRewindableWhenGetBodyFails(t *testing.T) {
 	srv, hits := counterServer(http.StatusServiceUnavailable)
 	defer srv.Close()

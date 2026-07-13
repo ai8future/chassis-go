@@ -99,9 +99,16 @@ func WithTimeout(d time.Duration) ClientOption {
 	return func(o *clientOptions) { o.callOptions = append(o.callOptions, call.WithTimeout(d)) }
 }
 
-// WithRetry enables automatic retries for transient (5xx) errors.
+// WithRetry enables automatic retries for transient errors on idempotent HTTP
+// methods. Registry mutations use POST and are deliberately attempted once to
+// avoid duplicating side effects.
 func WithRetry(maxAttempts int, baseDelay time.Duration) ClientOption {
-	return func(o *clientOptions) { o.callOptions = append(o.callOptions, call.WithRetry(maxAttempts, baseDelay)) }
+	return func(o *clientOptions) {
+		o.callOptions = append(o.callOptions,
+			call.WithRetry(maxAttempts, baseDelay),
+			call.WithIdempotentOnlyRetries(),
+		)
+	}
 }
 
 // WithCircuitBreaker protects the client with a named circuit breaker.

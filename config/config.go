@@ -179,28 +179,49 @@ func Check(name string, v any, validateTag string) error {
 	val := reflect.ValueOf(v)
 	parts := splitConstraints(validateTag)
 	for _, part := range parts {
-		key, value, _ := strings.Cut(strings.TrimSpace(part), "=")
+		constraint := strings.TrimSpace(part)
+		if constraint == "" {
+			return fmt.Errorf("config: field %s has empty validation constraint", name)
+		}
+		key, value, found := strings.Cut(constraint, "=")
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if !found || key == "" {
+			return fmt.Errorf("config: field %s has malformed validation constraint %q; expected operator=value", name, constraint)
+		}
 		switch key {
 		case "min":
+			actual, ok := fieldAsFloat(val)
+			if !ok {
+				return incompatibleValidationType(name, key, val)
+			}
 			minVal, err := strconv.ParseFloat(value, 64)
 			if err != nil {
 				return fmt.Errorf("config: field %s has invalid min value %q in validate tag", name, value)
 			}
-			actual := fieldAsFloat(val)
 			if actual < minVal {
 				return fmt.Errorf("config: field %s value %v is below minimum %s", name, val.Interface(), value)
 			}
 		case "max":
+			actual, ok := fieldAsFloat(val)
+			if !ok {
+				return incompatibleValidationType(name, key, val)
+			}
 			maxVal, err := strconv.ParseFloat(value, 64)
 			if err != nil {
 				return fmt.Errorf("config: field %s has invalid max value %q in validate tag", name, value)
 			}
-			actual := fieldAsFloat(val)
 			if actual > maxVal {
 				return fmt.Errorf("config: field %s value %v exceeds maximum %s", name, val.Interface(), value)
 			}
 		case "oneof":
+			if !supportsOneOf(val) {
+				return incompatibleValidationType(name, key, val)
+			}
 			allowed := strings.Fields(value)
+			if len(allowed) == 0 {
+				return fmt.Errorf("config: field %s operator %q requires at least one allowed value", name, key)
+			}
 			actual := fmt.Sprintf("%v", val.Interface())
 			found := false
 			for _, a := range allowed {
@@ -213,14 +234,19 @@ func Check(name string, v any, validateTag string) error {
 				return fmt.Errorf("config: field %s value %q not in allowed set [%s]", name, actual, value)
 			}
 		case "pattern":
+			if !val.IsValid() || val.Kind() != reflect.String {
+				return incompatibleValidationType(name, key, val)
+			}
 			re, err := regexp.Compile(value)
 			if err != nil {
 				return fmt.Errorf("config: field %s has invalid pattern %q in validate tag: %v", name, value, err)
 			}
-			actual := fmt.Sprintf("%v", val.Interface())
+			actual := val.String()
 			if !re.MatchString(actual) {
 				return fmt.Errorf("config: field %s value %q does not match pattern %s", name, actual, value)
 			}
+		default:
+			return fmt.Errorf("config: field %s has unknown validation operator %q", name, key)
 		}
 	}
 	return nil
@@ -270,15 +296,41 @@ func validateField(name string, val reflect.Value, tag string) {
 }
 
 // fieldAsFloat converts numeric reflect values to float64 for comparison.
-func fieldAsFloat(val reflect.Value) float64 {
+func fieldAsFloat(val reflect.Value) (float64, bool) {
+	if !val.IsValid() {
+		return 0, false
+	}
 	switch val.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return float64(val.Int())
+		return float64(val.Int()), true
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return float64(val.Uint())
+		return float64(val.Uint()), true
 	case reflect.Float32, reflect.Float64:
-		return val.Float()
+		return val.Float(), true
 	default:
-		return 0
+		return 0, false
 	}
+}
+
+func supportsOneOf(val reflect.Value) bool {
+	if !val.IsValid() {
+		return false
+	}
+	switch val.Kind() {
+	case reflect.String, reflect.Bool,
+		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return true
+	default:
+		return false
+	}
+}
+
+func incompatibleValidationType(name, operator string, val reflect.Value) error {
+	typeName := "<nil>"
+	if val.IsValid() {
+		typeName = val.Type().String()
+	}
+	return fmt.Errorf("config: field %s validation operator %q is incompatible with type %s", name, operator, typeName)
 }
