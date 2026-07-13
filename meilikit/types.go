@@ -63,16 +63,16 @@ type SearchOptions struct {
 
 // SearchResult is returned from a search or multi-search query.
 type SearchResult struct {
-	Hits               []json.RawMessage          `json:"hits"`
-	Query              string                     `json:"query"`
-	ProcessingTimeMs   int                        `json:"processingTimeMs"`
-	EstimatedTotalHits *int                       `json:"estimatedTotalHits,omitempty"`
-	TotalHits          *int                       `json:"totalHits,omitempty"`
-	TotalPages         *int                       `json:"totalPages,omitempty"`
-	Page               *int                       `json:"page,omitempty"`
-	HitsPerPage        *int                       `json:"hitsPerPage,omitempty"`
-	FacetDistribution  map[string]map[string]int  `json:"facetDistribution,omitempty"`
-	FacetStats         map[string]FacetStat       `json:"facetStats,omitempty"`
+	Hits               []json.RawMessage         `json:"hits"`
+	Query              string                    `json:"query"`
+	ProcessingTimeMs   int                       `json:"processingTimeMs"`
+	EstimatedTotalHits *int                      `json:"estimatedTotalHits,omitempty"`
+	TotalHits          *int                      `json:"totalHits,omitempty"`
+	TotalPages         *int                      `json:"totalPages,omitempty"`
+	Page               *int                      `json:"page,omitempty"`
+	HitsPerPage        *int                      `json:"hitsPerPage,omitempty"`
+	FacetDistribution  map[string]map[string]int `json:"facetDistribution,omitempty"`
+	FacetStats         map[string]FacetStat      `json:"facetStats,omitempty"`
 }
 
 // SearchHits unmarshals the raw hits from a SearchResult into a typed slice.

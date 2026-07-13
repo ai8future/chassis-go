@@ -105,11 +105,11 @@ func TestValidateConfig_MinLengthSigningKey(t *testing.T) {
 
 func TestValidateConfig_BadServePath(t *testing.T) {
 	cfg := Config{
-		BaseURL:   "http://x",
-		AppID:     "x",
-		EventKey:  "x",
+		BaseURL:    "http://x",
+		AppID:      "x",
+		EventKey:   "x",
 		SigningKey: testKey,
-		ServePath: "no-leading-slash",
+		ServePath:  "no-leading-slash",
 	}
 	if err := validateConfig(cfg); err == nil {
 		t.Fatal("expected error for ServePath without leading /")

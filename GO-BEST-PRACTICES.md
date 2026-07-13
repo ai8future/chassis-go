@@ -6,9 +6,9 @@ Prescriptive rules for agents building and maintaining Go services that use chas
 
 ## 0. Toolchain Requirement
 
-Use Go 1.26.2 or later for local development, CI, Docker builds, and release builds. chassis-go's `go.mod` declares `go 1.26.0` as the language/toolchain floor, but production builders must use the patched 1.26.2+ toolchain for current Go security fixes.
+Use Go 1.26.5 or later for local development, CI, Docker builds, and release builds. chassis-go's `go.mod` declares `go 1.26.5` as the language/toolchain floor so development and production builders share the same patched minimum.
 
-Consumer services that import `github.com/ai8future/chassis-go/v11` cannot build with Go 1.25. If a Dockerfile uses `golang:1.26-alpine`, make sure the build pulls a current image that resolves to Go 1.26.2 or later.
+Consumer services that import `github.com/ai8future/chassis-go/v11` require Go 1.26.5 or later. Pin Docker builders to `golang:1.26.5-alpine` or a newer patched release rather than relying on a floating minor tag.
 
 ---
 
@@ -198,7 +198,7 @@ This still works for Makefile-driven builds and for injecting additional values 
 
 ```dockerfile
 # Build stage
-FROM golang:1.26-alpine AS builder
+FROM golang:1.26.5-alpine AS builder
 WORKDIR /app
 RUN apk add --no-cache git ca-certificates
 COPY go.mod go.sum ./
@@ -223,7 +223,7 @@ ENTRYPOINT ["/{service_name}"]
 
 | Rule | Detail |
 |------|--------|
-| Builder image | `golang:1.26-alpine`, refreshed so `go version` is 1.26.2+ |
+| Builder image | `golang:1.26.5-alpine` or a newer patched release |
 | Production image | `gcr.io/distroless/static-debian12:nonroot` (preferred) or `alpine:3.21` if shell access needed |
 | Always set `CGO_ENABLED=0 GOOS=linux GOARCH=amd64` | Even though Docker runs Linux — makes the build explicit and reproducible |
 | Copy VERSION into image | Health check endpoints should report the version |

@@ -14,6 +14,21 @@
 ### Documentation
 - Document Windmill middleware ordering, resource provisioning, canonical trace IDs, idempotency limits, and conformance usage.
 
+## [11.3.5] - 2026-07-13
+
+### Changed
+- Raise the module, CI, consumer guidance, and example builder toolchain floor to Go 1.26.5 so standard-library security fixes are consistently enforced.
+- Pin CI analysis to staticcheck v0.7.0, govulncheck v1.6.0, and golangci-lint v2.12.2 instead of floating tool versions.
+
+### Fixed
+- Make CI reject non-scratch Go formatting drift, module tidy or verification drift, vulnerability findings, sub-75% aggregate coverage, race failures, and failed Linux/Darwin/386 compile proofs.
+- Correct existing non-scratch `gofmt` drift and classify the directly imported `golang.org/x/text` module as a direct dependency.
+
+### Tests
+- Add bounded malformed-envelope fuzz smoke coverage and verify the full Go 1.26.5 test, race, coverage, lint, vulnerability, workflow-syntax, and cross-build matrix.
+
+*(Codex:gpt-5.5-high)*
+
 ## [11.3.4] - 2026-07-13
 
 ### Added

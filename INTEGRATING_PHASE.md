@@ -115,7 +115,7 @@ Production services should leave it false.
 Alpine example:
 
 ```dockerfile
-FROM golang:1.26-alpine AS builder
+FROM golang:1.26.5-alpine AS builder
 WORKDIR /src
 COPY . .
 RUN go build -o /out/myservice ./cmd/myservice

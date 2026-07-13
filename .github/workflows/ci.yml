@@ -6,31 +6,74 @@ on:
   pull_request:
     branches: [main]
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: ['1.26.2']
+permissions:
+  contents: read
 
+env:
+  GO_VERSION: 1.26.5
+  STATICCHECK_VERSION: v0.7.0
+  GOVULNCHECK_VERSION: v1.6.0
+  GOLANGCI_LINT_VERSION: v2.12.2
+
+jobs:
+  quality:
+    name: Format, modules, lint, and security
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Verify formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          unformatted_file="$(mktemp)"
+          trap 'rm -f "$unformatted_file"' EXIT
+          git ls-files -z -- '*.go' |
+            while IFS= read -r -d '' file; do
+              case "$file" in
+                _studies/*|_proposals/*|_rcodegen/*|_bugs_open/*|_bugs_fixed/*|.omx/*) continue ;;
+              esac
+              gofmt -l "$file" >>"$unformatted_file"
+            done
+          if [[ -s "$unformatted_file" ]]; then
+            echo 'These tracked Go files need gofmt:' >&2
+            cat "$unformatted_file" >&2
+            exit 1
+          fi
+
+      - name: Verify modules
+        run: |
+          set -euo pipefail
+          go mod tidy -diff
+          go mod verify
 
       - name: Vet
         run: go vet ./...
 
-      - name: Test
-        run: go test -race -coverprofile=coverage.out ./...
+      - name: Install pinned analysis tools
+        run: |
+          set -euo pipefail
+          go install "honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}"
+          go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+          go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}"
 
-      - name: Test coverage
-        run: go tool cover -func=coverage.out
+      - name: Staticcheck
+        run: staticcheck ./...
 
-  lint:
+      - name: golangci-lint
+        run: golangci-lint run --default=none --enable=govet --enable=ineffassign --enable=unused ./...
+
+      - name: Vulnerability scan
+        run: govulncheck ./...
+
+  test:
+    name: Tests, race detector, coverage, and fuzz smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,9 +81,55 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26.2'
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
 
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+      - name: Test
+        run: go test -timeout=120s -count=1 ./...
+
+      - name: Race test
+        run: go test -race -timeout=180s -count=1 ./...
+
+      - name: Enforce statement coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          coverage_file="$(mktemp)"
+          trap 'rm -f "$coverage_file"' EXIT
+          go test -timeout=120s -count=1 -coverprofile="$coverage_file" ./...
+          coverage="$(go tool cover -func="$coverage_file" | awk '/^total:/ {gsub(/%/, "", $3); print $3}')"
+          if [[ -z "$coverage" ]]; then
+            echo "unable to determine aggregate statement coverage" >&2
+            exit 1
+          fi
+          printf 'aggregate statement coverage: %s%%\n' "$coverage"
+          awk -v coverage="$coverage" 'BEGIN { if ((coverage + 0) < 75) exit 1 }'
+
+      - name: Fuzz malformed seal envelopes
+        run: go test ./seal -run='^$' -fuzz='^FuzzDecryptEnvelopeNeverPanics$' -fuzztime=10s
+
+  cross-build:
+    name: Cross-build and 386 schema proof
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          version: latest
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Cross-build Linux amd64
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./...
+
+      - name: Cross-build Darwin arm64
+        run: CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build ./...
+
+      - name: Compile schemakit for Linux 386
+        shell: bash
+        run: |
+          set -euo pipefail
+          test_binary="$(mktemp)"
+          trap 'rm -f "$test_binary"' EXIT
+          CGO_ENABLED=0 GOOS=linux GOARCH=386 go test -c -o "$test_binary" ./schemakit

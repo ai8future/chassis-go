@@ -118,7 +118,7 @@ func writeConsumerFixture(t *testing.T, version string) string {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "go.mod"), fmt.Sprintf(`module example.com/consumer
 
-go 1.26.0
+go 1.26.5
 
 require github.com/ai8future/chassis-go/v11 v11.0.0
 

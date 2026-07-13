@@ -109,7 +109,7 @@ Typed `call`-backed clients: `registrykit` (registry_svc entity/relationship/gra
 | Global breakers | Circuit breakers are singletons keyed by name | All clients to a downstream share breaker state, so the fleet fast-fails together |
 | Registry security | Dirs 0700, PID files 0600, sensitive args redacted, atomic writes | Operational visibility must not leak secrets or corrupt state |
 | secval scope | Reject `__proto__`/`constructor`/`prototype` and >20 nesting; not for file uploads/streams (parses fully into memory) | Stops prototype pollution and nesting attacks; size limits must come first |
-| Go floor | `go.mod` declares `go 1.26.0`; build/CI/Docker use Go 1.26.2+ | The patch floor carries stdlib/toolchain security fixes |
+| Go floor | `go.mod` and build/CI/Docker use Go 1.26.5+ | The patch floor carries stdlib/toolchain security fixes |
 
 # How to Think About Code Changes
 
@@ -132,7 +132,7 @@ chassis-go is a **library**, not a deployed service — it has no runtime of its
 
 # Current State / Status
 
-- **Version:** 11.3.0 (Go 1.26 floor; build/CI on Go 1.26.2+). MIT licensed.
+- **Version:** 11.3.5 (Go 1.26.5 floor; build/CI on Go 1.26.5+). MIT licensed.
 - **Maturity:** in active production use across the fleet; eleven major versions since the initial release in February 2026 (the v4 module-path migration landed Feb 8, 2026), reflecting rapid iteration driven by real adoption.
 - **Built today:** all packages in this document are implemented and tested (~63 test files), with runnable examples in `examples/01-cli` through `examples/05-clikit` and a `cmd/demo-shutdown` graceful-shutdown demo.
 - **Notes / planned:** `inngestkit` durable-workflow integration is available but optional and not required for service completion; `phasekit` ships with dynamic secret leases disabled in v1; database access is intentionally out of scope (pair with `chassis-go-addons/pgkit`).
