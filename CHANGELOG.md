@@ -14,6 +14,21 @@
 ### Documentation
 - Document Windmill middleware ordering, resource provisioning, canonical trace IDs, idempotency limits, and conformance usage.
 
+## [11.3.8] - 2026-07-13
+
+### Fixed
+- **idemkit**: Release panic, oversized-response, and handler-5xx claims through a value-preserving detached context with a two-second deadline, so request cancellation cannot strand retry-blocking claims while cleanup remains bounded; ambiguous completion remains fail-closed and retained.
+- **kafkakit**: Validate tenant filtering against the subscriber's effective `WithTenant` value and reject positive franz-go session timeouts below its supported 100 ms minimum.
+- **kafkakit**: React to franz-go blocked-rebalance callbacks by cancelling and boundedly draining the owned manual batch, committing only durable contiguous prefixes, allowing the rebalance, and resuming polling without dead-lettering interrupted handlers.
+
+### CI
+- Enforce `RequireMajor(11)` in every tracked non-scratch test file and run a bounded malformed-webhook fuzz smoke alongside the existing seal fuzz gate.
+
+### Tests
+- Add cancelled idempotency-cleanup, effective-tenant, session-timeout boundary, realistic pending-rebalance, bounded-drain, reusable-signal, webhook fuzz, and missing per-file version-gate regressions; verify targeted repeated race, repository-wide test/race, vet, pinned static analysis, vulnerability, workflow, module, and cross-build gates.
+
+*(Codex:gpt-5.5-high)*
+
 ## [11.3.7] - 2026-07-13
 
 ### Changed

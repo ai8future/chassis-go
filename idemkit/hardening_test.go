@@ -389,6 +389,79 @@ func TestHandlerPanicReleasesLeaseAndRepanics(t *testing.T) {
 	}
 }
 
+func TestCancelledHandlerPanicReleasesLeaseAndRepanics(t *testing.T) {
+	store := NewMemoryStore(time.Hour)
+	var hits atomic.Int32
+	var cancelFirst context.CancelFunc
+	h := Middleware(store)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if hits.Add(1) == 1 {
+			cancelFirst()
+			panic("cancelled handler panic")
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancelFirst = cancel
+	func() {
+		defer func() {
+			if recovered := recover(); recovered != "cancelled handler panic" {
+				t.Fatalf("recovered = %#v, want cancelled handler panic", recovered)
+			}
+		}()
+		h.ServeHTTP(httptest.NewRecorder(), keyedRequest("cancelled-panic", "body").WithContext(ctx))
+	}()
+
+	secondRec := httptest.NewRecorder()
+	h.ServeHTTP(secondRec, keyedRequest("cancelled-panic", "body"))
+	if secondRec.Code != http.StatusCreated || hits.Load() != 2 {
+		t.Fatalf("second response/hits = %d/%d, want 201/2", secondRec.Code, hits.Load())
+	}
+}
+
+func TestCancelledHandlerCleanupUsesDetachedBoundedContext(t *testing.T) {
+	tests := []struct {
+		name    string
+		options []Option
+		handle  func(http.ResponseWriter)
+	}{
+		{
+			name: "handler 5xx",
+			handle: func(w http.ResponseWriter) {
+				w.WriteHeader(http.StatusServiceUnavailable)
+			},
+		},
+		{
+			name:    "oversized response",
+			options: []Option{WithResponseBodyLimit(4)},
+			handle: func(w http.ResponseWriter) {
+				_, _ = w.Write([]byte("12345"))
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &releaseContextObservingStore{MemoryStore: NewMemoryStore(time.Hour)}
+			ctx, cancel := context.WithCancel(context.WithValue(context.Background(), releaseContextKey{}, "preserved"))
+			h := Middleware(store, tt.options...)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				cancel()
+				tt.handle(w)
+			}))
+
+			h.ServeHTTP(httptest.NewRecorder(), keyedRequest("cancelled-cleanup", "body").WithContext(ctx))
+
+			called, hasDeadline, value, contextErr := store.releaseObservation()
+			if called != 1 || contextErr != nil || !hasDeadline || value != "preserved" {
+				t.Fatalf("release observation = called:%d err:%v deadline:%v value:%#v", called, contextErr, hasDeadline, value)
+			}
+			claim, err := store.BeginLease(context.Background(), "", "cancelled-cleanup", Fingerprint(http.MethodPost, "/operation", []byte("body")))
+			if err != nil || claim.Result != Started {
+				t.Fatalf("claim after cancelled cleanup = %#v, %v", claim, err)
+			}
+		})
+	}
+}
+
 func TestHandlerPanicReleasesLegacyClaimAndRepanics(t *testing.T) {
 	store := &legacyRetainingStore{}
 	h := Middleware(store)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
@@ -466,6 +539,34 @@ func (s *legacyRetainingStore) Release(_ context.Context, _, _ string) error {
 type failingCompleteLeaseStore struct {
 	*MemoryStore
 	releaseCalls atomic.Int32
+}
+
+type releaseContextKey struct{}
+
+type releaseContextObservingStore struct {
+	*MemoryStore
+	mu          sync.Mutex
+	called      int
+	contextErr  error
+	hasDeadline bool
+	value       any
+}
+
+func (s *releaseContextObservingStore) ReleaseLease(ctx context.Context, tenantID, key string, token LeaseToken) error {
+	_, hasDeadline := ctx.Deadline()
+	s.mu.Lock()
+	s.called++
+	s.contextErr = ctx.Err()
+	s.hasDeadline = hasDeadline
+	s.value = ctx.Value(releaseContextKey{})
+	s.mu.Unlock()
+	return s.MemoryStore.ReleaseLease(ctx, tenantID, key, token)
+}
+
+func (s *releaseContextObservingStore) releaseObservation() (int, bool, any, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.called, s.hasDeadline, s.value, s.contextErr
 }
 
 func (s *failingCompleteLeaseStore) CompleteLease(context.Context, string, string, string, LeaseToken, StoredResponse) error {

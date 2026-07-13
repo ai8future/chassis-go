@@ -277,3 +277,27 @@ func TestVerifyBadSignature(t *testing.T) {
 		t.Fatal("expected error for bad signature")
 	}
 }
+
+func FuzzVerifyWebhookNeverPanics(f *testing.F) {
+	f.Add("", "", "", []byte(nil), "")
+	f.Add("sha256=bad", "0", "delivery", []byte("body"), "secret")
+	f.Add("sha256=0123456789abcdef", "9999999999", "00000000000000000000000000000000", []byte(`{"event":"test"}`), "whsec_test")
+	f.Add("\x00\xff", "not-a-timestamp", "id.with.dots", []byte{0, 1, 2, 0xff}, "\x00secret")
+
+	const maxTotalInput = 1 << 20
+	f.Fuzz(func(t *testing.T, signature, timestamp, id string, body []byte, secret string) {
+		if len(signature) > maxTotalInput || len(timestamp) > maxTotalInput || len(id) > maxTotalInput || len(body) > maxTotalInput || len(secret) > maxTotalInput {
+			t.Skip()
+		}
+		total := len(signature) + len(timestamp) + len(id) + len(body) + len(secret)
+		if total > maxTotalInput {
+			t.Skip()
+		}
+
+		headers := make(http.Header)
+		headers.Set("X-Webhook-Signature", signature)
+		headers.Set("X-Webhook-Timestamp", timestamp)
+		headers.Set("X-Webhook-Id", id)
+		_, _, _ = webhook.VerifyPayloadID(headers, body, secret)
+	})
+}

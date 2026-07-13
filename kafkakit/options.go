@@ -8,7 +8,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-func validateCommonConfig(cfg Config) error {
+func validateCommonConfig(cfg Config, effectiveTenantID string) error {
 	if strings.TrimSpace(cfg.BootstrapServers) == "" {
 		return configError("BootstrapServers is required")
 	}
@@ -23,7 +23,7 @@ func validateCommonConfig(cfg Config) error {
 	if strings.TrimSpace(cfg.TenantFilter.GrantsURL) != "" || cfg.TenantFilter.GrantsCacheTTL != 0 {
 		return configError("TenantFilter grants settings are not supported by kafkakit v11")
 	}
-	if cfg.TenantFilter.Enabled && strings.TrimSpace(cfg.TenantID) == "" {
+	if cfg.TenantFilter.Enabled && strings.TrimSpace(effectiveTenantID) == "" {
 		return configError("TenantFilter.Enabled requires TenantID")
 	}
 	return nil
@@ -41,7 +41,7 @@ func seedBrokerOptions(bootstrapServers string) []kgo.Opt {
 // buildPublisherOptions validates publisher settings and maps every supported
 // field to its franz-go option. It has no network side effects.
 func buildPublisherOptions(cfg Config) ([]kgo.Opt, error) {
-	if err := validateCommonConfig(cfg); err != nil {
+	if err := validateCommonConfig(cfg, cfg.TenantID); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(cfg.Source) == "" {
@@ -119,9 +119,9 @@ type subscriberSettings struct {
 // buildSubscriberOptions validates subscriber settings and maps supported
 // fields to franz-go options. Topics are supplied at Start after subscriptions
 // have been registered. It has no network side effects.
-func buildSubscriberOptions(cfg Config, consumerGroup string) ([]kgo.Opt, subscriberSettings, error) {
+func buildSubscriberOptions(cfg Config, consumerGroup, effectiveTenantID string) ([]kgo.Opt, subscriberSettings, error) {
 	var settings subscriberSettings
-	if err := validateCommonConfig(cfg); err != nil {
+	if err := validateCommonConfig(cfg, effectiveTenantID); err != nil {
 		return nil, settings, err
 	}
 	if strings.TrimSpace(consumerGroup) == "" {
@@ -129,6 +129,9 @@ func buildSubscriberOptions(cfg Config, consumerGroup string) ([]kgo.Opt, subscr
 	}
 	if cfg.Subscriber.SessionTimeoutMs < 0 {
 		return nil, settings, configError("Subscriber.SessionTimeoutMs cannot be negative")
+	}
+	if cfg.Subscriber.SessionTimeoutMs > 0 && cfg.Subscriber.SessionTimeoutMs < 100 {
+		return nil, settings, configError("Subscriber.SessionTimeoutMs must be at least 100 when set")
 	}
 	if cfg.Subscriber.DLQTimeoutMs < 0 {
 		return nil, settings, configError("Subscriber.DLQTimeoutMs cannot be negative")

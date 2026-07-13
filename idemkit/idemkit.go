@@ -33,6 +33,7 @@ const (
 	DefaultMemoryCapacity   = 10_000
 	DefaultMaxRequestBytes  = int64(1 << 20)
 	DefaultMaxResponseBytes = int64(1 << 20)
+	claimReleaseTimeout     = 2 * time.Second
 	classMismatch           = "idempotency_fingerprint_mismatch"
 	classInFlight           = "idempotency_in_flight"
 	classStoreError         = "idempotency_store_error"
@@ -301,10 +302,12 @@ func completeClaim(ctx context.Context, store Store, leaseStore LeaseStore, tena
 }
 
 func releaseClaim(ctx context.Context, store Store, leaseStore LeaseStore, tenantID, key string, token LeaseToken) error {
+	releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), claimReleaseTimeout)
+	defer cancel()
 	if leaseStore != nil {
-		return leaseStore.ReleaseLease(ctx, tenantID, key, token)
+		return leaseStore.ReleaseLease(releaseCtx, tenantID, key, token)
 	}
-	return store.Release(ctx, tenantID, key)
+	return store.Release(releaseCtx, tenantID, key)
 }
 
 func logReleaseFailure(err error, operation string) {

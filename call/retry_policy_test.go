@@ -5,7 +5,11 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	chassis "github.com/ai8future/chassis-go/v11"
 )
+
+func init() { chassis.RequireMajor(11) }
 
 func TestParseRetryAfterSecondsAndDate(t *testing.T) {
 	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)

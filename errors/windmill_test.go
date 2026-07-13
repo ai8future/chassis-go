@@ -8,7 +8,11 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	chassis "github.com/ai8future/chassis-go/v11"
 )
+
+func init() { chassis.RequireMajor(11) }
 
 func TestWindmillProblemRetryableContract(t *testing.T) {
 	fixturePath := filepath.Join("..", "testdata", "windmill", "contracts", "fixtures", "problem.retryable.json")

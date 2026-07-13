@@ -15,7 +15,11 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-var errHandlerPanic = errors.New("kafkakit: handler panicked")
+var (
+	errHandlerPanic     = errors.New("kafkakit: handler panicked")
+	errRebalancePending = errors.New("kafkakit: rebalance pending")
+	errBatchDrain       = errors.New("kafkakit: batch drain timed out")
+)
 
 type subscriberClient interface {
 	PollRecords(context.Context, int) kgo.Fetches
@@ -38,6 +42,7 @@ type Subscriber struct {
 	settings      subscriberSettings
 	baseOptions   []kgo.Opt
 	clientFactory subscriberClientFactory
+	rebalanceWait chan struct{}
 
 	mu          sync.RWMutex
 	client      subscriberClient
@@ -79,18 +84,12 @@ func WithTenant(tenantID string) SubscriberOption {
 // validates all Kafka settings without connecting to a broker; the client is
 // created by Start after subscription topics are known.
 func NewSubscriber(cfg Config, consumerGroup string, opts ...SubscriberOption) (*Subscriber, error) {
-	baseOptions, settings, err := buildSubscriberOptions(cfg, consumerGroup)
-	if err != nil {
-		return nil, err
-	}
-
 	s := &Subscriber{
 		tenantID:      cfg.TenantID,
 		handlers:      make(map[string]HandlerFunc),
 		consumerGroup: consumerGroup,
 		cfg:           cfg,
-		settings:      settings,
-		baseOptions:   baseOptions,
+		rebalanceWait: make(chan struct{}, 1),
 		clientFactory: func(opts ...kgo.Opt) (subscriberClient, error) {
 			return newKafkaClient(opts...)
 		},
@@ -101,11 +100,36 @@ func NewSubscriber(cfg Config, consumerGroup string, opts ...SubscriberOption) (
 			opt(s)
 		}
 	}
+	baseOptions, settings, err := buildSubscriberOptions(cfg, consumerGroup, s.tenantID)
+	if err != nil {
+		return nil, err
+	}
+	s.settings = settings
+	s.baseOptions = baseOptions
+	if settings.commitMode == CommitModeManualContiguous {
+		s.baseOptions = append(s.baseOptions, kgo.OnPartitionsCallbackBlocked(func(context.Context, *kgo.Client) {
+			s.signalRebalanceBlocked()
+		}))
+	}
 
 	if s.filter == nil && cfg.TenantFilter.Enabled {
-		s.filter = NewTenantFilter(cfg.TenantID)
+		s.filter = NewTenantFilter(s.tenantID)
 	}
 	return s, nil
+}
+
+func (s *Subscriber) signalRebalanceBlocked() {
+	select {
+	case s.rebalanceWait <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Subscriber) clearRebalanceBlocked() {
+	select {
+	case <-s.rebalanceWait:
+	default:
+	}
 }
 
 // Subscribe registers a handler for a subject pattern. The pattern supports
@@ -235,10 +259,12 @@ func (s *Subscriber) runManual(ctx context.Context, client subscriberClient) err
 		fetches := client.PollRecords(ctx, s.settings.maxPollRecords)
 		if err := ctx.Err(); err != nil {
 			client.AllowRebalance()
+			s.clearRebalanceBlocked()
 			return err
 		}
 		if errs := fetches.Errors(); len(errs) > 0 {
 			client.AllowRebalance()
+			s.clearRebalanceBlocked()
 			return fmt.Errorf("kafkakit: fetch %s[%d]: %w", errs[0].Topic, errs[0].Partition, errs[0].Err)
 		}
 
@@ -246,6 +272,10 @@ func (s *Subscriber) runManual(ctx context.Context, client subscriberClient) err
 		// BlockRebalanceOnPoll requires one release for every fully owned poll
 		// batch, including a batch that ended in a non-durable outcome.
 		client.AllowRebalance()
+		s.clearRebalanceBlocked()
+		if errors.Is(err, errRebalancePending) {
+			continue
+		}
 		if err != nil {
 			return err
 		}
@@ -311,7 +341,18 @@ func partitionWorkFromFetches(fetches kgo.Fetches) []partitionWork {
 }
 
 func (s *Subscriber) processManualBatch(ctx context.Context, client subscriberClient, fetches kgo.Fetches) error {
-	results, processingErr := s.processPartitions(ctx, client, fetches)
+	processingCtx, cancelProcessing := context.WithCancelCause(ctx)
+	watchDone := make(chan struct{})
+	go func() {
+		select {
+		case <-s.rebalanceWait:
+			cancelProcessing(errRebalancePending)
+		case <-watchDone:
+		}
+	}()
+	results, processingErr := s.processPartitions(processingCtx, client, fetches)
+	close(watchDone)
+	cancelProcessing(nil)
 	commits := make([]*kgo.Record, 0, len(results))
 	for _, result := range results {
 		if result.lastDurable != nil {
@@ -370,7 +411,7 @@ func (s *Subscriber) processPartitions(ctx context.Context, client subscriberCli
 				}
 			case <-ctx.Done():
 				cancelled = true
-				firstErr = ctx.Err()
+				firstErr = context.Cause(ctx)
 				drainTimer = time.NewTimer(s.settings.drainTimeout)
 			}
 			continue
@@ -379,7 +420,7 @@ func (s *Subscriber) processPartitions(ctx context.Context, client subscriberCli
 		case result := <-results:
 			out = append(out, result)
 		case <-drainTimer.C:
-			return out, fmt.Errorf("kafkakit: batch drain exceeded %s: %w", s.settings.drainTimeout, ctx.Err())
+			return out, fmt.Errorf("%w after %s (cause: %v)", errBatchDrain, s.settings.drainTimeout, context.Cause(ctx))
 		}
 	}
 	if drainTimer != nil {
@@ -397,8 +438,8 @@ func (s *Subscriber) processPartitions(ctx context.Context, client subscriberCli
 func (s *Subscriber) processPartition(ctx context.Context, client subscriberClient, work partitionWork) partitionResult {
 	result := partitionResult{key: work.key}
 	for _, record := range work.records {
-		if err := ctx.Err(); err != nil {
-			result.err = err
+		if cause := context.Cause(ctx); cause != nil {
+			result.err = cause
 			return result
 		}
 		if err := s.processRecord(ctx, client, record); err != nil {
@@ -439,6 +480,9 @@ func (s *Subscriber) processRecord(ctx context.Context, client subscriberClient,
 	panicType, handlerErr := callHandler(ctx, handler, evt)
 	if handlerErr == nil {
 		return nil
+	}
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
 	}
 	failure := recordFailure{reason: "handler error", panicType: panicType}
 	if errors.Is(handlerErr, errHandlerPanic) {

@@ -37,7 +37,7 @@ func subscriberOptionClient(t *testing.T, cfg SubscriberConfig) (*kgo.Client, su
 	opts, settings, err := buildSubscriberOptions(Config{
 		BootstrapServers: "localhost:9092",
 		Subscriber:       cfg,
-	}, "group")
+	}, "group", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,6 +167,21 @@ func TestBuildSubscriberOptionsMapsOffsetsAndSession(t *testing.T) {
 	}
 }
 
+func TestBuildSubscriberOptionsEnforcesFranzGoSessionTimeoutMinimum(t *testing.T) {
+	_, _, err := buildSubscriberOptions(Config{
+		BootstrapServers: "localhost:9092",
+		Subscriber:       SubscriberConfig{SessionTimeoutMs: 99},
+	}, "group", "")
+	if err == nil || !strings.Contains(err.Error(), "Subscriber.SessionTimeoutMs") {
+		t.Fatalf("99ms session timeout error = %v", err)
+	}
+
+	client, _ := subscriberOptionClient(t, SubscriberConfig{SessionTimeoutMs: 100})
+	if got := client.OptValue(kgo.SessionTimeout); got != 100*time.Millisecond {
+		t.Fatalf("100ms session timeout = %v, want 100ms", got)
+	}
+}
+
 func TestBuildSubscriberOptionsCommitModesAndBounds(t *testing.T) {
 	manual, settings := subscriberOptionClient(t, SubscriberConfig{AtLeastOnce: true})
 	if settings.commitMode != CommitModeManualContiguous {
@@ -200,13 +215,30 @@ func TestBuildSubscriberOptionsRejectsConflictsAndUnsupportedValues(t *testing.T
 		{DrainTimeoutMs: -1},
 	}
 	for _, cfg := range tests {
-		_, _, err := buildSubscriberOptions(Config{BootstrapServers: "localhost:9092", Subscriber: cfg}, "group")
+		_, _, err := buildSubscriberOptions(Config{BootstrapServers: "localhost:9092", Subscriber: cfg}, "group", "")
 		if err == nil {
 			t.Fatalf("expected configuration error for %+v", cfg)
 		}
 		if !strings.Contains(err.Error(), "invalid configuration") {
 			t.Fatalf("non-actionable error for %+v: %v", cfg, err)
 		}
+	}
+}
+
+func TestNewSubscriberValidatesEffectiveTenantFromOption(t *testing.T) {
+	cfg := Config{
+		BootstrapServers: "localhost:9092",
+		TenantFilter:     TenantFilterConfig{Enabled: true},
+	}
+	subscriber, err := NewSubscriber(cfg, "group", WithTenant("tenant-option"))
+	if err != nil {
+		t.Fatalf("NewSubscriber with effective tenant: %v", err)
+	}
+	if subscriber.tenantID != "tenant-option" || subscriber.filter == nil {
+		t.Fatalf("subscriber tenant/filter = %q/%v", subscriber.tenantID, subscriber.filter)
+	}
+	if !subscriber.filter.ShouldDeliver("tenant-option") || subscriber.filter.ShouldDeliver("other") {
+		t.Fatal("tenant filter did not use the SubscriberOption tenant")
 	}
 }
 

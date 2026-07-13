@@ -472,6 +472,180 @@ func TestManualStartOwnsOneBatchAndAllowsRebalanceAfterCommit(t *testing.T) {
 	}
 }
 
+func TestBlockedRebalanceDrainsCommitsAndResumesPolling(t *testing.T) {
+	s := newTestSubscriber(t, SubscriberConfig{CommitMode: CommitModeManualContiguous, DrainTimeoutMs: 200})
+	handlerStarted := make(chan struct{})
+	handlerCause := make(chan error, 1)
+	if err := s.Subscribe("orders", func(ctx context.Context, evt Event) error {
+		if evt.Header("offset") == "0" {
+			return nil
+		}
+		close(handlerStarted)
+		<-ctx.Done()
+		handlerCause <- context.Cause(ctx)
+		return ctx.Err()
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	repolled := make(chan struct{})
+	var repollOnce sync.Once
+	client := &fakeSubscriberClient{}
+	var pollCount atomic.Int32
+	client.pollFn = func(ctx context.Context, _ int) kgo.Fetches {
+		if pollCount.Add(1) == 1 {
+			return fetchBatch(
+				deliveryRecord(t, "orders", "orders", 0, 0, kgo.RecordHeader{Key: "offset", Value: []byte("0")}),
+				deliveryRecord(t, "orders", "orders", 0, 1, kgo.RecordHeader{Key: "offset", Value: []byte("1")}),
+			)
+		}
+		repollOnce.Do(func() { close(repolled) })
+		<-ctx.Done()
+		return nil
+	}
+	callbackReady := make(chan func(context.Context, *kgo.Client), 1)
+	s.clientFactory = func(opts ...kgo.Opt) (subscriberClient, error) {
+		callback, err := rebalanceCallbackFromOptions(opts)
+		if err != nil {
+			return nil, err
+		}
+		callbackReady <- callback
+		return client, nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	startDone := make(chan error, 1)
+	go func() { startDone <- s.Start(ctx) }()
+	var callback func(context.Context, *kgo.Client)
+	select {
+	case callback = <-callbackReady:
+	case err := <-startDone:
+		t.Fatalf("Start returned before callback capture: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("rebalance callback was not configured")
+	}
+	select {
+	case <-handlerStarted:
+	case <-time.After(time.Second):
+		t.Fatal("second handler did not start")
+	}
+	callback(context.Background(), nil)
+
+	select {
+	case cause := <-handlerCause:
+		if !errors.Is(cause, errRebalancePending) {
+			t.Fatalf("handler cancellation cause = %v", cause)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("blocked rebalance did not cancel the handler")
+	}
+	select {
+	case <-repolled:
+	case err := <-startDone:
+		t.Fatalf("Start returned instead of resuming polling: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("subscriber did not resume polling after allowing rebalance")
+	}
+
+	cancel()
+	if err := <-startDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Start error = %v", err)
+	}
+	_, commits, produced, events, _, _ := client.snapshot()
+	if len(commits) != 1 || len(commits[0]) != 1 || commits[0][0].Offset != 0 {
+		t.Fatalf("durable prefix commits = %#v, want only offset 0", commits)
+	}
+	if len(produced) != 0 {
+		t.Fatalf("interrupted handler produced %d DLQ records, want 0", len(produced))
+	}
+	if len(events) < 2 || !reflect.DeepEqual(events[:2], []string{"commit", "allow"}) {
+		t.Fatalf("commit/rebalance ordering = %#v", events)
+	}
+}
+
+func TestBlockedRebalanceDrainIsBounded(t *testing.T) {
+	s := newTestSubscriber(t, SubscriberConfig{CommitMode: CommitModeManualContiguous, DrainTimeoutMs: 20})
+	handlerStarted := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	defer close(releaseHandler)
+	if err := s.Subscribe("orders", func(context.Context, Event) error {
+		close(handlerStarted)
+		<-releaseHandler
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeSubscriberClient{pollFn: func(context.Context, int) kgo.Fetches {
+		return fetchBatch(deliveryRecord(t, "orders", "orders", 0, 0))
+	}}
+	callbackReady := make(chan func(context.Context, *kgo.Client), 1)
+	s.clientFactory = func(opts ...kgo.Opt) (subscriberClient, error) {
+		callback, err := rebalanceCallbackFromOptions(opts)
+		if err != nil {
+			return nil, err
+		}
+		callbackReady <- callback
+		return client, nil
+	}
+	startDone := make(chan error, 1)
+	go func() { startDone <- s.Start(context.Background()) }()
+	callback := <-callbackReady
+	select {
+	case <-handlerStarted:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not start")
+	}
+	started := time.Now()
+	callback(context.Background(), nil)
+	err := <-startDone
+	if !errors.Is(err, errBatchDrain) || time.Since(started) > 250*time.Millisecond {
+		t.Fatalf("blocked rebalance drain error=%v elapsed=%v", err, time.Since(started))
+	}
+	_, commits, produced, _, allows, closes := client.snapshot()
+	if len(commits) != 0 || len(produced) != 0 || allows < 2 || closes != 1 {
+		t.Fatalf("bounded drain commits=%d produced=%d allows=%d closes=%d", len(commits), len(produced), allows, closes)
+	}
+}
+
+func TestBlockedRebalanceSignalIsReusableAcrossBatches(t *testing.T) {
+	s := newTestSubscriber(t, SubscriberConfig{CommitMode: CommitModeManualContiguous})
+	var signals sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		signals.Add(1)
+		go func() {
+			defer signals.Done()
+			s.signalRebalanceBlocked()
+		}()
+	}
+	signals.Wait()
+	select {
+	case <-s.rebalanceWait:
+	case <-time.After(time.Second):
+		t.Fatal("first batch did not receive a blocked rebalance signal")
+	}
+	s.clearRebalanceBlocked()
+
+	s.signalRebalanceBlocked()
+	select {
+	case <-s.rebalanceWait:
+	case <-time.After(time.Second):
+		t.Fatal("second batch did not receive a blocked rebalance signal")
+	}
+}
+
+func rebalanceCallbackFromOptions(opts []kgo.Opt) (func(context.Context, *kgo.Client), error) {
+	client, err := kgo.NewClient(opts...)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+	callback, ok := client.OptValue(kgo.OnPartitionsCallbackBlocked).(func(context.Context, *kgo.Client))
+	if !ok || callback == nil {
+		return nil, errors.New("kafkakit: blocked rebalance callback is not configured")
+	}
+	return callback, nil
+}
+
 func TestSubscriberStartCloseAreRaceSafeAndIdempotent(t *testing.T) {
 	s := newTestSubscriber(t, SubscriberConfig{CommitMode: CommitModeManualContiguous, DrainTimeoutMs: 200})
 	if err := s.Subscribe("orders", func(context.Context, Event) error { return nil }); err != nil {
