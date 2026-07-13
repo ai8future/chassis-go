@@ -14,6 +14,17 @@
 ### Documentation
 - Document Windmill middleware ordering, resource provisioning, canonical trace IDs, idempotency limits, and conformance usage.
 
+## [11.3.7] - 2026-07-13
+
+### Changed
+- Simplify health aggregation by using `work.Map` as the single source of per-check failure state, removing duplicated result and error bookkeeping.
+- Remove an unused Kafka legacy-mode batch result binding while preserving franz-go auto-commit ownership.
+
+### Tests
+- Verify the affected health and Kafka packages with targeted and race tests, then run repository-wide tests, vet, formatting, module-tidy, and module-integrity gates.
+
+*(Codex:gpt-5.5-high)*
+
 ## [11.3.6] - 2026-07-13
 
 ### Changed

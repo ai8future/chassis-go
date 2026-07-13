@@ -29,12 +29,6 @@ type namedCheck struct {
 	check Check
 }
 
-// checkResult holds the Result plus the original error for wrapping.
-type checkResult struct {
-	result Result
-	err    error
-}
-
 // CheckFunc returns a simple health check function suitable for passing
 // directly to grpckit.RegisterHealth. It runs all checks via All and
 // discards the individual results, returning only the aggregate error.
@@ -65,13 +59,9 @@ func All(checks map[string]Check) func(ctx context.Context) ([]Result, error) {
 			entries = append(entries, namedCheck{name: name, check: checks[name]})
 		}
 
-		crs, mapErr := work.Map(ctx, entries, func(ctx context.Context, nc namedCheck) (checkResult, error) {
+		results, mapErr := work.Map(ctx, entries, func(ctx context.Context, nc namedCheck) (Result, error) {
 			err := nc.check(ctx)
-			r := Result{Name: nc.name, Healthy: err == nil}
-			if err != nil {
-				r.Error = err.Error()
-			}
-			return checkResult{result: r, err: err}, err
+			return Result{Name: nc.name}, err
 		})
 
 		failures := make(map[int]error)
@@ -82,15 +72,11 @@ func All(checks map[string]Check) func(ctx context.Context) ([]Result, error) {
 			}
 		}
 
-		results := make([]Result, len(entries))
 		var errs []error
 		for i, entry := range entries {
-			result := crs[i].result
+			result := results[i]
 			result.Name = entry.name
-			checkErr := crs[i].err
-			if failure, ok := failures[i]; ok {
-				checkErr = failure
-			}
+			checkErr := failures[i]
 			result.Healthy = checkErr == nil
 			result.Error = ""
 			if checkErr != nil {

@@ -261,8 +261,7 @@ func (s *Subscriber) runLegacy(ctx context.Context, client subscriberClient) err
 		if errs := fetches.Errors(); len(errs) > 0 {
 			return fmt.Errorf("kafkakit: fetch %s[%d]: %w", errs[0].Topic, errs[0].Partition, errs[0].Err)
 		}
-		results, err := s.processPartitions(ctx, client, fetches)
-		_ = results // legacy auto-commit owns offsets, never CommitRecords here
+		_, err := s.processPartitions(ctx, client, fetches)
 		if err != nil {
 			return err
 		}
