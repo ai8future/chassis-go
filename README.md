@@ -77,7 +77,7 @@ chassis-go provides one cohesive, OTel-native solution where you wire together o
 
 | Package | Import | Purpose |
 |---------|--------|---------|
-| `kafkakit` | `.../v11/kafkakit` | Publish/subscribe to Redpanda event bus with Avro envelopes, tenant filtering, DLQ, AtLeastOnce delivery. Depends on `schemakit`. Uses `github.com/twmb/franz-go` |
+| `kafkakit` | `.../v11/kafkakit` | Publish/subscribe to Redpanda with envelopes, tenant filtering, bounded DLQ, and manual-contiguous delivery. Uses `github.com/twmb/franz-go` |
 | `schemakit` | `.../v11/schemakit` | Avro schema validation, registration, serialization. Confluent Schema Registry client |
 | `tracekit` | `.../v11/tracekit` | Distributed trace ID propagation (`tr_` + 32 lowercase hex canonical, bounded 12-hex legacy inbound). HTTP middleware. Can be used alongside OTel/httpkit tracing |
 | `heartbeatkit` | `.../v11/heartbeatkit` | Auto liveness heartbeats every 30s. Depends on `kafkakit`. Auto-activates with kafkakit |
@@ -617,9 +617,15 @@ keeps its heavier dependencies out of the core import graph.
 the Kafka protocol with a standard event envelope (event ID, ms timestamp,
 source, subject, trace ID, tenant ID, entity refs), tenant-based delivery
 filtering, dead-letter routing on handler error, wildcard subscriptions, and
-at-most-once (default) or `AtLeastOnce` delivery. `schemakit` loads `.avsc`
-Avro schemas and serializes/registers them in Confluent wire format against a
-Schema Registry.
+deprecated auto-commit compatibility or partition-ordered
+`manual-contiguous` delivery. Manual mode processes one bounded poll batch at
+a time, preserves Kafka headers, routes poison records to a metadata-preserving
+DLQ, and commits only durable contiguous partition prefixes. `AtLeastOnce`
+selects manual mode for v11 compatibility; new code should set
+`CommitMode: kafkakit.CommitModeManualContiguous`. Replay can still occur, so
+exactly-once business effects require application-owned transactional storage
+or an outbox. `schemakit` loads `.avsc` Avro schemas and
+serializes/registers them in Confluent wire format against a Schema Registry.
 
 **Liveness & lifecycle (`heartbeatkit` + `announcekit`)** — `heartbeatkit`
 publishes liveness payloads to `ai8.infra.heartbeat` on a fixed interval;

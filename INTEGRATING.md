@@ -1768,13 +1768,14 @@ heartbeatkit and announcekit auto-activate when kafkakit is configured via `life
 
 ### Subscriber Concurrency
 
-By default, the subscriber processes messages sequentially (one at a time per poll batch). Set `Concurrency` on `SubscriberConfig` to enable parallel message dispatch:
+By default, the subscriber uses one partition worker. Set `Concurrency` on
+`SubscriberConfig` to process different partitions concurrently:
 
 ```go
 cfg := kafkakit.Config{
     BootstrapServers: "localhost:9092",
     Subscriber: kafkakit.SubscriberConfig{
-        Concurrency: 8, // up to 8 messages processed in parallel
+        Concurrency: 8, // up to 8 partitions processed concurrently
     },
 }
 
@@ -1785,54 +1786,73 @@ sub, err := kafkakit.NewSubscriber(cfg, "my-service-group")
 
 | Concurrency value | Behavior |
 |---|---|
-| `0` (default) or `1` | Sequential processing -- same as before this feature |
-| `>1` (e.g., `8`) | Concurrent dispatch with a semaphore limiting active goroutines |
+| `0` (default) or `1` | One partition at a time |
+| `>1` (e.g., `8`) | Up to that many partitions concurrently |
 
-When concurrency is `>1`, the subscriber uses a rolling semaphore model: each polled record is dispatched to a goroutine gated by a channel semaphore, and the poll loop continues immediately without waiting for the batch to drain. This keeps workers saturated continuously. `MaxPollRecords` is auto-scaled to `Concurrency * 2` (unless explicitly set higher) so each poll returns enough records to fill the worker pool. In-flight workers are drained gracefully on shutdown.
+Records within a partition are always processed serially and in offset order.
+In `manual-contiguous` mode the subscriber owns exactly one poll batch at a
+time and uses at most `min(Concurrency, partition count)` workers. A positive
+`MaxPollRecords` is preserved exactly; zero uses the bounded default of 500.
+In-flight work is cancelled and drained for up to 30 seconds on shutdown (or
+`DrainTimeoutMs` when configured).
 
-**When to use:** CPU-bound or I/O-bound handlers that can safely process multiple events simultaneously. Ensure your handler is goroutine-safe (no shared mutable state without synchronization).
+Handlers may run concurrently for different partitions and therefore must
+still protect shared mutable state.
 
-**When not to use:** Handlers that depend on strict per-partition ordering. Concurrent dispatch within a batch does not guarantee ordering.
+### Subscriber Delivery Modes
 
-### AtLeastOnce Delivery
+For v11 source compatibility, an empty `CommitMode` without `AtLeastOnce`
+uses deprecated `legacy-auto`. Kafka can commit before handler completion in
+that mode, so a crash can lose in-flight records.
 
-By default, the subscriber uses Kafka's auto-commit — offsets are committed when the next poll occurs, before handlers finish processing. If the service restarts mid-processing, those messages are lost (at-most-once delivery).
-
-Set `AtLeastOnce: true` to switch to manual commit mode where offsets are committed only after all handlers in a batch complete:
+New code should select `manual-contiguous` explicitly. `AtLeastOnce: true`
+remains an alias for that mode in v11:
 
 ```go
 cfg := kafkakit.Config{
     BootstrapServers: "localhost:9092",
     Subscriber: kafkakit.SubscriberConfig{
         Concurrency: 96,
-        AtLeastOnce: true, // commit after handlers finish, not on poll
+        CommitMode: kafkakit.CommitModeManualContiguous,
     },
 }
 ```
 
 **How it works:**
 
-| Aspect | Default (auto-commit) | AtLeastOnce |
+| Aspect | `legacy-auto` (deprecated) | `manual-contiguous` |
 |---|---|---|
-| Offset commit timing | On next `PollRecords` call | After `wg.Wait()` + explicit `CommitUncommittedOffsets` |
-| Delivery guarantee | At-most-once | At-least-once |
-| Dispatch model | Rolling semaphore (no per-batch wait) | Batch-and-wait (all handlers must complete before commit) |
-| Restart behavior | Messages in-flight are lost | Messages in-flight are re-delivered |
-| Partition rebalance | Auto-commit handles it | `OnPartitionsRevoked` callback drains workers and commits |
-| Shutdown | Workers drained, client closed | Workers drained, final commit, client closed |
+| Offset commit timing | Kafka auto-commit | After durable handler or DLQ completion |
+| Delivery guarantee | Can lose in-flight work | At-least-once; replay remains possible |
+| Dispatch model | Auto-commit compatibility | One bounded batch; serial per partition, concurrent across partitions |
+| Restart behavior | Messages in-flight can be lost | Uncommitted messages are re-delivered |
+| Poison records | Metadata-preserving bounded DLQ | Metadata-preserving bounded DLQ before commit |
+| Partition rebalance | Auto-commit handles it | Rebalance blocked until the owned batch resolves and contiguous prefixes commit |
+| Shutdown | Client cancelled and closed | Current batch cancelled; drain bounded by `DrainTimeoutMs` |
 
-**When to use AtLeastOnce:**
+**Failure and DLQ semantics:** Handler errors, panics, malformed envelopes, and
+missing handlers are durable only after bounded DLQ publication. The DLQ
+payload preserves original topic, partition, offset, key, headers, and raw
+value without logging those values. A DLQ or commit failure stops consumption;
+the subscriber never commits past that non-durable offset. `Event.Ack` and
+`Event.Reject` are deprecated no-ops in v11; return a handler error to request
+DLQ routing. `Event.Header` returns the last value for an exact header key.
 
-- Handlers take >1 second (e.g., LLM processing, external API calls). The batch-and-wait overhead is negligible compared to handler time.
-- Message loss is unacceptable — you'd rather process a message twice than lose it.
-- Your handlers are idempotent or your pipeline handles duplicates (e.g., entity dedup).
+`EnableAutoCommit: true` explicitly selects deprecated `legacy-auto`. Because
+its bool zero value cannot distinguish omitted from explicit false, false is
+treated as omitted. Conflicting `CommitMode`, `AtLeastOnce`, and
+`EnableAutoCommit` settings are rejected.
 
-**When NOT to use AtLeastOnce:**
+Kafka delivery is not exactly-once. Even in manual mode, a process can finish a
+business side effect and crash before committing, causing replay. Exactly-once
+business effects require application-owned transactional storage, an outbox,
+or an equivalent idempotency boundary.
 
-- Fast handlers (sub-second). The batch-and-wait stall between polls becomes a real throughput bottleneck.
-- You already have at-most-once semantics baked into your architecture and don't need re-delivery.
-
-**Handler errors and DLQ:** When `AtLeastOnce` is enabled, handler errors are committed only after successful DLQ routing. A message that fails and is routed to the DLQ is considered "handled" and will not be re-delivered in a loop. If DLQ publishing fails, the offset is left uncommitted so Kafka can re-deliver the message instead of losing it.
+Publisher `Acks`, compression, retry, and linger settings and subscriber
+offset/session settings are validated before clients are created.
+`SchemaRegistryURL` belongs to `schemakit`; kafkakit v11 also does not implement
+remote tenant-grants configuration. Non-empty unsupported settings are rejected
+rather than silently ignored.
 
 ---
 

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
-	"strings"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -49,34 +48,13 @@ func (e *BatchError) Unwrap() []error {
 // NewPublisher creates a Publisher connected to the configured Kafka brokers.
 // Source identity is taken from Config.Source.
 func NewPublisher(cfg Config) (*Publisher, error) {
-	if !cfg.Enabled() {
-		return nil, fmt.Errorf("kafkakit: BootstrapServers is required")
-	}
-	if cfg.Source == "" {
-		return nil, fmt.Errorf("kafkakit: Source is required")
-	}
-
-	opts := []kgo.Opt{
-		kgo.SeedBrokers(strings.Split(cfg.BootstrapServers, ",")...),
-	}
-
-	// Apply publisher-specific settings
-	if cfg.Publisher.MaxRetries > 0 {
-		backoff := time.Duration(cfg.Publisher.RetryBackoffMs) * time.Millisecond
-		if backoff <= 0 {
-			backoff = 100 * time.Millisecond
-		}
-		opts = append(opts,
-			kgo.RecordRetries(cfg.Publisher.MaxRetries),
-			kgo.RetryBackoffFn(func(attempt int) time.Duration {
-				return publisherRetryBackoff(backoff, attempt)
-			}),
-		)
-	}
-
-	client, err := kgo.NewClient(opts...)
+	opts, err := buildPublisherOptions(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("kafkakit: create kafka client: %w", err)
+		return nil, err
+	}
+	client, err := newKafkaClient(opts...)
+	if err != nil {
+		return nil, err
 	}
 
 	return &Publisher{

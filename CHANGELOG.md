@@ -14,6 +14,21 @@
 ### Documentation
 - Document Windmill middleware ordering, resource provisioning, canonical trace IDs, idempotency limits, and conformance usage.
 
+## [11.3.4] - 2026-07-13
+
+### Added
+- **kafkakit**: Add validated franz-go option builders, explicit `DisableLinger`, and additive `legacy-auto` / `manual-contiguous` subscriber commit modes with bounded poll, DLQ, and drain settings.
+
+### Fixed
+- **kafkakit**: Preserve Kafka headers, route malformed, missing-handler, error, and panic outcomes through a metadata-preserving bounded DLQ, and stop consumption when DLQ or commit durability is uncertain.
+- **kafkakit**: Process records serially within partitions and concurrently across partitions, commit only the highest durable contiguous prefix with correct next-offset semantics, and make subscriber start/close ownership race-safe.
+- **kafkakit**: Wire supported acknowledgement, compression, retry, linger, offset-reset, session-timeout, and poll-limit settings while rejecting unsupported schema-registry, remote tenant-grants, and conflicting delivery configuration.
+
+### Tests
+- Add deterministic option mapping, poison-record DLQ, header, panic, timeout, partition scheduling, contiguous commit, commit failure, rebalance ordering, and lifecycle race regressions; verify focused repeated race, repository-wide test/race, vet, static analysis, and 80%+ package coverage.
+
+*(Codex:gpt-5.5-high)*
+
 ## [11.3.3] - 2026-07-13
 
 ### Changed

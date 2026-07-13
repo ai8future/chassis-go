@@ -193,7 +193,7 @@ func TestEvent_Reject(t *testing.T) {
 
 func TestEvent_Header(t *testing.T) {
 	e := Event{ID: "evt_test123456"}
-	// Header returns empty string for now
+	// An event constructed by application code has no Kafka headers.
 	if h := e.Header("some-key"); h != "" {
 		t.Fatalf("expected empty header, got %q", h)
 	}
