@@ -132,7 +132,7 @@ chassis-go is a **library**, not a deployed service — it has no runtime of its
 
 # Current State / Status
 
-- **Version:** 11.3.5 (Go 1.26.5 floor; build/CI on Go 1.26.5+). MIT licensed.
+- **Version:** 11.3.6 (Go 1.26.5 floor; build/CI on Go 1.26.5+). MIT licensed.
 - **Maturity:** in active production use across the fleet; eleven major versions since the initial release in February 2026 (the v4 module-path migration landed Feb 8, 2026), reflecting rapid iteration driven by real adoption.
 - **Built today:** all packages in this document are implemented and tested (~63 test files), with runnable examples in `examples/01-cli` through `examples/05-clikit` and a `cmd/demo-shutdown` graceful-shutdown demo.
 - **Notes / planned:** `inngestkit` durable-workflow integration is available but optional and not required for service completion; `phasekit` ships with dynamic secret leases disabled in v1; database access is intentionally out of scope (pair with `chassis-go-addons/pgkit`).

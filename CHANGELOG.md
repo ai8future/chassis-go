@@ -14,6 +14,19 @@
 ### Documentation
 - Document Windmill middleware ordering, resource provisioning, canonical trace IDs, idempotency limits, and conformance usage.
 
+## [11.3.6] - 2026-07-13
+
+### Changed
+- Move checkout and Go setup to their Node.js 24 GitHub Actions releases so hosted CI no longer relies on deprecated action runtimes.
+
+### Fixed
+- Make the bounded lake response regression efficient under race instrumentation and allow a scheduler-safe deadline, preventing a false CI failure while still proving the 32 MiB read bound terminates.
+
+### Tests
+- Verify the lakekit package twenty times with the race detector and rerun the full race suite with two logical processors to reproduce constrained hosted-runner scheduling.
+
+*(Codex:gpt-5.5-high)*
+
 ## [11.3.5] - 2026-07-13
 
 ### Changed

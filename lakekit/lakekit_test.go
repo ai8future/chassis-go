@@ -372,8 +372,12 @@ func TestQuery_Forbidden(t *testing.T) {
 type infiniteSpaceReader struct{}
 
 func (infiniteSpaceReader) Read(p []byte) (int, error) {
-	for i := range p {
-		p[i] = ' '
+	if len(p) == 0 {
+		return 0, nil
+	}
+	p[0] = ' '
+	for filled := 1; filled < len(p); {
+		filled += copy(p[filled:], p[:filled])
 	}
 	return len(p), nil
 }
@@ -393,7 +397,7 @@ func TestDecodeJSONIsBounded(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error from bounded non-JSON response, got nil")
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("decodeJSON did not return for an unbounded response stream")
 	}
 }
