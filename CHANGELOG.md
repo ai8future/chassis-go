@@ -15,6 +15,7 @@
 - Raise the machine-enforced aggregate coverage floor to 85% and remove all temporary library-package exceptions after closing their deterministic gaps.
 
 ### Tests
+- Add a selected `redpanda` live integration suite with an immutable Redpanda image pin, Docker orchestration, module publish/consume, raw DLQ key/header preservation, multi-topic and same-group redistribution, bounded shutdown, and schemakit live Registry.Register/serialize/deserialize/error mapping coverage.
 - Add a build-tagged process/TCP/Docker E2E suite for shipped executables, loopback gRPC/HTTP readiness, functional success/error paths, graceful shutdown, port release, and full-service Docker build/run/health diagnostics.
 - Cover strict selector parsing, selected success/failure/skip markers, missing configuration, empty/unknown integration suites, false-green script exits, malformed coverage profiles/policies, and expired, unmatched, stale, or insufficient exceptions; verify repository-wide test, race, coverage, and vet gates without adding a Go dependency.
 - Add deterministic auth key loading and duplicate precedence, lifecycle concurrency/cancellation/first-error, app-version atomic access, Kafka publisher failure/statistics and subscriber legacy-loop coverage, plus bounded auth parsing fuzz coverage.

@@ -1,0 +1,2 @@
+# service<TAB>image<TAB>linux/amd64 manifest<TAB>linux/arm64 manifest<TAB>official source
+redpanda	docker.redpanda.com/redpandadata/redpanda:v26.1.12@sha256:3e72ea35731a893bdd3b6d283eb554416377e23766434fc85dd7941540673639	sha256:c07c65173ceb323b2dc41fe3d8cb84a501086e5eaf3f52cbcf917255ccc255dc	sha256:22785c7afdd0c3f36550985d48d2ab7be83677c703ea9d65e9dc10576c110a7d	https://docs.redpanda.com/labs/docker-compose/single-broker/

@@ -1,3 +1,4 @@
 # service<TAB>package
 # G001 intentionally registers no live suites. G004/G005 add an entry only
 # when that package owns a build-tagged integrationtest.Run suite.
+redpanda	./testing/redpanda
