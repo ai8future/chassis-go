@@ -5,14 +5,21 @@
 ### Added
 - Add Windmill readiness Wave 0 primitives: `authkit` scoped inbound bearer validation, `idemkit` tenant-scoped HTTP idempotency, `orchestration` capability manifests/registry metadata, and `conformance` L0-L2 evidence helpers with declaration-only L3 reporting.
 - Pin shared Windmill contract schemas and fixtures under `testdata/windmill/contracts` with provenance and checksums.
+- Add an honest five-tier `TESTING.md`, thin tier scripts, a selected-service integration harness that cannot silently mark skipped suites complete, and a strict expiring coverage-exception policy.
 
 ### Changed
 - Extend `errors` problem JSON with stable `code`, `retryable`, `retry_after`, retry helpers, and `Retry-After` response headers.
 - Extend `call` retries with policy hooks, idempotent-only retry mode, and 429/503 `Retry-After` parsing.
 - Tighten `tracekit` inbound `X-Trace-ID` acceptance to canonical `tr_[0-9a-f]{32}` plus bounded legacy `tr_[0-9a-f]{12}` only.
+- Route the hosted coverage gate through the repository checker so aggregate and library floors, entrypoint classification, and temporary exceptions share one machine-enforced source of truth.
+
+### Tests
+- Cover strict selector parsing, selected success/failure/skip markers, missing configuration, empty/unknown integration suites, false-green script exits, malformed coverage profiles/policies, and expired, unmatched, stale, or insufficient exceptions; verify repository-wide test, race, coverage, and vet gates without adding a Go dependency.
 
 ### Documentation
 - Document Windmill middleware ordering, resource provisioning, canonical trace IDs, idempotency limits, and conformance usage.
+
+*(Codex:gpt-5.5-high)*
 
 ## [11.3.8] - 2026-07-13
 
