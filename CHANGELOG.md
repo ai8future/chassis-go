@@ -15,6 +15,7 @@
 - Raise the machine-enforced aggregate coverage floor to 85% and remove all temporary library-package exceptions after closing their deterministic gaps.
 
 ### Tests
+- Add a build-tagged process/TCP/Docker E2E suite for shipped executables, loopback gRPC/HTTP readiness, functional success/error paths, graceful shutdown, port release, and full-service Docker build/run/health diagnostics.
 - Cover strict selector parsing, selected success/failure/skip markers, missing configuration, empty/unknown integration suites, false-green script exits, malformed coverage profiles/policies, and expired, unmatched, stale, or insufficient exceptions; verify repository-wide test, race, coverage, and vet gates without adding a Go dependency.
 - Add deterministic auth key loading and duplicate precedence, lifecycle concurrency/cancellation/first-error, app-version atomic access, Kafka publisher failure/statistics and subscriber legacy-loop coverage, plus bounded auth parsing fuzz coverage.
 - Close adjacent deterministic root freshness, conformance, idempotency, CLI output, retry-option, tracing-carrier, logging, and adapter gaps required to reach 85.1% aggregate coverage with every library package at or above 75%.
