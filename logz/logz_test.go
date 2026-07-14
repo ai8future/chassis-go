@@ -40,6 +40,16 @@ func TestNewCreatesLoggerAtEachLevel(t *testing.T) {
 	}
 }
 
+func TestNewTextWithWriterEmitsTextAtConfiguredLevel(t *testing.T) {
+	var buf bytes.Buffer
+	logger := NewTextWithWriter("warn", &buf)
+	logger.Info("hidden")
+	logger.Warn("visible", "key", "value")
+	if got := buf.String(); strings.Contains(got, "hidden") || !strings.Contains(got, "visible") || !strings.Contains(got, "key=value") {
+		t.Fatalf("text output = %q", got)
+	}
+}
+
 func TestNewCaseInsensitive(t *testing.T) {
 	for _, lvl := range []string{"DEBUG", "Info", "WARN", "Error"} {
 		logger := New(lvl)

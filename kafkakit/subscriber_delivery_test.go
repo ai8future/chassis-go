@@ -172,6 +172,92 @@ func TestProcessRecordPopulatesHeadersWithLastValue(t *testing.T) {
 	}
 }
 
+func TestSubscribeMultiRegistersSortedTopics(t *testing.T) {
+	s := newTestSubscriber(t, SubscriberConfig{})
+	handler := func(context.Context, Event) error { return nil }
+	if err := s.SubscribeMulti(map[string]HandlerFunc{
+		"z.events.>": handler,
+		"a.events":   handler,
+		"a.events.>": handler,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := s.subscriptionTopics(), []string{"a.events", "z.events"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("subscriptionTopics() = %#v, want %#v", got, want)
+	}
+}
+
+func TestSubscribeMultiStopsAtFirstInvalidHandler(t *testing.T) {
+	s := newTestSubscriber(t, SubscriberConfig{})
+	if err := s.SubscribeMulti(map[string]HandlerFunc{"": func(context.Context, Event) error { return nil }, "z.events": nil}); err == nil {
+		t.Fatal("SubscribeMulti accepted invalid handlers")
+	}
+	if len(s.handlers) != 0 {
+		t.Fatalf("handlers = %#v, want none", s.handlers)
+	}
+}
+
+func TestRunLegacyReturnsParentCancellation(t *testing.T) {
+	s := newTestSubscriber(t, SubscriberConfig{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := s.runLegacy(ctx, &fakeSubscriberClient{}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("runLegacy error = %v", err)
+	}
+}
+
+func TestRunLegacyReturnsFetchError(t *testing.T) {
+	want := errors.New("fetch failed")
+	s := newTestSubscriber(t, SubscriberConfig{})
+	client := &fakeSubscriberClient{pollFn: func(context.Context, int) kgo.Fetches {
+		return kgo.Fetches{{Topics: []kgo.FetchTopic{{Topic: "events", Partitions: []kgo.FetchPartition{{Partition: 3, Err: want}}}}}}
+	}}
+
+	err := s.runLegacy(context.Background(), client)
+	if !errors.Is(err, want) || !strings.Contains(err.Error(), "events[3]") {
+		t.Fatalf("runLegacy error = %v", err)
+	}
+}
+
+func TestRunLegacyProcessesRecordBeforeCancellation(t *testing.T) {
+	s := newTestSubscriber(t, SubscriberConfig{})
+	ctx, cancel := context.WithCancel(context.Background())
+	var handled atomic.Int32
+	if err := s.Subscribe("events.created", func(context.Context, Event) error {
+		handled.Add(1)
+		cancel()
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	record := deliveryRecord(t, "events.created", "events.created", 0, 1)
+	client := &fakeSubscriberClient{pollFn: func(context.Context, int) kgo.Fetches { return fetchBatch(record) }}
+
+	if err := s.runLegacy(ctx, client); !errors.Is(err, context.Canceled) {
+		t.Fatalf("runLegacy error = %v", err)
+	}
+	if handled.Load() != 1 {
+		t.Fatalf("handled = %d, want 1", handled.Load())
+	}
+}
+
+func TestRunLegacyReturnsNonDurableRecordError(t *testing.T) {
+	want := errors.New("DLQ failed")
+	s := newTestSubscriber(t, SubscriberConfig{})
+	record := &kgo.Record{Topic: "events", Partition: 1, Offset: 2, Value: []byte("not-json")}
+	client := &fakeSubscriberClient{
+		pollFn: func(context.Context, int) kgo.Fetches { return fetchBatch(record) },
+		produceFn: func(context.Context, ...*kgo.Record) kgo.ProduceResults {
+			return kgo.ProduceResults{{Record: record, Err: want}}
+		},
+	}
+
+	if err := s.runLegacy(context.Background(), client); !errors.Is(err, want) {
+		t.Fatalf("runLegacy error = %v", err)
+	}
+}
+
 func TestPoisonRecordsUseMetadataPreservingDLQ(t *testing.T) {
 	tests := []struct {
 		name       string

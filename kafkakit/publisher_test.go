@@ -3,6 +3,7 @@ package kafkakit
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -63,5 +64,59 @@ func TestPublisherRetryBackoffIncreasesWithAttempt(t *testing.T) {
 	maxLater := 8 * base
 	if later < minLater || later > maxLater {
 		t.Fatalf("later backoff %v outside expected jitter range [%v,%v]", later, minLater, maxLater)
+	}
+}
+
+func TestPublishMarshalFailureUpdatesErrorStatistics(t *testing.T) {
+	pub := &Publisher{source: "test-source"}
+	err := pub.Publish(context.Background(), "events.created", func() {})
+	if err == nil || !strings.Contains(err.Error(), "marshal data") {
+		t.Fatalf("Publish error = %v", err)
+	}
+	stats := pub.Stats()
+	if stats.ErrorsTotal != 1 || stats.EventsPublishedTotal != 0 || !stats.LastEventPublished.IsZero() {
+		t.Fatalf("Stats = %+v", stats)
+	}
+}
+
+func TestPublishCancelledProduceUpdatesErrorStatistics(t *testing.T) {
+	pub, err := NewPublisher(Config{BootstrapServers: "127.0.0.1:1", Source: "test-source"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pub.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = pub.Publish(ctx, "events.created", map[string]string{"id": "1"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Publish error = %v, want context.Canceled", err)
+	}
+	stats := pub.Stats()
+	if stats.ErrorsTotal != 1 || stats.EventsPublishedTotal != 0 {
+		t.Fatalf("Stats = %+v", stats)
+	}
+}
+
+func TestPublisherStatsSnapshotReportsSuccessfulPublication(t *testing.T) {
+	pub := &Publisher{}
+	pub.stats.incPublished()
+
+	stats := pub.Stats()
+	if stats.EventsPublishedTotal != 1 || stats.ErrorsTotal != 0 || stats.LastEventPublished.IsZero() {
+		t.Fatalf("Stats = %+v", stats)
+	}
+}
+
+func TestBatchErrorFormatsAndUnwrapsFailures(t *testing.T) {
+	one := errors.New("one")
+	two := errors.New("two")
+	err := &BatchError{Succeeded: 1, Failures: []BatchFailure{{Err: one}, {Err: two}}}
+
+	if got := err.Error(); got != "kafkakit: 2 of 3 batch record(s) failed" {
+		t.Fatalf("Error() = %q", got)
+	}
+	if unwrapped := err.Unwrap(); len(unwrapped) != 2 || !errors.Is(unwrapped[0], one) || unwrapped[1] != two {
+		t.Fatalf("Unwrap() = %#v", unwrapped)
 	}
 }

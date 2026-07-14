@@ -40,6 +40,18 @@ func TestPing_Success(t *testing.T) {
 	}
 }
 
+func TestNewAppliesAllCallOptions(t *testing.T) {
+	httpClient := &http.Client{}
+	c := New(Config{BaseURL: "http://localhost:6333"},
+		WithRetry(2, time.Millisecond),
+		WithCircuitBreaker("qdrant-options", 2, time.Second),
+		WithHTTPClient(httpClient),
+	)
+	if c == nil || c.http == nil {
+		t.Fatal("New returned incomplete client")
+	}
+}
+
 func TestCheck_ReturnsHealthCheck(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

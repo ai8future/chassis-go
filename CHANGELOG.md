@@ -12,9 +12,12 @@
 - Extend `call` retries with policy hooks, idempotent-only retry mode, and 429/503 `Retry-After` parsing.
 - Tighten `tracekit` inbound `X-Trace-ID` acceptance to canonical `tr_[0-9a-f]{32}` plus bounded legacy `tr_[0-9a-f]{12}` only.
 - Route the hosted coverage gate through the repository checker so aggregate and library floors, entrypoint classification, and temporary exceptions share one machine-enforced source of truth.
+- Raise the machine-enforced aggregate coverage floor to 85% and remove all temporary library-package exceptions after closing their deterministic gaps.
 
 ### Tests
 - Cover strict selector parsing, selected success/failure/skip markers, missing configuration, empty/unknown integration suites, false-green script exits, malformed coverage profiles/policies, and expired, unmatched, stale, or insufficient exceptions; verify repository-wide test, race, coverage, and vet gates without adding a Go dependency.
+- Add deterministic auth key loading and duplicate precedence, lifecycle concurrency/cancellation/first-error, app-version atomic access, Kafka publisher failure/statistics and subscriber legacy-loop coverage, plus bounded auth parsing fuzz coverage.
+- Close adjacent deterministic root freshness, conformance, idempotency, CLI output, retry-option, tracing-carrier, logging, and adapter gaps required to reach 85.1% aggregate coverage with every library package at or above 75%.
 
 ### Documentation
 - Document Windmill middleware ordering, resource provisioning, canonical trace IDs, idempotency limits, and conformance usage.

@@ -1,32 +1,7 @@
 {
   "schema_version": 1,
   "module": "github.com/ai8future/chassis-go/v11",
-  "aggregate_minimum": 75.0,
+  "aggregate_minimum": 85.0,
   "library_minimum": 75.0,
-  "exceptions": [
-    {
-      "kind": "package",
-      "target": "github.com/ai8future/chassis-go/v11",
-      "minimum": 63.0,
-      "owner": "chassis-go maintainers",
-      "rationale": "App-version freshness branches are scheduled for deterministic closure in G002.",
-      "expires": "2026-08-15"
-    },
-    {
-      "kind": "package",
-      "target": "github.com/ai8future/chassis-go/v11/conformance",
-      "minimum": 72.0,
-      "owner": "chassis-go maintainers",
-      "rationale": "Remaining conformance error paths are scheduled for deterministic closure in G002.",
-      "expires": "2026-08-15"
-    },
-    {
-      "kind": "package",
-      "target": "github.com/ai8future/chassis-go/v11/internal/appversion",
-      "minimum": 0.0,
-      "owner": "chassis-go maintainers",
-      "rationale": "The internal app-version package has no direct tests at the G001 baseline and is an explicit G002 target.",
-      "expires": "2026-08-15"
-    }
-  ]
+  "exceptions": []
 }

@@ -74,6 +74,25 @@ func TestBasicRequestSucceeds(t *testing.T) {
 	}
 }
 
+func TestRetryConfigurationOptionsInitializeRetrier(t *testing.T) {
+	policy := RetryPolicy(func(RetryContext) RetryDecision { return RetryDecision{} })
+	client := New(WithRetryPolicy(policy), WithIdempotentOnlyRetries())
+	if client.retrier == nil || client.retrier.MaxAttempts != 3 || client.retrier.BaseDelay != 100*time.Millisecond {
+		t.Fatalf("retrier = %#v", client.retrier)
+	}
+	if client.retrier.Policy == nil || !client.retrier.IdempotentOnly {
+		t.Fatalf("retrier policy/options = %#v", client.retrier)
+	}
+}
+
+func TestHTTPClientOptionPreservesProvidedClient(t *testing.T) {
+	httpClient := &http.Client{Timeout: 123 * time.Millisecond}
+	client := New(WithHTTPClient(httpClient))
+	if client.httpClient != httpClient {
+		t.Fatal("WithHTTPClient did not preserve pointer")
+	}
+}
+
 func TestRetryOn5xx(t *testing.T) {
 	// Return 500 twice, then 200.
 	srv, hits := counterServer(500, 500)

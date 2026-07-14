@@ -63,6 +63,30 @@ func TestUnaryTracingCreatesSpan(t *testing.T) {
 	}
 }
 
+func TestMetadataCarrierSetGetAndKeys(t *testing.T) {
+	carrier := metadataCarrier{md: metadata.MD{}}
+	carrier.Set("traceparent", "value")
+	if got := carrier.Get("traceparent"); got != "value" {
+		t.Fatalf("Get = %q", got)
+	}
+	if got := carrier.Get("missing"); got != "" {
+		t.Fatalf("missing Get = %q", got)
+	}
+	keys := carrier.Keys()
+	if len(keys) != 1 || keys[0] != "traceparent" {
+		t.Fatalf("Keys = %#v", keys)
+	}
+}
+
+func TestTracedStreamReturnsOverrideContext(t *testing.T) {
+	type key struct{}
+	ctx := context.WithValue(context.Background(), key{}, "value")
+	stream := &tracedStream{ctx: ctx}
+	if got := stream.Context().Value(key{}); got != "value" {
+		t.Fatalf("Context value = %v", got)
+	}
+}
+
 func TestUnaryTracingPropagatesIncomingTrace(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))

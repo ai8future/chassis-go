@@ -2,6 +2,7 @@ package chassis
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -215,4 +216,95 @@ func TestCheckFreshnessSkipsWithGuardEnv(t *testing.T) {
 	t.Setenv("CHASSIS_REBUILD_GUARD", "1")
 
 	checkFreshness()
+}
+
+func TestCheckFreshnessAcceptsMatchingDiskVersion(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exe, err = filepath.EvalSymlinks(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Dir(exe)
+	goMod := filepath.Join(dir, "go.mod")
+	versionFile := filepath.Join(dir, "VERSION")
+	if fileExists(goMod) || fileExists(versionFile) {
+		t.Skip("test binary directory already contains module markers")
+	}
+	if err := os.WriteFile(goMod, []byte("module github.com/ai8future/chassis-go/v11\n"), 0o600); err != nil {
+		t.Skipf("test binary directory is not writable: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Remove(goMod) })
+	if err := os.WriteFile(versionFile, []byte("1.2.3\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(versionFile) })
+	original := getAppVersion()
+	SetAppVersion("1.2.3")
+	t.Cleanup(func() { SetAppVersion(original) })
+	t.Setenv("CHASSIS_NO_REBUILD", "")
+	t.Setenv("CHASSIS_REBUILD_GUARD", "")
+
+	checkFreshness()
+}
+
+func TestRebuildReplacesBinaryWithRunnableProgram(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain unavailable")
+	}
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "cmd", "app"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/rebuildtest\n\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "cmd", "app", "main.go"), []byte("package main\nimport \"fmt\"\nfunc main(){fmt.Print(\"rebuilt\")}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	binPath := filepath.Join(root, "app")
+	if err := os.WriteFile(binPath, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := rebuild(root, "./cmd/app", binPath); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	out, err := exec.Command(binPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("rebuilt binary: %v: %s", err, out)
+	}
+	if string(out) != "rebuilt" {
+		t.Fatalf("output = %q", out)
+	}
+}
+
+func TestRebuildReportsBuildFailureWithoutReplacingBinary(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/rebuildtest\n\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	binPath := filepath.Join(root, "app")
+	if err := os.WriteFile(binPath, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := rebuild(root, "./missing", binPath); err == nil || !strings.Contains(err.Error(), "go build failed") {
+		t.Fatalf("rebuild error = %v", err)
+	}
+	data, err := os.ReadFile(binPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "original" {
+		t.Fatalf("binary changed to %q", data)
+	}
+}
+
+func TestRebuildTempPathRejectsMissingDirectory(t *testing.T) {
+	if _, err := rebuildTempPath(filepath.Join(t.TempDir(), "missing", "app")); err == nil {
+		t.Fatal("expected missing-directory error")
+	}
 }

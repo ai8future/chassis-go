@@ -52,4 +52,23 @@ func TestColorHelpers(t *testing.T) {
 	if got := ColorAlways.Red(&buf, "hi"); got != "\x1b[31mhi\x1b[0m" {
 		t.Fatalf("enabled Red = %q", got)
 	}
+	if got := ColorAlways.Dim(&buf, "hi"); got != "\x1b[2mhi\x1b[0m" {
+		t.Fatalf("enabled Dim = %q", got)
+	}
+	if got := ColorAlways.Bold(&buf, ""); got != "" {
+		t.Fatalf("empty Bold = %q", got)
+	}
+}
+
+func TestParseColorModeAcceptsCanonicalValues(t *testing.T) {
+	tests := map[string]ColorMode{"": ColorAuto, " AUTO ": ColorAuto, "always": ColorAlways, "NEVER": ColorNever}
+	for raw, want := range tests {
+		got, err := parseColorMode(raw)
+		if err != nil || got != want {
+			t.Fatalf("parseColorMode(%q) = %v, %v", raw, got, err)
+		}
+	}
+	if _, err := parseColorMode("sometimes"); err == nil {
+		t.Fatal("invalid color mode succeeded")
+	}
 }

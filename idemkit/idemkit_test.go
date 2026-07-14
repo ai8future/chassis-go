@@ -1,7 +1,9 @@
 package idemkit
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -154,5 +156,57 @@ func TestMethodPassThroughAndCrossTenantIsolation(t *testing.T) {
 		if !strings.HasPrefix(rec.Body.String(), tenant+":") {
 			t.Fatalf("tenant %s body = %q", tenant, rec.Body.String())
 		}
+	}
+}
+
+func TestMemoryStoreLegacyMethodsCompleteReplayAndRelease(t *testing.T) {
+	store := NewMemoryStore(time.Hour)
+	ctx := context.Background()
+	claim, err := store.Begin(ctx, "tenant", "key", "fingerprint")
+	if err != nil || claim.Result != Started {
+		t.Fatalf("Begin = %#v, %v", claim, err)
+	}
+	response := StoredResponse{StatusCode: http.StatusCreated, Header: http.Header{"X-Test": {"value"}}, Body: []byte("created")}
+	if err := store.Complete(ctx, "tenant", "key", "fingerprint", response); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	claim, err = store.Begin(ctx, "tenant", "key", "fingerprint")
+	if err != nil || claim.Result != Replay || claim.Response == nil || string(claim.Response.Body) != "created" {
+		t.Fatalf("replay Begin = %#v, %v", claim, err)
+	}
+	if claim.Response.Fingerprint != "fingerprint" || claim.Response.CreatedAt.IsZero() {
+		t.Fatalf("prepared response = %#v", claim.Response)
+	}
+	if err := store.Release(ctx, "tenant", "key"); err != nil {
+		t.Fatalf("Release: %v", err)
+	}
+	claim, err = store.Begin(ctx, "tenant", "key", "fingerprint")
+	if err != nil || claim.Result != Started {
+		t.Fatalf("Begin after Release = %#v, %v", claim, err)
+	}
+}
+
+func TestMemoryStoreLegacyMethodsRespectCancellation(t *testing.T) {
+	store := NewMemoryStore(time.Hour)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := store.Begin(ctx, "tenant", "key", "fingerprint"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Begin error = %v", err)
+	}
+	if err := store.Complete(ctx, "tenant", "key", "fingerprint", StoredResponse{}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Complete error = %v", err)
+	}
+	if err := store.Release(ctx, "tenant", "key"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Release error = %v", err)
+	}
+}
+
+func TestMemoryStoreLegacyCompleteHonorsCapacity(t *testing.T) {
+	store := NewMemoryStoreWithCapacity(time.Hour, 1)
+	if err := store.Complete(context.Background(), "tenant", "first", "fingerprint", StoredResponse{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Complete(context.Background(), "tenant", "second", "fingerprint", StoredResponse{}); !errors.Is(err, ErrCapacity) {
+		t.Fatalf("Complete error = %v, want ErrCapacity", err)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -21,6 +22,101 @@ import (
 func TestMain(m *testing.M) {
 	chassis.RequireMajor(11)
 	os.Exit(m.Run())
+}
+
+func TestRunComponentsReturnsCleanlyWhenEmpty(t *testing.T) {
+	if err := RunComponents(context.Background()); err != nil {
+		t.Fatalf("RunComponents: %v", err)
+	}
+}
+
+func TestRunComponentsStartsEveryComponentConcurrently(t *testing.T) {
+	const count = 8
+	started := make(chan struct{}, count)
+	release := make(chan struct{})
+	components := make([]Component, 0, count)
+	for i := 0; i < count; i++ {
+		components = append(components, func(context.Context) error {
+			started <- struct{}{}
+			<-release
+			return nil
+		})
+	}
+	done := make(chan error, 1)
+	go func() { done <- RunComponents(context.Background(), components...) }()
+	for i := 0; i < count; i++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatalf("only %d of %d components started before release", i, count)
+		}
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("RunComponents: %v", err)
+	}
+}
+
+func TestRunComponentsReturnsFirstErrorAndCancelsPeers(t *testing.T) {
+	want := errors.New("first failure")
+	started := make(chan struct{}, 3)
+	peerCancelled := make(chan struct{}, 2)
+	fail := make(chan struct{})
+
+	failing := func(context.Context) error {
+		started <- struct{}{}
+		<-fail
+		return want
+	}
+	peer := func(ctx context.Context) error {
+		started <- struct{}{}
+		<-ctx.Done()
+		peerCancelled <- struct{}{}
+		return errors.New("later cancellation error")
+	}
+	done := make(chan error, 1)
+	go func() { done <- RunComponents(context.Background(), failing, peer, peer) }()
+	for i := 0; i < 3; i++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatalf("only %d components started", i)
+		}
+	}
+	close(fail)
+	if err := <-done; !errors.Is(err, want) {
+		t.Fatalf("RunComponents error = %v, want %v", err, want)
+	}
+	if len(peerCancelled) != 2 {
+		t.Fatalf("cancelled peers = %d, want 2", len(peerCancelled))
+	}
+}
+
+func TestRunComponentsPropagatesParentCancellationToAllComponents(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	const count = 6
+	started := make(chan struct{}, count)
+	var observed sync.WaitGroup
+	observed.Add(count)
+	components := make([]Component, 0, count)
+	for i := 0; i < count; i++ {
+		components = append(components, func(ctx context.Context) error {
+			started <- struct{}{}
+			<-ctx.Done()
+			observed.Done()
+			return nil
+		})
+	}
+	done := make(chan error, 1)
+	go func() { done <- RunComponents(ctx, components...) }()
+	for i := 0; i < count; i++ {
+		<-started
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("RunComponents: %v", err)
+	}
+	observed.Wait()
 }
 
 func TestRunSingleComponentCleanShutdown(t *testing.T) {

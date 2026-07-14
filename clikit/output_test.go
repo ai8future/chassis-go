@@ -13,6 +13,10 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+type outputStringer string
+
+func (s outputStringer) String() string { return string(s) }
+
 func init() {
 	chassis.RequireMajor(11)
 }
@@ -47,6 +51,48 @@ func TestEmitterHumanMode(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output %q missing %q", got, want)
 		}
+	}
+}
+
+func TestEmitterHumanModeFormatsSupportedValues(t *testing.T) {
+	var buf bytes.Buffer
+	e := NewEmitter(&buf, false, ColorAlways)
+	for _, value := range []any{[]byte("bytes"), outputStringer("stringer"), 42} {
+		if err := e.Emit(value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := buf.String(); got != "bytes\nstringer\n42\n" {
+		t.Fatalf("output = %q", got)
+	}
+	if e.Color() != ColorAlways {
+		t.Fatalf("Color = %v", e.Color())
+	}
+}
+
+func TestEmitterJSONWritesRegardlessOfMode(t *testing.T) {
+	var buf bytes.Buffer
+	e := NewEmitter(&buf, false, ColorNever)
+	if err := e.JSON(map[string]int{"answer": 42}); err != nil {
+		t.Fatal(err)
+	}
+	if !json.Valid(buf.Bytes()) || !strings.Contains(buf.String(), "42") {
+		t.Fatalf("output = %q", buf.String())
+	}
+}
+
+func TestNilEmitterMethodsAreNoops(t *testing.T) {
+	var e *Emitter
+	e.Printf("ignored")
+	e.Println("ignored")
+	if err := e.Emit("ignored"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.JSON("ignored"); err != nil {
+		t.Fatal(err)
+	}
+	if e.Color() != ColorNever {
+		t.Fatalf("Color = %v", e.Color())
 	}
 }
 

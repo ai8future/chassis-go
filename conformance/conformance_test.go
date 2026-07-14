@@ -2,15 +2,26 @@ package conformance
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	chassis "github.com/ai8future/chassis-go/v11"
 	"github.com/ai8future/chassis-go/v11/orchestration"
 )
+
+type recordingTestingT struct {
+	helped bool
+}
+
+func (t *recordingTestingT) Helper() { t.helped = true }
+func (t *recordingTestingT) Fatalf(format string, args ...any) {
+	panic(fmt.Sprintf(format, args...))
+}
 
 func TestMain(m *testing.M) {
 	chassis.RequireMajor(11)
@@ -217,6 +228,84 @@ func TestCheckL3IsDeclarationOnly(t *testing.T) {
 	if !report.Passed || !report.L3DeclarationOnly || len(report.Warnings) == 0 {
 		t.Fatalf("L3 report should pass with declaration warning: %#v", report)
 	}
+}
+
+func TestLevelForProfileCoversEveryProfile(t *testing.T) {
+	tests := map[orchestration.Profile]Level{
+		orchestration.ProfileL0: LevelL0, orchestration.ProfileL1: LevelL1,
+		orchestration.ProfileL2Local: LevelL2, orchestration.ProfileL2Prod: LevelL2,
+		orchestration.ProfileL3: LevelL3, orchestration.Profile("cli"): "",
+	}
+	for profile, want := range tests {
+		if got := LevelForProfile(profile); got != want {
+			t.Fatalf("LevelForProfile(%q) = %q, want %q", profile, got, want)
+		}
+	}
+}
+
+func TestProbeProblemJSONRejectsInvalidShapes(t *testing.T) {
+	tests := []ProblemObservation{
+		{StatusCode: 200},
+		{StatusCode: 500},
+		{StatusCode: 500, Header: http.Header{"Content-Type": {"text/plain"}}},
+		{StatusCode: 500, Header: http.Header{"Content-Type": {"application/problem+json"}}, Body: []byte("{")},
+		{StatusCode: 500, Header: http.Header{"Content-Type": {"application/problem+json"}}, Body: []byte(`{"type":"x"}`)},
+		{StatusCode: 500, Header: http.Header{"Content-Type": {"application/problem+json"}}, Body: []byte(`{"type":"x","title":"x","status":400,"code":"x","retryable":false}`)},
+		{StatusCode: 500, Header: http.Header{"Content-Type": {"application/problem+json"}}, Body: []byte(`{"type":"x","title":"x","status":500,"code":"x","retryable":false,"retry_after":-1}`)},
+		{StatusCode: 500, Header: http.Header{"Content-Type": {"application/problem+json"}}, Body: []byte(`{"type":"x","title":"x","status":500,"code":"x","retryable":false,"trace_id":"bad"}`)},
+	}
+	for i, obs := range tests {
+		if result := ProbeProblemJSON(obs); result.Passed {
+			t.Fatalf("case %d passed: %#v", i, result)
+		}
+	}
+}
+
+func TestReplayAndTenantProbesRejectInvalidEvidence(t *testing.T) {
+	replayCases := []IdempotencyReplayObservation{
+		{}, {FirstStatus: 200, ReplayStatus: 201},
+		{FirstStatus: 200, ReplayStatus: 200, FirstBody: []byte("a"), ReplayBody: []byte("b")},
+		{FirstStatus: 200, ReplayStatus: 200, FirstBody: []byte("a"), ReplayBody: []byte("a")},
+	}
+	for i, obs := range replayCases {
+		if result := ProbeIdempotencyReplay(obs); result.Passed {
+			t.Fatalf("replay case %d passed", i)
+		}
+	}
+	tenantCases := []TenantIsolationObservation{
+		{},
+		{TenantBHandlerExecuted: true, TenantBReplayHeader: http.Header{"Idempotency-Replayed": {"true"}}},
+		{TenantBHandlerExecuted: true, TenantABody: []byte("same"), TenantBBody: []byte("same")},
+		{TenantBHandlerExecuted: true},
+	}
+	for i, obs := range tenantCases {
+		if result := ProbeTenantIsolation(obs); result.Passed {
+			t.Fatalf("tenant case %d passed", i)
+		}
+	}
+}
+
+func TestRequireReturnsReportAndMarksHelper(t *testing.T) {
+	tb := &recordingTestingT{}
+	report := Require(tb, LevelL0, Evidence{AcceptsXTraceID: true, EmitsProblemJSONErrors: true})
+	if !tb.helped || !report.Passed {
+		t.Fatalf("helper/report = %v/%#v", tb.helped, report)
+	}
+}
+
+func TestRequireFailsWithSortedMissingCopy(t *testing.T) {
+	tb := &recordingTestingT{}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("Require did not fail")
+		}
+	}()
+	report := Check(LevelL1, Evidence{})
+	report.Missing = []string{"z", "a"}
+	if got := report.SortedMissing(); !reflect.DeepEqual(got, []string{"a", "z"}) {
+		t.Fatalf("SortedMissing = %#v", got)
+	}
+	Require(tb, LevelL1, Evidence{})
 }
 
 func pinnedManifest(t *testing.T) orchestration.Manifest {

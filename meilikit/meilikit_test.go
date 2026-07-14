@@ -30,6 +30,13 @@ func TestNew_EmptyBaseURL(t *testing.T) {
 	}
 }
 
+func TestMeiliErrorFormatsFields(t *testing.T) {
+	err := (&MeiliError{Message: "bad request", Code: "invalid", StatusCode: http.StatusBadRequest}).Error()
+	if err != "meilikit: bad request (code=invalid, status=400)" {
+		t.Fatalf("Error = %q", err)
+	}
+}
+
 func TestNew_Success(t *testing.T) {
 	c, err := New(Config{BaseURL: "http://localhost:7700", APIKey: "test-key"})
 	if err != nil {
