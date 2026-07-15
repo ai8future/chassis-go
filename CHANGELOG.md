@@ -20,6 +20,7 @@
 - Raise the machine-enforced aggregate coverage floor to 85% and remove all temporary library-package exceptions after closing their deterministic gaps.
 
 ### Fixed
+- Correct the G009 release evidence wording to require every exact captured Redpanda container-owned volume ID to disappear while permitting unrelated daemon volume churn. (Codex:gpt-5.5-high)
 - Make selected Redpanda anonymous-volume cleanup concurrency-safe by requiring only the captured container-owned volume IDs to disappear, allowing unrelated daemon volume churn. (Codex:gpt-5.5-high)
 - Remove attached anonymous volumes whenever shared, nightly, or hosted cleanup removes an exact test-owned container, preventing Redpanda volumes from accumulating while preserving bounded and truthful cleanup behavior. (Codex:gpt-5.5-high)
 - Make hosted nightly logging create its artifact path before piping and fail on either producer or `tee`, make hosted Docker E2E fail closed when Docker evidence is required, exercise `kafkakit` publish/consume across the real Redpanda restart, and propagate owned-container cleanup failures with truthful completion markers. (Codex:gpt-5.5-high)
@@ -30,7 +31,7 @@
 
 ### Tests
 - Add a deterministic ownership-set regression and adversarial selected-Redpanda live proof that unrelated Docker volume churn does not mask exact owned-ID removal. (Codex:gpt-5.5-high)
-- Add executable `docker rm -f -v` argument regressions for the shared helper, nightly owner, and hosted cleanup, plus selected pinned-Redpanda proof that its anonymous volume IDs disappear and total volume inventory returns to preflight. (Codex:gpt-5.5-high)
+- Add executable `docker rm -f -v` argument regressions for the shared helper, nightly owner, and hosted cleanup, plus selected pinned-Redpanda proof that every exact captured Redpanda container-owned volume ID disappears while unrelated daemon volume churn is permitted. (Codex:gpt-5.5-high)
 - Add executable regressions for absent nightly artifact directories, producer/`tee` failures, required-versus-optional Docker availability, Redpanda module behavior before and after restart, and cleanup failure propagation without masking primary failures. (Codex:gpt-5.5-high)
 - Add an executable partial-`go list` fake-`go` regression for nightly package enumeration failures and verify the bounded successful nightly smoke. (Codex:gpt-5.5-high)
 - Add a topology regression and executable fake-`go` negative proof for nightly fuzz discovery failures, then verify a bounded nightly smoke without live integrations or restart probes. (Codex:gpt-5.5-high)
