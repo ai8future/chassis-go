@@ -28,6 +28,10 @@ func TestIntegrationScriptRejectsFalseSuccess(t *testing.T) {
 		{name: "unknown", registry: "redpanda\t./kafkakit\n", request: "qdrant", output: "unknown integration service"},
 		{name: "missing marker", registry: "redpanda\t./kafkakit\n", request: "redpanda", mode: "nomarker", output: "no valid completion marker"},
 		{name: "go failure", registry: "redpanda\t./kafkakit\n", request: "redpanda", mode: "failure", output: "running selected"},
+		{name: "missing image", registry: "redpanda\t./kafkakit\n", images: "\n", request: "redpanda", output: "has no pinned image entry"},
+		{name: "mutable latest image", registry: "redpanda\t./kafkakit\n", images: "redpanda\texample/redpanda:latest\tsha256:amd\tsha256:arm\thttps://example.test\n", request: "redpanda", output: "not an immutable non-latest digest pin"},
+		{name: "missing arch digest", registry: "redpanda\t./kafkakit\n", images: "redpanda\texample/redpanda:v1@sha256:abc\tamd\tsha256:arm\thttps://example.test\n", request: "redpanda", output: "missing per-arch manifest digests"},
+		{name: "duplicate image", registry: "redpanda\t./kafkakit\n", images: "redpanda\texample/redpanda:v1@sha256:abc\tsha256:amd\tsha256:arm\thttps://example.test\nredpanda\texample/redpanda:v1@sha256:def\tsha256:amd\tsha256:arm\thttps://example.test\n", request: "redpanda", output: "duplicate integration image pin"},
 		{name: "one success", registry: "redpanda\t./kafkakit\n", request: "redpanda", mode: "success", wantOK: true},
 		{name: "all success", registry: "redpanda\t./kafkakit\nqdrant\t./qdrantkit\n", request: "all", mode: "success", wantOK: true},
 	}

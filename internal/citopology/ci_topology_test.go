@@ -1,0 +1,125 @@
+package citopology_test
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	chassis "github.com/ai8future/chassis-go/v11"
+)
+
+func TestMain(m *testing.M) {
+	chassis.RequireMajor(11)
+	os.Exit(m.Run())
+}
+
+func TestWorkflowDefinesBoundedTriggersConcurrencyAndArtifacts(t *testing.T) {
+	workflow := readRepoFile(t, ".github", "workflows", "ci.yml")
+	for _, want := range []string{
+		"pull_request:",
+		"push:",
+		"schedule:",
+		"workflow_dispatch:",
+		"concurrency:",
+		"group: ci-${{ github.workflow }}-${{ github.ref }}",
+		"cancel-in-progress: true",
+		"timeout-minutes: 12",
+		"actions/upload-artifact@v4",
+		"if: ${{ always() }}",
+		"deterministic-diagnostics",
+		"nightly-resilience-diagnostics",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("workflow missing %q", want)
+		}
+	}
+}
+
+func TestWorkflowRunsEveryRegisteredLiveServiceInIsolatedMatrix(t *testing.T) {
+	workflow := readRepoFile(t, ".github", "workflows", "ci.yml")
+	services := readRegisteredServices(t)
+	for _, service := range services {
+		if !strings.Contains(workflow, service) {
+			t.Fatalf("workflow live matrix missing service %q", service)
+		}
+	}
+	for _, want := range []string{
+		"name: Live integration (${{ matrix.service }})",
+		"service: [redpanda, qdrant, meilisearch, otel-collector, inngest]",
+		"CHASSIS_INTEGRATION_SERVICES: ${{ matrix.service }}",
+		"./scripts/test-integration.sh \"${{ matrix.service }}\"",
+		"artifacts/live/${{ matrix.service }}/image.txt",
+		"live-${{ matrix.service }}-diagnostics",
+		"docker logs --tail 300",
+		"docker inspect",
+		"docker rm -f",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("workflow live job missing %q", want)
+		}
+	}
+}
+
+func TestNightlyScriptDiscoversFuzzTargetsAndRunsRealResilienceSelectors(t *testing.T) {
+	script := readRepoFile(t, "scripts", "test-nightly.sh")
+	for _, want := range []string{
+		"go list ./...",
+		"-list '^Fuzz'",
+		"-fuzz=\"^${fuzz}$\"",
+		"CHASSIS_NIGHTLY_RACE_PACKAGES:-./lifecycle ./work ./kafkakit",
+		"CHASSIS_NIGHTLY_INTEGRATIONS:-all",
+		"./scripts/test-integration.sh \"$selected\"",
+		"CHASSIS_NIGHTLY_RESTART_SERVICES:-redpanda qdrant meilisearch otel-collector inngest",
+		"docker restart \"$name\"",
+		"restart probe complete: redpanda",
+		"restart probe complete: qdrant",
+		"restart probe complete: meilisearch",
+		"restart probe complete: otel-collector",
+		"restart probe complete: inngest",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("nightly script missing %q", want)
+		}
+	}
+}
+
+func TestCoverageScriptCanPreserveProfileArtifact(t *testing.T) {
+	script := readRepoFile(t, "scripts", "check-coverage.sh")
+	for _, want := range []string{"CHASSIS_COVERAGE_PROFILE", "mkdir -p \"$(dirname \"$profile\")\"", "-coverprofile=\"$profile\""} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("coverage script missing %q", want)
+		}
+	}
+}
+
+func readRegisteredServices(t *testing.T) []string {
+	t.Helper()
+	registry := readRepoFile(t, "testing", "integration-suites.tsv")
+	var services []string
+	for _, line := range strings.Split(registry, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Split(line, "\t")
+		if len(fields) != 2 {
+			t.Fatalf("invalid registry row %q", line)
+		}
+		services = append(services, fields[0])
+	}
+	if len(services) == 0 {
+		t.Fatal("no registered integration services")
+	}
+	return services
+}
+
+func readRepoFile(t *testing.T, elems ...string) string {
+	t.Helper()
+	path := filepath.Join(append([]string{"..", ".."}, elems...)...)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(data)
+}

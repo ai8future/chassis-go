@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
@@ -34,7 +33,7 @@ func init() {
 
 func TestRedpandaLiveIntegration(t *testing.T) {
 	integrationtest.Run(t, "redpanda", func(t *testing.T) {
-		image := loadPinnedImage(t, "redpanda")
+		image := integrationtest.LoadPinnedImage(t, "redpanda")
 		svc := startRedpanda(t, image)
 		admin := newKafkaClient(t, svc.bootstrap)
 		defer admin.Close()
@@ -78,34 +77,6 @@ func repoRoot(t *testing.T) string {
 		t.Fatal("resolve caller")
 	}
 	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-}
-
-func loadPinnedImage(t *testing.T, service string) string {
-	t.Helper()
-	path := filepath.Join(repoRoot(t), "testing", "integration-images.tsv")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("selected integration suite is missing pinned image config %s: %v", path, err)
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		fields := strings.Split(line, "\t")
-		if len(fields) < 2 {
-			t.Fatalf("invalid pinned image config row %q", line)
-		}
-		if fields[0] == service {
-			image := strings.TrimSpace(fields[1])
-			if !strings.Contains(image, "@sha256:") || strings.Contains(image, ":latest") {
-				t.Fatalf("redpanda image must be an immutable non-latest digest pin, got %q", image)
-			}
-			return image
-		}
-	}
-	t.Fatalf("selected integration suite is missing pinned image config for %q", service)
-	return ""
 }
 
 func startRedpanda(t *testing.T, image string) redpandaService {

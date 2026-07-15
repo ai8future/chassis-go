@@ -3,6 +3,7 @@ package lakekit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -369,35 +370,41 @@ func TestQuery_Forbidden(t *testing.T) {
 	}
 }
 
-type infiniteSpaceReader struct{}
+type boundAwareSpaceReader struct {
+	read    int64
+	overrun bool
+}
 
-func (infiniteSpaceReader) Read(p []byte) (int, error) {
+func (r *boundAwareSpaceReader) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	p[0] = ' '
-	for filled := 1; filled < len(p); {
-		filled += copy(p[filled:], p[:filled])
+	remaining := maxResponseBytes - r.read
+	if remaining <= 0 {
+		r.overrun = true
+		return 0, errors.New("test reader consumed past response bound")
 	}
+	if int64(len(p)) > remaining {
+		p = p[:remaining]
+	}
+	for i := range p {
+		p[i] = ' '
+	}
+	r.read += int64(len(p))
 	return len(p), nil
 }
 
 func TestDecodeJSONIsBounded(t *testing.T) {
-	done := make(chan error, 1)
-	go func() {
-		resp := &http.Response{Body: io.NopCloser(infiniteSpaceReader{})}
-		defer resp.Body.Close()
+	reader := &boundAwareSpaceReader{}
+	resp := &http.Response{Body: io.NopCloser(reader)}
+	defer resp.Body.Close()
 
-		var result QueryResult
-		done <- decodeJSON(resp, &result)
-	}()
-
-	select {
-	case err := <-done:
-		if err == nil {
-			t.Fatal("expected error from bounded non-JSON response, got nil")
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("decodeJSON did not return for an unbounded response stream")
+	var result QueryResult
+	err := decodeJSON(resp, &result)
+	if err == nil {
+		t.Fatal("expected error from bounded non-JSON response, got nil")
+	}
+	if reader.overrun || reader.read > maxResponseBytes {
+		t.Fatalf("decodeJSON read %d bytes from an unbounded stream; want at most %d", reader.read, maxResponseBytes)
 	}
 }

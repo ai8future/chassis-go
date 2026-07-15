@@ -3,11 +3,13 @@
 ## [Unreleased]
 
 ### Added
+- Add G006 CI topology for deterministic artifacts, isolated live-service matrix jobs, and scheduled/manual nightly resilience diagnostics across pinned public credential-free services.
 - Add Windmill readiness Wave 0 primitives: `authkit` scoped inbound bearer validation, `idemkit` tenant-scoped HTTP idempotency, `orchestration` capability manifests/registry metadata, and `conformance` L0-L2 evidence helpers with declaration-only L3 reporting.
 - Pin shared Windmill contract schemas and fixtures under `testdata/windmill/contracts` with provenance and checksums.
 - Add an honest five-tier `TESTING.md`, thin tier scripts, a selected-service integration harness that cannot silently mark skipped suites complete, and a strict expiring coverage-exception policy.
 
 ### Changed
+- Harden CI log piping so deterministic, live, and nightly jobs preserve exit status while still writing uploadable diagnostics.
 - Extend `errors` problem JSON with stable `code`, `retryable`, `retry_after`, retry helpers, and `Retry-After` response headers.
 - Extend `call` retries with policy hooks, idempotent-only retry mode, and 429/503 `Retry-After` parsing.
 - Tighten `tracekit` inbound `X-Trace-ID` acceptance to canonical `tr_[0-9a-f]{32}` plus bounded legacy `tr_[0-9a-f]{12}` only.
@@ -15,15 +17,17 @@
 - Raise the machine-enforced aggregate coverage floor to 85% and remove all temporary library-package exceptions after closing their deterministic gaps.
 
 ### Tests
+- Add static CI/nightly topology regressions, integration image-pin failure regressions, bounded nightly smoke coverage, and a race-stable lakekit bounded-response assertion.
 - Add G005 live adapter contract suites for pinned Qdrant, Meilisearch, OpenTelemetry Collector contrib, and credential-free Inngest Dev Server, with immutable tag+digest image pins, selected-suite hard failures, unselected skips, all-suite enumeration, machine-readable OTel trace/metric receipts, and retained T4/G006 boundaries.
 - Add deterministic integration helper coverage so the 85% aggregate and 75% library coverage policy remains exception-free.
 - Add a selected `redpanda` live integration suite with an immutable Redpanda image pin, Docker orchestration, module publish/consume, raw DLQ key/header preservation, multi-topic and same-group redistribution, bounded shutdown, and schemakit live Registry.Register/serialize/deserialize/error mapping coverage.
 - Add a build-tagged process/TCP/Docker E2E suite for shipped executables, loopback gRPC/HTTP readiness, functional success/error paths, graceful shutdown, port release, and full-service Docker build/run/health diagnostics.
 - Cover strict selector parsing, selected success/failure/skip markers, missing configuration, empty/unknown integration suites, false-green script exits, malformed coverage profiles/policies, and expired, unmatched, stale, or insufficient exceptions; verify repository-wide test, race, coverage, and vet gates without adding a Go dependency.
 - Add deterministic auth key loading and duplicate precedence, lifecycle concurrency/cancellation/first-error, app-version atomic access, Kafka publisher failure/statistics and subscriber legacy-loop coverage, plus bounded auth parsing fuzz coverage.
-- Close adjacent deterministic root freshness, conformance, idempotency, CLI output, retry-option, tracing-carrier, logging, and adapter gaps required to reach 85.1% aggregate coverage with every library package at or above 75%.
+- Close adjacent deterministic root freshness, conformance, idempotency, CLI output, retry-option, tracing-carrier, logging, and adapter gaps required to reach 85.0% aggregate coverage with every library package at or above 75%.
 
 ### Documentation
+- Document G006 PR/push live-service artifact boundaries, scheduled/manual T3 restart/repetition evidence, and residual T4 hosted-provider limits.
 - Document the current T2 live suite registry, image-pin proof contract, credential-free Inngest Dev Server boundary, hosted T4 limits, and G006 restart/soak/nightly deferral.
 - Document Windmill middleware ordering, resource provisioning, canonical trace IDs, idempotency limits, and conformance usage.
 
