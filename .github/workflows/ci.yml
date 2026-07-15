@@ -5,9 +5,17 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # Nightly resilience runs from the latest default-branch commit; cron is UTC.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   GO_VERSION: 1.26.5
@@ -19,6 +27,7 @@ jobs:
   quality:
     name: Format, modules, lint, and security
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v6
 
@@ -94,8 +103,9 @@ jobs:
         run: govulncheck ./...
 
   test:
-    name: Tests, race detector, coverage, and fuzz smoke
+    name: Tests, race detector, coverage, E2E, and fuzz smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v6
 
@@ -105,14 +115,40 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
+      - name: Prepare diagnostics directory
+        run: mkdir -p artifacts/deterministic
+
       - name: Test
-        run: go test -timeout=120s -count=1 ./...
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -timeout=120s -count=1 ./... 2>&1 | tee artifacts/deterministic/go-test.log
+          exit "${PIPESTATUS[0]}"
 
       - name: Race test
-        run: go test -race -timeout=180s -count=1 ./...
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -race -timeout=180s -count=1 ./... 2>&1 | tee artifacts/deterministic/go-test-race.log
+          exit "${PIPESTATUS[0]}"
 
       - name: Enforce statement coverage
-        run: ./scripts/check-coverage.sh
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHASSIS_COVERAGE_PROFILE=artifacts/deterministic/coverage.out \
+            ./scripts/check-coverage.sh 2>&1 | tee artifacts/deterministic/coverage-summary.txt
+          exit "${PIPESTATUS[0]}"
+
+      - name: Process/TCP and Docker E2E
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/test-e2e.sh 2>&1 | tee artifacts/deterministic/e2e.log
+          exit "${PIPESTATUS[0]}"
+
+      - name: Fuzz malformed static keys
+        run: go test ./authkit -run='^$' -fuzz='^FuzzParseStaticKeysNeverPanics$' -fuzztime=10s
 
       - name: Fuzz malformed seal envelopes
         run: go test ./seal -run='^$' -fuzz='^FuzzDecryptEnvelopeNeverPanics$' -fuzztime=10s
@@ -120,9 +156,18 @@ jobs:
       - name: Fuzz malformed webhook inputs
         run: go test ./webhook -run='^$' -fuzz='^FuzzVerifyWebhookNeverPanics$' -fuzztime=10s
 
+      - name: Upload deterministic diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: deterministic-diagnostics
+          path: artifacts/deterministic
+          if-no-files-found: warn
+
   cross-build:
-    name: Cross-build and 386 schema proof
+    name: Cross-build and schema proof
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v6
 
@@ -135,6 +180,9 @@ jobs:
       - name: Cross-build Linux amd64
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./...
 
+      - name: Cross-build Linux arm64
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...
+
       - name: Cross-build Darwin arm64
         run: CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build ./...
 
@@ -145,3 +193,123 @@ jobs:
           test_binary="$(mktemp)"
           trap 'rm -f "$test_binary"' EXIT
           CGO_ENABLED=0 GOOS=linux GOARCH=386 go test -c -o "$test_binary" ./schemakit
+
+  live-integration:
+    name: Live integration (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [redpanda, qdrant, meilisearch, otel-collector, inngest]
+    env:
+      CHASSIS_INTEGRATION_SERVICES: ${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Prepare live diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "artifacts/live/${{ matrix.service }}"
+          awk -F '\t' -v svc='${{ matrix.service }}' 'BEGIN{found=0} $1==svc {found++; print "service=" $1 "\nimage=" $2 "\namd64_manifest=" $3 "\narm64_manifest=" $4 "\nsource=" $5} END{if(found!=1) exit 1}' \
+            testing/integration-images.tsv | tee "artifacts/live/${{ matrix.service }}/image.txt"
+          docker version | tee "artifacts/live/${{ matrix.service }}/docker-version.txt"
+          go version | tee "artifacts/live/${{ matrix.service }}/go-version.txt"
+
+      - name: Run exactly selected live integration suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          printf 'service=%s\nstarted_at=%s\nselector=%s\n' \
+            '${{ matrix.service }}' "$started_at" "$CHASSIS_INTEGRATION_SERVICES" \
+            | tee "artifacts/live/${{ matrix.service }}/run-metadata.txt"
+          ./scripts/test-integration.sh "${{ matrix.service }}" 2>&1 | tee "artifacts/live/${{ matrix.service }}/go-test-json.log"
+          status="${PIPESTATUS[0]}"
+          finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          printf 'finished_at=%s\nstatus=%s\n' "$finished_at" "$status" | tee -a "artifacts/live/${{ matrix.service }}/run-metadata.txt"
+          exit "$status"
+
+      - name: Collect live diagnostics
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set +e
+          out="artifacts/live/${{ matrix.service }}"
+          docker ps -a >"$out/docker-ps.txt" 2>&1
+          docker images --digests >"$out/docker-images.txt" 2>&1
+          for container in $(docker ps -a --format '{{.Names}}' | grep '^chassis-' || true); do
+            safe="${container//[^A-Za-z0-9_.-]/_}"
+            docker logs --tail 300 "$container" >"$out/${safe}.logs.txt" 2>&1
+            docker inspect "$container" >"$out/${safe}.inspect.json" 2>&1
+            docker rm -f "$container" >>"$out/cleanup.txt" 2>&1
+          done
+          printf 'cleanup_complete=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$out/cleanup.txt"
+
+      - name: Upload live diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-${{ matrix.service }}-diagnostics
+          path: artifacts/live/${{ matrix.service }}
+          if-no-files-found: warn
+
+  nightly-resilience:
+    name: Nightly resilience and diagnostics
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run scheduled/manual resilience suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHASSIS_NIGHTLY_ARTIFACT_DIR=artifacts/nightly \
+          CHASSIS_FUZZTIME=60s \
+          CHASSIS_NIGHTLY_RACE_COUNT=3 \
+          CHASSIS_NIGHTLY_INTEGRATION_COUNT=2 \
+          CHASSIS_NIGHTLY_INTEGRATIONS=all \
+          CHASSIS_NIGHTLY_RESTART_SERVICES='redpanda qdrant meilisearch otel-collector inngest' \
+            ./scripts/test-nightly.sh 2>&1 | tee artifacts/nightly.log
+          exit "${PIPESTATUS[0]}"
+
+      - name: Collect nightly diagnostics
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set +e
+          mkdir -p artifacts/nightly
+          docker ps -a >artifacts/nightly/docker-ps.txt 2>&1
+          docker images --digests >artifacts/nightly/docker-images.txt 2>&1
+          for container in $(docker ps -a --format '{{.Names}}' | grep '^chassis-' || true); do
+            safe="${container//[^A-Za-z0-9_.-]/_}"
+            docker logs --tail 500 "$container" >"artifacts/nightly/${safe}.logs.txt" 2>&1
+            docker inspect "$container" >"artifacts/nightly/${safe}.inspect.json" 2>&1
+            docker rm -f "$container" >>artifacts/nightly/cleanup.txt 2>&1
+          done
+          printf 'cleanup_complete=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>artifacts/nightly/cleanup.txt
+
+      - name: Upload nightly diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-resilience-diagnostics
+          path: |
+            artifacts/nightly
+            artifacts/nightly.log
+          if-no-files-found: warn
