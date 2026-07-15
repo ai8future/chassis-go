@@ -201,18 +201,44 @@ func RequireDocker(t *testing.T, service string) {
 	}
 }
 
-// CleanupDocker removes a suite-owned container and logs diagnostics on failure.
+// CleanupDocker removes a suite-owned container, preserving any primary test
+// failure while making removal failure fail an otherwise successful owner.
 func CleanupDocker(t *testing.T, name, service string) {
 	t.Helper()
 	if t.Failed() {
-		if logs, err := exec.Command("docker", "logs", "--tail", "200", name).CombinedOutput(); err == nil {
+		if logs, err := runDockerCommand(10*time.Second, "logs", "--tail", "200", name); err == nil {
 			t.Logf("%s logs:\n%s", service, logs)
 		}
-		if inspect, err := exec.Command("docker", "inspect", name).CombinedOutput(); err == nil {
+		if inspect, err := runDockerCommand(10*time.Second, "inspect", name); err == nil {
 			t.Logf("%s inspect:\n%s", service, inspect)
 		}
 	}
-	_, _ = exec.Command("docker", "rm", "-f", name).CombinedOutput()
+	cleanupDockerResource(t, service, "container", "rm", "-f", name)
+}
+
+// CleanupDockerImage removes a suite-owned image and propagates removal
+// failures using the same bounded cleanup contract as CleanupDocker.
+func CleanupDockerImage(t *testing.T, reference, service string) {
+	t.Helper()
+	cleanupDockerResource(t, service, "image", "rmi", "-f", reference)
+}
+
+func cleanupDockerResource(t *testing.T, service, resource string, args ...string) {
+	t.Helper()
+	out, err := runDockerCommand(20*time.Second, args...)
+	if err != nil {
+		t.Errorf("remove owned %s %s for %s: %v\n%s", resource, args[len(args)-1], service, err, out)
+	}
+}
+
+func runDockerCommand(timeout time.Duration, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return out, ctx.Err()
+	}
+	return out, err
 }
 
 // WaitFor polls readiness with a bounded context and reports the last observed

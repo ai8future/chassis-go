@@ -20,12 +20,14 @@
 - Raise the machine-enforced aggregate coverage floor to 85% and remove all temporary library-package exceptions after closing their deterministic gaps.
 
 ### Fixed
+- Make hosted nightly logging create its artifact path before piping and fail on either producer or `tee`, make hosted Docker E2E fail closed when Docker evidence is required, exercise `kafkakit` publish/consume across the real Redpanda restart, and propagate owned-container cleanup failures with truthful completion markers. (Codex:gpt-5.5-high)
 - Fail nightly fuzz package enumeration closed when `go list ./...` exits nonzero after partial output, preserving stderr and preventing false completion reporting. (Codex:gpt-5.5-high)
 - Fail nightly fuzz discovery on any per-package `go test -list '^Fuzz'` error and keep discovery stderr visible, preventing packages from being silently omitted when another package has fuzz targets. (Codex:gpt-5.5-high)
 - Make the pinned OpenTelemetry Collector's UID/GID 10001 able to write only to dedicated receipt bind mounts without privileged or root execution, restoring host-only directory permissions during cleanup.
 - Retain nonempty machine-readable trace, metric, and summary receipts for every OTel nightly integration repetition in unique artifact subdirectories instead of deleting them with `t.TempDir`.
 
 ### Tests
+- Add executable regressions for absent nightly artifact directories, producer/`tee` failures, required-versus-optional Docker availability, Redpanda module behavior before and after restart, and cleanup failure propagation without masking primary failures. (Codex:gpt-5.5-high)
 - Add an executable partial-`go list` fake-`go` regression for nightly package enumeration failures and verify the bounded successful nightly smoke. (Codex:gpt-5.5-high)
 - Add a topology regression and executable fake-`go` negative proof for nightly fuzz discovery failures, then verify a bounded nightly smoke without live integrations or restart probes. (Codex:gpt-5.5-high)
 - Add G006 topology assertions for isolated writable OTel bind mounts, durable per-repetition receipt paths, nonempty receipt enforcement, and permission restoration.

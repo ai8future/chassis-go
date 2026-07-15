@@ -72,23 +72,45 @@ collect_container_diagnostics() {
 
 cleanup_containers() {
   local rc="$1"
+  local cleanup_status=0
   if (( rc != 0 )); then
     collect_container_diagnostics failure
   fi
   for container in "${active_containers[@]+${active_containers[@]}}"; do
     [[ -z "$container" ]] && continue
-    docker rm -f "$container" >>"$artifact_dir/container-cleanup.txt" 2>&1 || true
+    if ! docker rm -f "$container" >>"$artifact_dir/container-cleanup.txt" 2>&1; then
+      printf 'container_cleanup_failed=%s\n' "$container" >>"$artifact_dir/container-cleanup.txt"
+      cleanup_status=1
+    fi
   done
   if [[ -d "$artifact_dir/otel-receipts" ]]; then
-    find "$artifact_dir/otel-receipts" -mindepth 1 -maxdepth 1 -type d -exec chmod 0755 {} +
+    if ! find "$artifact_dir/otel-receipts" -mindepth 1 -maxdepth 1 -type d -exec chmod 0755 {} +; then
+      printf 'receipt_permission_cleanup_failed=1\n' >>"$artifact_dir/container-cleanup.txt"
+      cleanup_status=1
+    fi
   fi
+  return "$cleanup_status"
 }
 
 on_exit() {
-  local rc=$?
-  cleanup_containers "$rc"
-  log "nightly exit status: $rc"
-  exit "$rc"
+  local primary_status=$?
+  local cleanup_status final_status
+  trap - EXIT
+  set +e
+  cleanup_containers "$primary_status"
+  cleanup_status=$?
+  final_status="$primary_status"
+  if (( final_status == 0 && cleanup_status != 0 )); then
+    final_status="$cleanup_status"
+  fi
+  if (( cleanup_status == 0 )); then
+    printf 'cleanup_complete=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$artifact_dir/container-cleanup.txt"
+  else
+    printf 'cleanup_failed=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$artifact_dir/container-cleanup.txt"
+  fi
+  log "nightly cleanup status: $cleanup_status" || true
+  log "nightly exit status: $final_status (primary=$primary_status cleanup=$cleanup_status)" || true
+  exit "$final_status"
 }
 trap on_exit EXIT
 
@@ -96,15 +118,22 @@ run_logged() {
   local name="$1"
   shift
   local logfile="$artifact_dir/${name//[^A-Za-z0-9_.-]/_}.log"
-  local started finished status
+  local started finished status producer_status tee_status
+  local pipeline_status
   started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   log "START $name at $started: $*"
   set +e
   "$@" 2>&1 | tee "$logfile"
-  status="${PIPESTATUS[0]}"
+  pipeline_status=("${PIPESTATUS[@]}")
   set -e
+  producer_status="${pipeline_status[0]}"
+  tee_status="${pipeline_status[1]}"
+  status="$producer_status"
+  if (( status == 0 )); then
+    status="$tee_status"
+  fi
   finished="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  log "END $name at $finished status=$status log=$logfile"
+  log "END $name at $finished status=$status producer_status=$producer_status tee_status=$tee_status log=$logfile"
   return "$status"
 }
 
@@ -298,8 +327,13 @@ restart_probe_redpanda() {
     --default-log-level=info >/dev/null
   active_containers+=("$name")
   wait_http redpanda "http://127.0.0.1:${admin_port}/v1/status/ready" 90
-  docker restart "$name" >"$artifact_dir/${name}.restart.txt"
-  wait_http redpanda "http://127.0.0.1:${admin_port}/v1/status/ready" 90
+  run_logged "restart-redpanda-module-client" env \
+    CHASSIS_REDPANDA_RESTART_REQUIRED=1 \
+    CHASSIS_REDPANDA_RESTART_BOOTSTRAP="127.0.0.1:${kafka_port}" \
+    CHASSIS_REDPANDA_RESTART_ADMIN_URL="http://127.0.0.1:${admin_port}" \
+    CHASSIS_REDPANDA_RESTART_CONTAINER="$name" \
+    go test -v -timeout=4m -count=1 -tags=integration ./testing/redpanda \
+      -run '^TestRedpandaModuleClientRestartProbe$'
   log "restart probe complete: redpanda container=$name"
 }
 

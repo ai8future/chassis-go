@@ -112,15 +112,7 @@ func startRedpanda(t *testing.T, image string) redpandaService {
 		t.Fatalf("start redpanda container with pinned image %s: %v\n%s", image, err, out)
 	}
 	t.Cleanup(func() {
-		if t.Failed() {
-			if logs, err := exec.Command("docker", "logs", "--tail", "200", name).CombinedOutput(); err == nil {
-				t.Logf("redpanda logs:\n%s", logs)
-			}
-			if inspect, err := exec.Command("docker", "inspect", name).CombinedOutput(); err == nil {
-				t.Logf("redpanda inspect:\n%s", inspect)
-			}
-		}
-		_, _ = exec.Command("docker", "rm", "-f", name).CombinedOutput()
+		integrationtest.CleanupDocker(t, name, "redpanda")
 	})
 	svc := redpandaService{
 		bootstrap: fmt.Sprintf("127.0.0.1:%d", kafkaPort),

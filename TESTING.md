@@ -9,7 +9,7 @@ G005 adds opt-in T2 live adapter suites for public, pinned local services.
 | Tier | Boundary | Required selector | Current command | Current claim |
 |---|---|---|---|---|
 | T0 | unit, component, `httptest`, compile-time contracts | none | `./scripts/test-unit.sh` or `go test ./...` | dependency-free deterministic repository suite |
-| T1 | built subprocess and real loopback TCP/HTTP/gRPC/Docker artifact | none | `./scripts/test-e2e.sh` | shipped executable and subprocess/loopback evidence where implemented |
+| T1 | built subprocess and real loopback TCP/HTTP/gRPC/Docker artifact | `e2e` build tag; `CHASSIS_E2E_DOCKER_REQUIRED=1` for required Docker proof | `./scripts/test-e2e.sh` | shipped executable and subprocess/loopback evidence; Docker evidence is complete only in required mode |
 | T2 | isolated live open-source dependency | `integration` build tag plus one exact `CHASSIS_INTEGRATION_SERVICES` value | `./scripts/test-integration.sh <service>` or `all` | pinned local containers for Redpanda, Qdrant, Meilisearch, OpenTelemetry Collector contrib, and Inngest Dev Server |
 | T3 | scheduled/manual stress, restart, repetition, and extended fuzz | workflow/manual opt-in | `./scripts/test-nightly.sh` | extended fuzz for discovered fuzz targets, focused race repetitions, repeated T2 suites, and real pinned local service restart probes |
 | T4 | credentialed, hosted, heavyweight, or otherwise unsuitable for public PRs | trusted manual environment | adapter-specific manual commands | hosted/provider evidence and credentialed cloud execution remain limitations, never public-PR success claims |
@@ -17,6 +17,21 @@ G005 adds opt-in T2 live adapter suites for public, pinned local services.
 Default `go test ./...` is T0. It does not use the `integration` tag, read live
 service endpoints, start containers, or require Docker. Integration files must
 use `//go:build integration`; normal package initialization must remain inert.
+
+## T1 Docker evidence contract
+
+`./scripts/test-e2e.sh` defaults to optional local Docker mode. It always runs
+the subprocess and loopback E2E matrix, but visibly skips the Docker artifact
+test when the Docker CLI or daemon is unavailable; that successful command is
+not complete Docker evidence. Set `CHASSIS_E2E_DOCKER_REQUIRED=1` to make Docker
+CLI/daemon absence a hard failure. Hosted PR/push CI always sets required mode.
+The required negative probe uses an unavailable socket and must fail:
+
+```bash
+CHASSIS_E2E_DOCKER_REQUIRED=1 \
+DOCKER_HOST=unix:///tmp/chassis-missing-docker.sock \
+  ./scripts/test-e2e.sh
+```
 
 ## Selected integration contract
 
@@ -61,14 +76,22 @@ Live suites allocate loopback ports with `testkit.GetFreePort`; do not add a
 second allocator or fixed test port. Callers must still handle its documented
 close/rebind TOCTOU window. Suites must use bounded contexts/readiness probes,
 unique container/resource names, and cleanup that emits container logs/inspect
-on failure.
+on failure. Removal failures are test failures even when the primary assertion
+succeeded; when a primary failure already exists, cleanup diagnostics are added
+without replacing it.
 
 
 ## CI topology and artifacts
 
 Every PR/push keeps deterministic T0/T1 gates service-free and bounded, then runs one package-scoped live integration job per registered public credential-free service: `redpanda`, `qdrant`, `meilisearch`, `otel-collector`, and `inngest`. Each live job sets exactly one `CHASSIS_INTEGRATION_SERVICES` value, calls `./scripts/test-integration.sh <service>`, records the image tag+digest and per-arch manifest digests from `testing/integration-images.tsv`, and uploads diagnostics with `actions/upload-artifact` even when tests fail.
 
-The scheduled/manual nightly job runs only from `schedule` or `workflow_dispatch`. It uses `scripts/test-nightly.sh` to discover all repo fuzz targets, repeat focused race packages, repeat selected live integrations, and perform real Docker `restart` probes against pinned local runtimes. Set `CHASSIS_NIGHTLY_INTEGRATIONS=none` or `CHASSIS_NIGHTLY_RESTART_SERVICES=none` only for bounded local smoke; those selectors are reported as disabled and must not be used as release evidence for live resilience.
+The scheduled/manual nightly job runs only from `schedule` or `workflow_dispatch`. It uses `scripts/test-nightly.sh` to discover all repo fuzz targets, repeat focused race packages, repeat selected live integrations, and perform real Docker `restart` probes against pinned local runtimes. The Redpanda restart probe publishes and consumes through `kafkakit` before restart, keeps the same publisher client across the broker restart, waits for admin and Kafka metadata readiness through the existing admin client, then opens a new subscriber session and proves publish/consume after restart. This matches the documented one-shot subscriber lifecycle after `Close` while proving client reconnection behavior instead of broker health alone. Set `CHASSIS_NIGHTLY_INTEGRATIONS=none` or `CHASSIS_NIGHTLY_RESTART_SERVICES=none` only for bounded local smoke; those selectors are reported as disabled and must not be used as release evidence for live resilience.
+
+Nightly and live CI diagnostics remove only `chassis-*` containers. They write
+`cleanup_complete` only after inventory and all removals succeed; otherwise they
+write `cleanup_failed` and fail the cleanup step. The nightly owner preserves a
+nonzero primary test status while recording any additional cleanup failure, and
+cleanup failure makes an otherwise successful owner fail.
 
 ## Inngest T2/T4 boundary
 
@@ -103,7 +126,7 @@ classified by `go list` and are not hidden by exceptions.
 | root `chassis`, `announcekit`, `authkit`, `cache`, `call`, `config`, `conformance`, `deploy`, `errors`, `flagz`, `grpckit`, `guard`, `health`, `heartbeatkit`, `httpkit`, `idemkit`, `lifecycle`, `logz`, `metrics`, `orchestration`, `phasekit`, `phasekit/phasetest`, `registry`, `registrykit`, `seal`, `secval`, `testkit`, `tick`, `tracekit`, `webhook`, `work` | T0 unit/component/contract tests | live external systems only when a package registers a T2/T4 suite |
 | `clikit` and `examples/05-clikit` consumer fixture | T1 subprocess build/version/JSON/failure/signal/freshness tests | no broader CLI behavior is implied |
 | `cmd/demo-shutdown`, `examples/01-cli`, `examples/02-service`, `examples/03-client`, `examples/04-full-service` | T0 compile and package-level deterministic dependencies | broader binary/TCP/Docker behavior is T1/T2 when registered |
-| `kafkakit`, `schemakit` | T2 pinned Redpanda plus T0 deterministic protocol/error tests | broker restart is covered by T3 nightly; longer soak and hosted broker variants remain T3/T4 |
+| `kafkakit`, `schemakit` | T2 pinned Redpanda plus T0 deterministic protocol/error tests | T3 proves the same publisher before/after broker restart and an explicit new one-shot subscriber session after readiness; longer soak and hosted broker variants remain T3/T4 |
 | `qdrantkit`, `meilikit` | T2 pinned local Qdrant and Meilisearch plus T0 HTTP/client contract tests | local service restart is covered by T3 nightly; provider/hosted variants are T4 if introduced |
 | `otel`, `internal/otelutil` | T2 pinned collector-contrib with machine-readable trace+metric receipt plus T0 SDK/contract tests | collector restart is covered by T3 nightly; soak/telemetry-volume scenarios remain T3 extensions |
 | `inngestkit` | T2 pinned credential-free Dev Server plus T0 protocol/config tests | local dev-server restart is covered by T3 nightly; credentialed cloud/self-hosted production execution is T4/manual |
@@ -126,7 +149,10 @@ DOCKER_HOST=unix:///tmp/chassis-missing-docker.sock ./scripts/test-integration.s
 go test ./...
 go test -race ./...
 ./scripts/check-coverage.sh
+# Optional local Docker mode; a Docker skip is visible and is not complete T1 Docker proof:
 ./scripts/test-e2e.sh
+# Required Docker evidence (the mode used by hosted CI):
+CHASSIS_E2E_DOCKER_REQUIRED=1 ./scripts/test-e2e.sh
 go vet ./...
 git diff --check
 # Scheduled/manual T3 with all defaults: extended fuzz, focused race repetitions, repeated T2, and real restart probes:

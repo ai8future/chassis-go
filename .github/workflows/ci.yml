@@ -154,7 +154,7 @@ jobs:
         run: |
           set -euo pipefail
           set +e
-          ./scripts/test-e2e.sh 2>&1 | tee artifacts/deterministic/e2e.log
+          CHASSIS_E2E_DOCKER_REQUIRED=1 ./scripts/test-e2e.sh 2>&1 | tee artifacts/deterministic/e2e.log
           status="${PIPESTATUS[0]}"
           set -e
           exit "$status"
@@ -255,17 +255,7 @@ jobs:
         if: ${{ always() }}
         shell: bash
         run: |
-          set +e
-          out="artifacts/live/${{ matrix.service }}"
-          docker ps -a >"$out/docker-ps.txt" 2>&1
-          docker images --digests >"$out/docker-images.txt" 2>&1
-          for container in $(docker ps -a --format '{{.Names}}' | grep '^chassis-' || true); do
-            safe="${container//[^A-Za-z0-9_.-]/_}"
-            docker logs --tail 300 "$container" >"$out/${safe}.logs.txt" 2>&1
-            docker inspect "$container" >"$out/${safe}.inspect.json" 2>&1
-            docker rm -f "$container" >>"$out/cleanup.txt" 2>&1
-          done
-          printf 'cleanup_complete=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$out/cleanup.txt"
+          ./scripts/cleanup-ci-docker.sh "artifacts/live/${{ matrix.service }}" 300
 
       - name: Upload live diagnostics
         if: ${{ always() }}
@@ -293,33 +283,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          set +e
+          mkdir -p artifacts/nightly
           CHASSIS_NIGHTLY_ARTIFACT_DIR=artifacts/nightly \
           CHASSIS_FUZZTIME=60s \
           CHASSIS_NIGHTLY_RACE_COUNT=3 \
           CHASSIS_NIGHTLY_INTEGRATION_COUNT=2 \
           CHASSIS_NIGHTLY_INTEGRATIONS=all \
           CHASSIS_NIGHTLY_RESTART_SERVICES='redpanda qdrant meilisearch otel-collector inngest' \
-            ./scripts/test-nightly.sh 2>&1 | tee artifacts/nightly.log
-          status="${PIPESTATUS[0]}"
-          set -e
-          exit "$status"
+            ./scripts/run-nightly-ci.sh
 
       - name: Collect nightly diagnostics
         if: ${{ always() }}
         shell: bash
         run: |
-          set +e
-          mkdir -p artifacts/nightly
-          docker ps -a >artifacts/nightly/docker-ps.txt 2>&1
-          docker images --digests >artifacts/nightly/docker-images.txt 2>&1
-          for container in $(docker ps -a --format '{{.Names}}' | grep '^chassis-' || true); do
-            safe="${container//[^A-Za-z0-9_.-]/_}"
-            docker logs --tail 500 "$container" >"artifacts/nightly/${safe}.logs.txt" 2>&1
-            docker inspect "$container" >"artifacts/nightly/${safe}.inspect.json" 2>&1
-            docker rm -f "$container" >>artifacts/nightly/cleanup.txt 2>&1
-          done
-          printf 'cleanup_complete=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>artifacts/nightly/cleanup.txt
+          ./scripts/cleanup-ci-docker.sh artifacts/nightly 500
 
       - name: Upload nightly diagnostics
         if: ${{ always() }}

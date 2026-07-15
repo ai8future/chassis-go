@@ -7,41 +7,53 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
 	"time"
 
 	chassis "github.com/ai8future/chassis-go/v11"
+	"github.com/ai8future/chassis-go/v11/internal/integrationtest"
 )
+
+const dockerRequiredEnv = "CHASSIS_E2E_DOCKER_REQUIRED"
 
 func TestFullServiceDockerBuildRunHealthBehaviorAndStop(t *testing.T) {
 	chassis.RequireMajor(11)
-	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skipf("docker unavailable; explicit T1 Docker E2E skip: %v", err)
-	}
-	if out, err := exec.Command("docker", "info").CombinedOutput(); err != nil {
-		t.Skipf("docker daemon unavailable; explicit T1 Docker E2E skip: %v\n%s", err, out)
-	}
+	requireDockerE2E(t)
 
 	tag := fmt.Sprintf("chassis-go-full-service-e2e:%d", time.Now().UnixNano())
 	name := fmt.Sprintf("chassis-go-full-service-e2e-%d", time.Now().UnixNano())
+	var imageOwned, containerOwned bool
+	t.Cleanup(func() {
+		if containerOwned {
+			integrationtest.CleanupDocker(t, name, "full-service E2E")
+		}
+		if imageOwned {
+			integrationtest.CleanupDockerImage(t, tag, "full-service E2E")
+		}
+	})
+
 	adminHostPort := freePort(t)
 	httpHostPort := freePort(t)
 	var diagnostics bytes.Buffer
-	cleanup := func() {
-		_ = runDocker(&diagnostics, 10*time.Second, "rm", "-f", name)
-		_ = runDocker(&diagnostics, 10*time.Second, "rmi", "-f", tag)
-	}
-	defer cleanup()
 
 	root := repoRoot(t)
 	if err := runDockerIn(root, &diagnostics, 5*time.Minute, "build", "-f", "examples/04-full-service/Dockerfile", "-t", tag, "."); err != nil {
+		if _, _, inspectErr := dockerOutput(10*time.Second, "image", "inspect", tag); inspectErr == nil {
+			imageOwned = true
+		}
 		t.Fatalf("docker build failed: %v\n%s", err, diagnostics.String())
 	}
+	imageOwned = true
 	if err := runDocker(&diagnostics, 30*time.Second, "run", "-d", "--name", name, "-p", fmt.Sprintf("%d:8080", httpHostPort), "-p", fmt.Sprintf("%d:9090", adminHostPort), tag); err != nil {
+		if _, _, inspectErr := dockerOutput(10*time.Second, "inspect", name); inspectErr == nil {
+			containerOwned = true
+		}
 		dockerFailure(t, name, diagnostics.String(), "docker run failed: %v", err)
 	}
+	containerOwned = true
 
 	healthURL := fmt.Sprintf("http://127.0.0.1:%d/health", adminHostPort)
 	healthBody := waitForHTTPStatus(t, healthURL, http.StatusOK, 45*time.Second)
@@ -65,6 +77,30 @@ func TestFullServiceDockerBuildRunHealthBehaviorAndStop(t *testing.T) {
 
 	if err := runDocker(&diagnostics, 20*time.Second, "stop", "--time", "8", name); err != nil {
 		dockerFailure(t, name, diagnostics.String(), "docker stop failed: %v", err)
+	}
+}
+
+func requireDockerE2E(t *testing.T) {
+	t.Helper()
+	required := false
+	switch strings.TrimSpace(os.Getenv(dockerRequiredEnv)) {
+	case "", "0":
+	case "1":
+		required = true
+	default:
+		t.Fatalf("%s must be 0 or 1", dockerRequiredEnv)
+	}
+	if _, err := exec.LookPath("docker"); err != nil {
+		if required {
+			t.Fatalf("required T1 Docker E2E needs the Docker CLI: %v", err)
+		}
+		t.Skipf("docker unavailable; explicit optional T1 Docker E2E skip: %v", err)
+	}
+	if out, err := exec.Command("docker", "info").CombinedOutput(); err != nil {
+		if required {
+			t.Fatalf("required T1 Docker E2E needs a healthy Docker daemon: %v\n%s", err, out)
+		}
+		t.Skipf("docker daemon unavailable; explicit optional T1 Docker E2E skip: %v\n%s", err, out)
 	}
 }
 
