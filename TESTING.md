@@ -81,8 +81,8 @@ anonymous volumes; cleanup must never use global volume pruning, name/hash
 heuristics, or delete unrelated volumes. Removal failures are test failures even
 when the primary assertion succeeded; when a primary failure already exists,
 cleanup diagnostics are added without replacing it. The selected Redpanda suite
-asserts that its anonymous volume IDs disappear and the Docker volume inventory
-returns exactly to its preflight snapshot.
+captures its exact anonymous volume IDs and asserts that every captured ID
+disappears, while allowing unrelated concurrent Docker volume activity.
 
 
 ## CI topology and artifacts

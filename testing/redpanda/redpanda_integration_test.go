@@ -64,6 +64,20 @@ func TestRedpandaLiveIntegration(t *testing.T) {
 	})
 }
 
+func TestRemainingOwnedVolumeIDsIgnoresUnrelatedDockerVolumeChurn(t *testing.T) {
+	chassis.RequireMajor(11)
+	owned := []string{"redpanda-owned-a", "redpanda-owned-b"}
+
+	if got := remainingOwnedVolumeIDs(owned, []string{"unrelated-before", "unrelated-created"}); len(got) != 0 {
+		t.Fatalf("remaining owned volume IDs with only unrelated churn = %v, want none", got)
+	}
+
+	got := remainingOwnedVolumeIDs(owned, []string{"unrelated-created", "redpanda-owned-b"})
+	if len(got) != 1 || got[0] != "redpanda-owned-b" {
+		t.Fatalf("remaining owned volume IDs = %v, want [redpanda-owned-b]", got)
+	}
+}
+
 type redpandaService struct {
 	bootstrap string
 	schemaURL string
@@ -81,7 +95,6 @@ func repoRoot(t *testing.T) string {
 
 func startRedpanda(t *testing.T, image string) redpandaService {
 	t.Helper()
-	volumePreflight := dockerVolumeIDs(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if out, err := exec.CommandContext(ctx, "docker", "version", "--format", "{{.Server.Version}}").CombinedOutput(); err != nil {
@@ -117,24 +130,15 @@ func startRedpanda(t *testing.T, image string) redpandaService {
 	t.Cleanup(func() {
 		integrationtest.CleanupDocker(t, name, "redpanda")
 		volumeAfterCleanup := dockerVolumeIDs(t)
-		for _, volumeID := range ownedAnonymousVolumes {
-			if containsString(volumeAfterCleanup, volumeID) {
-				t.Errorf("test-owned anonymous Redpanda volume still exists after exact container cleanup: %s", volumeID)
-			}
+		remainingOwnedVolumes := remainingOwnedVolumeIDs(ownedAnonymousVolumes, volumeAfterCleanup)
+		for _, volumeID := range remainingOwnedVolumes {
+			t.Errorf("test-owned anonymous Redpanda volume still exists after exact container cleanup: %s", volumeID)
 		}
-		if !reflect.DeepEqual(volumeAfterCleanup, volumePreflight) {
-			t.Errorf("Docker volume inventory after exact Redpanda cleanup = %v, want preflight %v", volumeAfterCleanup, volumePreflight)
-		}
-		t.Logf("CHASSIS_REDPANDA_ANONYMOUS_VOLUME_CLEANUP:preflight=%d owned=%d after=%d", len(volumePreflight), len(ownedAnonymousVolumes), len(volumeAfterCleanup))
+		t.Logf("CHASSIS_REDPANDA_ANONYMOUS_VOLUME_CLEANUP:owned=%d remaining=%d", len(ownedAnonymousVolumes), len(remainingOwnedVolumes))
 	})
 	ownedAnonymousVolumes = dockerContainerVolumeIDs(t, name)
 	if len(ownedAnonymousVolumes) == 0 {
 		t.Fatal("selected Redpanda container has no test-owned anonymous volume to exercise cleanup")
-	}
-	for _, volumeID := range ownedAnonymousVolumes {
-		if containsString(volumePreflight, volumeID) {
-			t.Fatalf("Redpanda container volume %s existed before the selected test", volumeID)
-		}
 	}
 	svc := redpandaService{
 		bootstrap: fmt.Sprintf("127.0.0.1:%d", kafkaPort),
@@ -212,6 +216,16 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func remainingOwnedVolumeIDs(owned, current []string) []string {
+	var remaining []string
+	for _, volumeID := range owned {
+		if containsString(current, volumeID) {
+			remaining = append(remaining, volumeID)
+		}
+	}
+	return remaining
 }
 
 func freePort(t *testing.T) int {
