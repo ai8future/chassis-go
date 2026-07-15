@@ -142,6 +142,56 @@ exit 99
 	}
 }
 
+func TestNightlyScriptFailsWhenPackageEnumerationFailsAfterPartialOutput(t *testing.T) {
+	repoRoot := filepath.Clean(filepath.Join("..", ".."))
+	script := filepath.Join(repoRoot, "scripts", "test-nightly.sh")
+	temp := t.TempDir()
+	fakeGo := filepath.Join(temp, "go")
+	const fake = `#!/bin/sh
+if [ "$1" = "list" ] && [ "$2" = "./..." ]; then
+  printf '%s\n' ./good
+  printf '%s\n' "package enumeration boom" >&2
+  exit 17
+fi
+if [ "$1" = "test" ]; then
+  printf 'unexpected go test after failed package enumeration: %s\n' "$*" >&2
+  exit 99
+fi
+printf 'unexpected go invocation: %s\n' "$*" >&2
+exit 99
+`
+	if err := os.WriteFile(fakeGo, []byte(fake), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", script)
+	cmd.Env = append(os.Environ(),
+		"PATH="+temp+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"CHASSIS_NIGHTLY_ARTIFACT_DIR="+filepath.Join(temp, "artifacts"),
+		"CHASSIS_FUZZTIME=1s",
+	)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("nightly script succeeded despite package enumeration failure:\n%s", output)
+	}
+	for _, want := range []string{
+		"package enumeration boom",
+		"nightly package enumeration failed; refusing false-green nightly fuzz",
+		"nightly exit status: 1",
+	} {
+		if !strings.Contains(string(output), want) {
+			t.Fatalf("output missing %q:\n%s", want, output)
+		}
+	}
+	for _, forbidden := range []string{
+		"unexpected go test after failed package enumeration",
+		"fuzz targets completed",
+	} {
+		if strings.Contains(string(output), forbidden) {
+			t.Fatalf("nightly continued after package enumeration failure (%q):\n%s", forbidden, output)
+		}
+	}
+}
+
 func TestOTelReceiptsUseWritableIsolatedDurablePaths(t *testing.T) {
 	script := readRepoFile(t, "scripts", "test-nightly.sh")
 	for _, want := range []string{
