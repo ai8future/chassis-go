@@ -50,8 +50,7 @@ func TestInngestDevServerLiveIntegration(t *testing.T) {
 }
 
 type inngestService struct {
-	container string
-	baseURL   string
+	baseURL string
 }
 
 func startInngestDevServer(t *testing.T, image string) inngestService {
@@ -72,7 +71,7 @@ func startInngestDevServer(t *testing.T, image string) inngestService {
 		t.Fatalf("start inngest dev-server container with pinned image %s: %v\n%s", image, err, out)
 	}
 	t.Cleanup(func() { integrationtest.CleanupDocker(t, name, "inngest") })
-	svc := inngestService{container: name, baseURL: fmt.Sprintf("http://127.0.0.1:%d", port)}
+	svc := inngestService{baseURL: fmt.Sprintf("http://127.0.0.1:%d", port)}
 	integrationtest.WaitFor(t, 45*time.Second, func() (bool, string) {
 		resp, err := http.Get(svc.baseURL + "/")
 		if err != nil {

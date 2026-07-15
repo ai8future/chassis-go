@@ -96,7 +96,7 @@ func TestQdrantLiveIntegration(t *testing.T) {
 	})
 }
 
-type qdrantService struct{ container, baseURL string }
+type qdrantService struct{ baseURL string }
 
 func startQdrant(t *testing.T, image string) qdrantService {
 	t.Helper()
@@ -111,7 +111,7 @@ func startQdrant(t *testing.T, image string) qdrantService {
 		t.Fatalf("start qdrant container with pinned image %s: %v\n%s", image, err, out)
 	}
 	t.Cleanup(func() { integrationtest.CleanupDocker(t, name, "qdrant") })
-	svc := qdrantService{container: name, baseURL: fmt.Sprintf("http://127.0.0.1:%d", port)}
+	svc := qdrantService{baseURL: fmt.Sprintf("http://127.0.0.1:%d", port)}
 	integrationtest.WaitFor(t, 60*time.Second, func() (bool, string) {
 		resp, err := http.Get(svc.baseURL + "/collections")
 		if err != nil {

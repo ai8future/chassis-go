@@ -9,6 +9,7 @@
 - Add an honest five-tier `TESTING.md`, thin tier scripts, a selected-service integration harness that cannot silently mark skipped suites complete, and a strict expiring coverage-exception policy.
 
 ### Changed
+- Remove unread container fields from live-integration fixtures and obsolete range-variable shadow copies while preserving exact test behavior. (Codex:gpt-5.5-high)
 - Classify `github.com/twmb/franz-go/pkg/kmsg` as a direct dependency so the checked-in module graph matches integration-test imports and remains `go mod tidy -diff` clean.
 - Move G006 hosted CI to the current official major action tags for checkout and artifact upload while keeping setup-go on its current major.
 - Harden CI log piping so deterministic, live, and nightly jobs preserve exit status while still writing uploadable diagnostics.

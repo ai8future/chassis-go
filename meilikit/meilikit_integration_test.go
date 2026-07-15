@@ -109,7 +109,7 @@ func isMeiliBadRequest(err error) bool {
 	return errors.As(err, &me) && me.StatusCode == http.StatusBadRequest && me.Code != ""
 }
 
-type meiliService struct{ container, baseURL string }
+type meiliService struct{ baseURL string }
 
 func startMeili(t *testing.T, image string) meiliService {
 	t.Helper()
@@ -124,7 +124,7 @@ func startMeili(t *testing.T, image string) meiliService {
 		t.Fatalf("start meilisearch container with pinned image %s: %v\n%s", image, err, out)
 	}
 	t.Cleanup(func() { integrationtest.CleanupDocker(t, name, "meilisearch") })
-	svc := meiliService{container: name, baseURL: fmt.Sprintf("http://127.0.0.1:%d", port)}
+	svc := meiliService{baseURL: fmt.Sprintf("http://127.0.0.1:%d", port)}
 	integrationtest.WaitFor(t, 60*time.Second, func() (bool, string) {
 		resp, err := http.Get(svc.baseURL + "/health")
 		if err != nil {

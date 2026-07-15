@@ -67,7 +67,6 @@ func TestOTelCollectorContribLiveIntegration(t *testing.T) {
 }
 
 type collectorService struct {
-	container   string
 	healthURL   string
 	otlpPort    int
 	receiptsDir string
@@ -98,7 +97,6 @@ func startCollector(t *testing.T, image string) collectorService {
 	}
 	t.Cleanup(func() { integrationtest.CleanupDocker(t, name, "otel-collector") })
 	svc := collectorService{
-		container:   name,
 		healthURL:   fmt.Sprintf("http://127.0.0.1:%d/", healthPort),
 		otlpPort:    otlpPort,
 		receiptsDir: receiptsDir,

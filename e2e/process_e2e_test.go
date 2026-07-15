@@ -44,7 +44,6 @@ func TestShippedExecutablesBuildAndReportVersion(t *testing.T) {
 		{name: "demo-shutdown", pkg: "./cmd/demo-shutdown", appVersion: chassis.Version},
 	}
 	for _, bin := range bins {
-		bin := bin
 		t.Run(bin.name, func(t *testing.T) {
 			exe := buildBinary(t, bin.name, bin.pkg)
 			stdout, stderr, code := runCommand(t, 5*time.Second, nil, exe, "--version")

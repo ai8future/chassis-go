@@ -64,7 +64,6 @@ func TestRedpandaLiveIntegration(t *testing.T) {
 }
 
 type redpandaService struct {
-	container string
 	bootstrap string
 	schemaURL string
 	adminURL  string
@@ -124,7 +123,6 @@ func startRedpanda(t *testing.T, image string) redpandaService {
 		_, _ = exec.Command("docker", "rm", "-f", name).CombinedOutput()
 	})
 	svc := redpandaService{
-		container: name,
 		bootstrap: fmt.Sprintf("127.0.0.1:%d", kafkaPort),
 		schemaURL: fmt.Sprintf("http://127.0.0.1:%d", schemaPort),
 		adminURL:  fmt.Sprintf("http://127.0.0.1:%d", adminPort),
@@ -340,7 +338,6 @@ func testMultiTopicSubscription(t *testing.T, bootstrap string, admin *kgo.Clien
 	seen := make(chan string, len(topics))
 	handlers := map[string]kafkakit.HandlerFunc{}
 	for _, topic := range topics {
-		topic := topic
 		handlers[topic] = func(_ context.Context, evt kafkakit.Event) error {
 			seen <- evt.Subject
 			return nil
