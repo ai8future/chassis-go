@@ -78,7 +78,7 @@ func startCollector(t *testing.T, image string) collectorService {
 	integrationtest.RequireDocker(t, "otel-collector")
 	otlpPort := freePort(t)
 	healthPort := freePort(t)
-	receiptsDir := t.TempDir()
+	receiptsDir := prepareCollectorReceiptsDir(t)
 	name := "chassis-otel-" + integrationNameSuffix()
 	configPath := filepath.Join(repoRoot(t), "otel", "testdata", "collector-config.yaml")
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -116,6 +116,34 @@ func startCollector(t *testing.T, image string) collectorService {
 		return true, string(body)
 	})
 	return svc
+}
+
+func prepareCollectorReceiptsDir(t *testing.T) string {
+	t.Helper()
+	dir := strings.TrimSpace(os.Getenv("CHASSIS_OTEL_RECEIPT_DIR"))
+	if dir == "" {
+		dir = t.TempDir()
+	} else {
+		if !filepath.IsAbs(dir) {
+			t.Fatalf("CHASSIS_OTEL_RECEIPT_DIR must be absolute, got %q", dir)
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("create collector receipt directory: %v", err)
+		}
+	}
+
+	// The pinned collector runs as UID/GID 10001. Limit cross-user write access
+	// to this dedicated bind-mount directory and restore host-only permissions
+	// after the container has been removed.
+	if err := os.Chmod(dir, 0o777); err != nil {
+		t.Fatalf("make collector receipt directory writable: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(dir, 0o755); err != nil {
+			t.Errorf("restore collector receipt directory permissions: %v", err)
+		}
+	})
+	return dir
 }
 
 type collectorReceipt struct {

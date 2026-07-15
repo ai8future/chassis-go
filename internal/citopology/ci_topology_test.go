@@ -86,6 +86,35 @@ func TestNightlyScriptDiscoversFuzzTargetsAndRunsRealResilienceSelectors(t *test
 	}
 }
 
+func TestOTelReceiptsUseWritableIsolatedDurablePaths(t *testing.T) {
+	script := readRepoFile(t, "scripts", "test-nightly.sh")
+	for _, want := range []string{
+		`mktemp -d "$root/${label}.XXXXXX"`,
+		`chmod 0777 "$dir"`,
+		`CHASSIS_OTEL_RECEIPT_DIR="$receipts_dir"`,
+		`assert_otel_receipts "$receipts_dir"`,
+		`traces.json metrics.json receipt.json`,
+		`-exec chmod 0755 {} +`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("nightly OTel receipt path missing %q", want)
+		}
+	}
+
+	integration := readRepoFile(t, "otel", "otel_integration_test.go")
+	for _, want := range []string{
+		`os.Getenv("CHASSIS_OTEL_RECEIPT_DIR")`,
+		`filepath.IsAbs(dir)`,
+		`os.Chmod(dir, 0o777)`,
+		`os.Chmod(dir, 0o755)`,
+		`receiptsDir + ":/receipts"`,
+	} {
+		if !strings.Contains(integration, want) {
+			t.Fatalf("OTel live integration topology missing %q", want)
+		}
+	}
+}
+
 func TestCoverageScriptCanPreserveProfileArtifact(t *testing.T) {
 	script := readRepoFile(t, "scripts", "check-coverage.sh")
 	for _, want := range []string{"CHASSIS_COVERAGE_PROFILE", "mkdir -p \"$(dirname \"$profile\")\"", "-coverprofile=\"$profile\""} {

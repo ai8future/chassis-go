@@ -9,6 +9,7 @@
 - Add an honest five-tier `TESTING.md`, thin tier scripts, a selected-service integration harness that cannot silently mark skipped suites complete, and a strict expiring coverage-exception policy.
 
 ### Changed
+- Classify `github.com/twmb/franz-go/pkg/kmsg` as a direct dependency so the checked-in module graph matches integration-test imports and remains `go mod tidy -diff` clean.
 - Move G006 hosted CI to the current official major action tags for checkout and artifact upload while keeping setup-go on its current major.
 - Harden CI log piping so deterministic, live, and nightly jobs preserve exit status while still writing uploadable diagnostics.
 - Extend `errors` problem JSON with stable `code`, `retryable`, `retry_after`, retry helpers, and `Retry-After` response headers.
@@ -17,7 +18,12 @@
 - Route the hosted coverage gate through the repository checker so aggregate and library floors, entrypoint classification, and temporary exceptions share one machine-enforced source of truth.
 - Raise the machine-enforced aggregate coverage floor to 85% and remove all temporary library-package exceptions after closing their deterministic gaps.
 
+### Fixed
+- Make the pinned OpenTelemetry Collector's UID/GID 10001 able to write only to dedicated receipt bind mounts without privileged or root execution, restoring host-only directory permissions during cleanup.
+- Retain nonempty machine-readable trace, metric, and summary receipts for every OTel nightly integration repetition in unique artifact subdirectories instead of deleting them with `t.TempDir`.
+
 ### Tests
+- Add G006 topology assertions for isolated writable OTel bind mounts, durable per-repetition receipt paths, nonempty receipt enforcement, and permission restoration.
 - Close verifier-found per-file `RequireMajor(11)` gaps in the Docker E2E and integration helper tests and lock current action pin expectations in CI topology tests.
 - Add static CI/nightly topology regressions, integration image-pin failure regressions, bounded nightly smoke coverage, and a race-stable lakekit bounded-response assertion.
 - Add G005 live adapter contract suites for pinned Qdrant, Meilisearch, OpenTelemetry Collector contrib, and credential-free Inngest Dev Server, with immutable tag+digest image pins, selected-suite hard failures, unselected skips, all-suite enumeration, machine-readable OTel trace/metric receipts, and retained T4/G006 boundaries.

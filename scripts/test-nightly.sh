@@ -5,6 +5,9 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 artifact_dir="${CHASSIS_NIGHTLY_ARTIFACT_DIR:-artifacts/nightly-$(date -u +%Y%m%dT%H%M%SZ)}"
+if [[ "$artifact_dir" != /* ]]; then
+  artifact_dir="$repo_root/$artifact_dir"
+fi
 mkdir -p "$artifact_dir"
 summary="$artifact_dir/summary.txt"
 : >"$summary"
@@ -76,6 +79,9 @@ cleanup_containers() {
     [[ -z "$container" ]] && continue
     docker rm -f "$container" >>"$artifact_dir/container-cleanup.txt" 2>&1 || true
   done
+  if [[ -d "$artifact_dir/otel-receipts" ]]; then
+    find "$artifact_dir/otel-receipts" -mindepth 1 -maxdepth 1 -type d -exec chmod 0755 {} +
+  fi
 }
 
 on_exit() {
@@ -160,6 +166,25 @@ run_race_repetitions() {
   done
 }
 
+new_otel_receipts_dir() {
+  local label="$1" root="$artifact_dir/otel-receipts" dir
+  mkdir -p "$root"
+  dir="$(mktemp -d "$root/${label}.XXXXXX")"
+  chmod 0777 "$dir"
+  printf '%s' "$dir"
+}
+
+assert_otel_receipts() {
+  local dir="$1" receipt
+  for receipt in traces.json metrics.json receipt.json; do
+    if [[ ! -s "$dir/$receipt" ]]; then
+      printf 'otel integration receipt is missing or empty: %s\n' "$dir/$receipt" >&2
+      return 1
+    fi
+  done
+  log "otel integration receipts retained: $dir"
+}
+
 run_integration_repetitions() {
   local selected="${CHASSIS_NIGHTLY_INTEGRATIONS:-all}"
   local count="${CHASSIS_NIGHTLY_INTEGRATION_COUNT:-2}"
@@ -167,9 +192,17 @@ run_integration_repetitions() {
     log 'integration repetitions disabled by CHASSIS_NIGHTLY_INTEGRATIONS=none'
     return 0
   fi
-  local i
+  local i receipts_dir
   for ((i = 1; i <= count; i++)); do
-    run_logged "integration-${selected}-repeat-${i}" ./scripts/test-integration.sh "$selected"
+    if [[ "$selected" == "all" || "$selected" == "otel-collector" ]]; then
+      receipts_dir="$(new_otel_receipts_dir "integration-${i}")"
+      run_logged "integration-${selected}-repeat-${i}" env \
+        CHASSIS_OTEL_RECEIPT_DIR="$receipts_dir" \
+        ./scripts/test-integration.sh "$selected"
+      assert_otel_receipts "$receipts_dir"
+    else
+      run_logged "integration-${selected}-repeat-${i}" ./scripts/test-integration.sh "$selected"
+    fi
   done
 }
 
@@ -201,8 +234,7 @@ restart_probe_otel_collector() {
   local image="$1" name="chassis-nightly-otel-$$" otlp_port health_port receipts_dir config_path
   otlp_port="$(free_port)"
   health_port="$(free_port)"
-  receipts_dir="$artifact_dir/otel-receipts"
-  mkdir -p "$receipts_dir"
+  receipts_dir="$(new_otel_receipts_dir restart)"
   config_path="$repo_root/otel/testdata/collector-config.yaml"
   log "starting restart probe service=otel-collector image=$image container=$name"
   docker run -d --name "$name" --pull=missing \
