@@ -1,4 +1,8 @@
 # service<TAB>package
-# G001 intentionally registers no live suites. G004/G005 add an entry only
-# when that package owns a build-tagged integrationtest.Run suite.
+# Live suites are opt-in through scripts/test-integration.sh and build tag
+# integration. Default go test ./... remains live-service-free.
 redpanda	./testing/redpanda
+qdrant	./qdrantkit
+meilisearch	./meilikit
+otel-collector	./otel
+inngest	./inngestkit

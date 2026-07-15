@@ -3,12 +3,15 @@
 package integrationtest
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 const (
@@ -143,4 +146,108 @@ func validateService(service string) error {
 		}
 	}
 	return nil
+}
+
+// LoadPinnedImage returns the immutable image reference registered for service.
+// Selected live suites call this so missing or mutable image config is a hard
+// failure, not a silent skip.
+func LoadPinnedImage(t *testing.T, service string) string {
+	t.Helper()
+	if err := validateService(service); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(repoRoot(t), "testing", "integration-images.tsv")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("selected integration suite is missing pinned image config %s: %v", path, err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Split(line, "\t")
+		if len(fields) != 5 {
+			t.Fatalf("invalid pinned image config row %q", line)
+		}
+		if fields[0] != service {
+			continue
+		}
+		image := strings.TrimSpace(fields[1])
+		if !strings.Contains(image, "@sha256:") || strings.Contains(image, ":latest") {
+			t.Fatalf("%s image must be an immutable non-latest digest pin, got %q", service, image)
+		}
+		for _, manifest := range fields[2:4] {
+			if !strings.HasPrefix(strings.TrimSpace(manifest), "sha256:") {
+				t.Fatalf("%s image row must include per-arch manifest digests, got %q", service, line)
+			}
+		}
+		t.Logf("CHASSIS_INTEGRATION_IMAGE:%s:%s", service, image)
+		return image
+	}
+	t.Fatalf("selected integration suite is missing pinned image config for %q", service)
+	return ""
+}
+
+// RequireDocker hard-fails selected suites when Docker is unavailable or
+// unhealthy. Selected live suites must not skip required service startup.
+func RequireDocker(t *testing.T, service string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "docker", "version", "--format", "{{.Server.Version}}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("selected %s integration requires healthy Docker: %v\n%s", service, err, out)
+	}
+}
+
+// CleanupDocker removes a suite-owned container and logs diagnostics on failure.
+func CleanupDocker(t *testing.T, name, service string) {
+	t.Helper()
+	if t.Failed() {
+		if logs, err := exec.Command("docker", "logs", "--tail", "200", name).CombinedOutput(); err == nil {
+			t.Logf("%s logs:\n%s", service, logs)
+		}
+		if inspect, err := exec.Command("docker", "inspect", name).CombinedOutput(); err == nil {
+			t.Logf("%s inspect:\n%s", service, inspect)
+		}
+	}
+	_, _ = exec.Command("docker", "rm", "-f", name).CombinedOutput()
+}
+
+// WaitFor polls readiness with a bounded context and reports the last observed
+// diagnostic on timeout.
+func WaitFor(t *testing.T, timeout time.Duration, probe func() (bool, string)) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	last := "probe did not run"
+	for time.Now().Before(deadline) {
+		ok, detail := probe()
+		if detail != "" {
+			last = detail
+		}
+		if ok {
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Fatalf("readiness timed out after %s: %s", timeout, last)
+}
+
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("resolve working directory: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("resolve repository root: go.mod not found")
+		}
+		dir = parent
+	}
 }

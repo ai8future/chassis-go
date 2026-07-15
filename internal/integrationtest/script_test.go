@@ -18,6 +18,7 @@ func TestIntegrationScriptRejectsFalseSuccess(t *testing.T) {
 	tests := []struct {
 		name     string
 		registry string
+		images   string
 		request  string
 		mode     string
 		wantOK   bool
@@ -37,6 +38,19 @@ func TestIntegrationScriptRejectsFalseSuccess(t *testing.T) {
 			if err := os.WriteFile(registry, []byte(tt.registry), 0o600); err != nil {
 				t.Fatal(err)
 			}
+			images := filepath.Join(temp, "images.tsv")
+			imageRows := tt.images
+			if imageRows == "" {
+				for _, line := range strings.Split(tt.registry, "\n") {
+					fields := strings.Split(line, "\t")
+					if len(fields) >= 2 && fields[0] != "" && !strings.HasPrefix(fields[0], "#") {
+						imageRows += fields[0] + "\texample/" + fields[0] + ":v1@sha256:abc\tsha256:amd\tsha256:arm\thttps://example.test\n"
+					}
+				}
+			}
+			if err := os.WriteFile(images, []byte(imageRows), 0o600); err != nil {
+				t.Fatal(err)
+			}
 			fakeGo := filepath.Join(temp, "go")
 			const fake = `#!/bin/sh
 case "$FAKE_GO_MODE" in
@@ -53,6 +67,7 @@ esac
 			cmd.Env = append(os.Environ(),
 				"PATH="+temp+string(os.PathListSeparator)+os.Getenv("PATH"),
 				"CHASSIS_INTEGRATION_REGISTRY="+registry,
+				"CHASSIS_INTEGRATION_IMAGES="+images,
 				"FAKE_GO_MODE="+tt.mode,
 			)
 			output, err := cmd.CombinedOutput()

@@ -15,6 +15,8 @@
 - Raise the machine-enforced aggregate coverage floor to 85% and remove all temporary library-package exceptions after closing their deterministic gaps.
 
 ### Tests
+- Add G005 live adapter contract suites for pinned Qdrant, Meilisearch, OpenTelemetry Collector contrib, and credential-free Inngest Dev Server, with immutable tag+digest image pins, selected-suite hard failures, unselected skips, all-suite enumeration, machine-readable OTel trace/metric receipts, and retained T4/G006 boundaries.
+- Add deterministic integration helper coverage so the 85% aggregate and 75% library coverage policy remains exception-free.
 - Add a selected `redpanda` live integration suite with an immutable Redpanda image pin, Docker orchestration, module publish/consume, raw DLQ key/header preservation, multi-topic and same-group redistribution, bounded shutdown, and schemakit live Registry.Register/serialize/deserialize/error mapping coverage.
 - Add a build-tagged process/TCP/Docker E2E suite for shipped executables, loopback gRPC/HTTP readiness, functional success/error paths, graceful shutdown, port release, and full-service Docker build/run/health diagnostics.
 - Cover strict selector parsing, selected success/failure/skip markers, missing configuration, empty/unknown integration suites, false-green script exits, malformed coverage profiles/policies, and expired, unmatched, stale, or insufficient exceptions; verify repository-wide test, race, coverage, and vet gates without adding a Go dependency.
@@ -22,6 +24,7 @@
 - Close adjacent deterministic root freshness, conformance, idempotency, CLI output, retry-option, tracing-carrier, logging, and adapter gaps required to reach 85.1% aggregate coverage with every library package at or above 75%.
 
 ### Documentation
+- Document the current T2 live suite registry, image-pin proof contract, credential-free Inngest Dev Server boundary, hosted T4 limits, and G006 restart/soak/nightly deferral.
 - Document Windmill middleware ordering, resource provisioning, canonical trace IDs, idempotency limits, and conformance usage.
 
 *(Codex:gpt-5.5-high)*
