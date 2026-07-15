@@ -20,10 +20,12 @@
 - Raise the machine-enforced aggregate coverage floor to 85% and remove all temporary library-package exceptions after closing their deterministic gaps.
 
 ### Fixed
+- Fail nightly fuzz discovery on any per-package `go test -list '^Fuzz'` error and keep discovery stderr visible, preventing packages from being silently omitted when another package has fuzz targets. (Codex:gpt-5.5-high)
 - Make the pinned OpenTelemetry Collector's UID/GID 10001 able to write only to dedicated receipt bind mounts without privileged or root execution, restoring host-only directory permissions during cleanup.
 - Retain nonempty machine-readable trace, metric, and summary receipts for every OTel nightly integration repetition in unique artifact subdirectories instead of deleting them with `t.TempDir`.
 
 ### Tests
+- Add a topology regression and executable fake-`go` negative proof for nightly fuzz discovery failures, then verify a bounded nightly smoke without live integrations or restart probes. (Codex:gpt-5.5-high)
 - Add G006 topology assertions for isolated writable OTel bind mounts, durable per-repetition receipt paths, nonempty receipt enforcement, and permission restoration.
 - Close verifier-found per-file `RequireMajor(11)` gaps in the Docker E2E and integration helper tests and lock current action pin expectations in CI topology tests.
 - Add static CI/nightly topology regressions, integration image-pin failure regressions, bounded nightly smoke coverage, and a race-stable lakekit bounded-response assertion.

@@ -2,6 +2,7 @@ package citopology_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -68,6 +69,7 @@ func TestNightlyScriptDiscoversFuzzTargetsAndRunsRealResilienceSelectors(t *test
 	for _, want := range []string{
 		"go list ./...",
 		"-list '^Fuzz'",
+		"fuzz target discovery failed for package %s",
 		"-fuzz=\"^${fuzz}$\"",
 		"CHASSIS_NIGHTLY_RACE_PACKAGES:-./lifecycle ./work ./kafkakit",
 		"CHASSIS_NIGHTLY_INTEGRATIONS:-all",
@@ -83,6 +85,60 @@ func TestNightlyScriptDiscoversFuzzTargetsAndRunsRealResilienceSelectors(t *test
 		if !strings.Contains(script, want) {
 			t.Fatalf("nightly script missing %q", want)
 		}
+	}
+	if strings.Contains(script, "2>/dev/null") {
+		t.Fatal("nightly fuzz discovery must not suppress discovery stderr")
+	}
+}
+
+func TestNightlyScriptFailsWhenOnePackageFuzzDiscoveryFails(t *testing.T) {
+	repoRoot := filepath.Clean(filepath.Join("..", ".."))
+	script := filepath.Join(repoRoot, "scripts", "test-nightly.sh")
+	temp := t.TempDir()
+	fakeGo := filepath.Join(temp, "go")
+	const fake = `#!/bin/sh
+if [ "$1" = "list" ] && [ "$2" = "./..." ]; then
+  printf '%s\n' ./good ./bad
+  exit 0
+fi
+if [ "$1" = "test" ] && [ "$2" = "./good" ] && [ "$6" = "^Fuzz" ]; then
+  printf '%s\n' FuzzGood
+  exit 0
+fi
+if [ "$1" = "test" ] && [ "$2" = "./bad" ] && [ "$6" = "^Fuzz" ]; then
+  printf '%s\n' "bad discovery boom" >&2
+  exit 13
+fi
+if [ "$1" = "test" ] && [ "$2" = "./good" ]; then
+  exit 0
+fi
+printf 'unexpected go invocation: %s\n' "$*" >&2
+exit 99
+`
+	if err := os.WriteFile(fakeGo, []byte(fake), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", script)
+	cmd.Env = append(os.Environ(),
+		"PATH="+temp+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"CHASSIS_NIGHTLY_ARTIFACT_DIR="+filepath.Join(temp, "artifacts"),
+		"CHASSIS_FUZZTIME=1s",
+	)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("nightly script succeeded despite one package discovery failure:\n%s", output)
+	}
+	for _, want := range []string{
+		"bad discovery boom",
+		"fuzz target discovery failed for package ./bad",
+		"nightly exit status: 1",
+	} {
+		if !strings.Contains(string(output), want) {
+			t.Fatalf("output missing %q:\n%s", want, output)
+		}
+	}
+	if strings.Contains(string(output), "fuzz targets completed: 1") {
+		t.Fatalf("nightly reported false-green fuzz completion after discovery failure:\n%s", output)
 	}
 }
 

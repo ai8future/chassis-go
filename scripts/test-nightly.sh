@@ -142,13 +142,18 @@ assert_docker() {
 run_fuzz_targets() {
   local fuzztime="${CHASSIS_FUZZTIME:-60s}"
   local discovered=0
+  local targets
   while IFS= read -r package; do
     [[ -z "$package" ]] && continue
+    if ! targets="$(go test "$package" -run '^$' -list '^Fuzz' | awk '/^Fuzz/ {print $1}')"; then
+      printf 'fuzz target discovery failed for package %s\n' "$package" >&2
+      return 1
+    fi
     while IFS= read -r fuzz; do
       [[ -z "$fuzz" ]] && continue
       discovered=$((discovered + 1))
       run_logged "fuzz-${package##*/}-${fuzz}" go test "$package" -run '^$' -fuzz="^${fuzz}$" -fuzztime="$fuzztime"
-    done < <(go test "$package" -run '^$' -list '^Fuzz' 2>/dev/null | awk '/^Fuzz/ {print $1}')
+    done <<<"$targets"
   done < <(go list ./...)
   if (( discovered == 0 )); then
     printf 'no fuzz targets discovered; refusing false-green nightly fuzz\n' >&2
