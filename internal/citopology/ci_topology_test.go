@@ -250,6 +250,10 @@ case "$1" in
   images) printf 'image inventory\n'; exit 0 ;;
   logs|inspect) printf 'diagnostics\n'; exit 0 ;;
   rm)
+    if [ "$#" -ne 4 ] || [ "$2" != -f ] || [ "$3" != -v ] || [ "$4" != chassis-owned-container ]; then
+      printf 'CI cleanup must remove exact owned container volumes: %s\n' "$*" >&2
+      exit 97
+    fi
     if [ "${FAKE_DOCKER_RM_STATUS:-0}" -ne 0 ]; then
       printf 'forced CI cleanup failure\n' >&2
       exit "$FAKE_DOCKER_RM_STATUS"
@@ -326,7 +330,18 @@ case "$1" in
   run) printf 'fake-container-id\n'; exit 0 ;;
   restart) printf '%s\n' "$2"; exit 0 ;;
   logs|inspect) printf 'fake diagnostics\n'; exit 0 ;;
-  rm) printf 'forced nightly cleanup failure\n' >&2; exit 31 ;;
+  rm)
+    if [ "$#" -ne 4 ] || [ "$2" != -f ] || [ "$3" != -v ]; then
+      printf 'nightly cleanup must remove exact owned container volumes: %s\n' "$*" >&2
+      exit 97
+    fi
+    case "$4" in
+      chassis-nightly-qdrant-*) ;;
+      *) printf 'nightly cleanup targeted unexpected container: %s\n' "$4" >&2; exit 98 ;;
+    esac
+    printf 'forced nightly cleanup failure\n' >&2
+    exit 31
+    ;;
   *) printf 'unexpected docker invocation: %s\n' "$*" >&2; exit 99 ;;
 esac
 `

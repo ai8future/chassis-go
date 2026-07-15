@@ -76,9 +76,13 @@ Live suites allocate loopback ports with `testkit.GetFreePort`; do not add a
 second allocator or fixed test port. Callers must still handle its documented
 close/rebind TOCTOU window. Suites must use bounded contexts/readiness probes,
 unique container/resource names, and cleanup that emits container logs/inspect
-on failure. Removal failures are test failures even when the primary assertion
-succeeded; when a primary failure already exists, cleanup diagnostics are added
-without replacing it.
+on failure. Exact suite-owned containers are removed with their attached
+anonymous volumes; cleanup must never use global volume pruning, name/hash
+heuristics, or delete unrelated volumes. Removal failures are test failures even
+when the primary assertion succeeded; when a primary failure already exists,
+cleanup diagnostics are added without replacing it. The selected Redpanda suite
+asserts that its anonymous volume IDs disappear and the Docker volume inventory
+returns exactly to its preflight snapshot.
 
 
 ## CI topology and artifacts
@@ -87,7 +91,9 @@ Every PR/push keeps deterministic T0/T1 gates service-free and bounded, then run
 
 The scheduled/manual nightly job runs only from `schedule` or `workflow_dispatch`. It uses `scripts/test-nightly.sh` to discover all repo fuzz targets, repeat focused race packages, repeat selected live integrations, and perform real Docker `restart` probes against pinned local runtimes. The Redpanda restart probe publishes and consumes through `kafkakit` before restart, keeps the same publisher client across the broker restart, waits for admin and Kafka metadata readiness through the existing admin client, then opens a new subscriber session and proves publish/consume after restart. This matches the documented one-shot subscriber lifecycle after `Close` while proving client reconnection behavior instead of broker health alone. Set `CHASSIS_NIGHTLY_INTEGRATIONS=none` or `CHASSIS_NIGHTLY_RESTART_SERVICES=none` only for bounded local smoke; those selectors are reported as disabled and must not be used as release evidence for live resilience.
 
-Nightly and live CI diagnostics remove only `chassis-*` containers. They write
+Nightly and live CI diagnostics remove only exact discovered `chassis-*`
+containers together with volumes attached to those containers. They never run a
+global volume prune or infer volume ownership from a volume name/hash. They write
 `cleanup_complete` only after inventory and all removals succeed; otherwise they
 write `cleanup_failed` and fail the cleanup step. The nightly owner preserves a
 nonzero primary test status while recording any additional cleanup failure, and

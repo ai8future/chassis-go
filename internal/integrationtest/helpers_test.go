@@ -84,7 +84,14 @@ func TestCleanupDockerFailurePropagatesAndPreservesPrimaryFailure(t *testing.T) 
 	const fake = `#!/bin/sh
 case "$1" in
   logs|inspect) exit 0 ;;
-  rm) printf 'forced container removal failure\n' >&2; exit 23 ;;
+  rm)
+    if [ "$#" -ne 4 ] || [ "$2" != -f ] || [ "$3" != -v ] || [ "$4" != owned-redpanda ]; then
+      printf 'container removal must include exact owned volumes: %s\n' "$*" >&2
+      exit 97
+    fi
+    printf 'forced container removal failure\n' >&2
+    exit 23
+    ;;
   *) printf 'unexpected docker command: %s\n' "$*" >&2; exit 99 ;;
 esac
 `
@@ -125,7 +132,22 @@ func TestCleanupDockerAndImageSucceedWithBoundedCLI(t *testing.T) {
 	fakeDocker := filepath.Join(temp, "docker")
 	const fake = `#!/bin/sh
 case "$1" in
-  rm|rmi) printf 'removed %s\n' "$3"; exit 0 ;;
+  rm)
+    if [ "$#" -ne 4 ] || [ "$2" != -f ] || [ "$3" != -v ] || [ "$4" != owned-container ]; then
+      printf 'container removal must include exact owned volumes: %s\n' "$*" >&2
+      exit 97
+    fi
+    printf 'removed %s\n' "$4"
+    exit 0
+    ;;
+  rmi)
+    if [ "$#" -ne 3 ] || [ "$2" != -f ] || [ "$3" != owned-image:tag ]; then
+      printf 'unexpected image removal: %s\n' "$*" >&2
+      exit 98
+    fi
+    printf 'removed %s\n' "$3"
+    exit 0
+    ;;
   *) printf 'unexpected docker command: %s\n' "$*" >&2; exit 99 ;;
 esac
 `

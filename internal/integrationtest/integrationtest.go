@@ -201,8 +201,9 @@ func RequireDocker(t *testing.T, service string) {
 	}
 }
 
-// CleanupDocker removes a suite-owned container, preserving any primary test
-// failure while making removal failure fail an otherwise successful owner.
+// CleanupDocker removes a suite-owned container and its attached anonymous
+// volumes, preserving any primary test failure while making removal failure
+// fail an otherwise successful owner.
 func CleanupDocker(t *testing.T, name, service string) {
 	t.Helper()
 	if t.Failed() {
@@ -213,7 +214,7 @@ func CleanupDocker(t *testing.T, name, service string) {
 			t.Logf("%s inspect:\n%s", service, inspect)
 		}
 	}
-	cleanupDockerResource(t, service, "container", "rm", "-f", name)
+	cleanupDockerResource(t, service, "container", "rm", "-f", "-v", name)
 }
 
 // CleanupDockerImage removes a suite-owned image and propagates removal

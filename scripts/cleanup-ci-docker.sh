@@ -29,7 +29,7 @@ else
     safe="${container//[^A-Za-z0-9_.-]/_}"
     docker logs --tail "$tail_lines" "$container" >"$out/${safe}.logs.txt" 2>&1 || true
     docker inspect "$container" >"$out/${safe}.inspect.json" 2>&1 || true
-    if ! docker rm -f "$container" >>"$cleanup_log" 2>&1; then
+    if ! docker rm -f -v "$container" >>"$cleanup_log" 2>&1; then
       printf 'container_cleanup_failed=%s\n' "$container" >>"$cleanup_log"
       cleanup_status=1
     fi

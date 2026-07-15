@@ -78,7 +78,7 @@ cleanup_containers() {
   fi
   for container in "${active_containers[@]+${active_containers[@]}}"; do
     [[ -z "$container" ]] && continue
-    if ! docker rm -f "$container" >>"$artifact_dir/container-cleanup.txt" 2>&1; then
+    if ! docker rm -f -v "$container" >>"$artifact_dir/container-cleanup.txt" 2>&1; then
       printf 'container_cleanup_failed=%s\n' "$container" >>"$artifact_dir/container-cleanup.txt"
       cleanup_status=1
     fi

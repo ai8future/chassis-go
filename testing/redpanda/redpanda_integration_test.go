@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -80,6 +81,7 @@ func repoRoot(t *testing.T) string {
 
 func startRedpanda(t *testing.T, image string) redpandaService {
 	t.Helper()
+	volumePreflight := dockerVolumeIDs(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if out, err := exec.CommandContext(ctx, "docker", "version", "--format", "{{.Server.Version}}").CombinedOutput(); err != nil {
@@ -111,9 +113,29 @@ func startRedpanda(t *testing.T, image string) redpandaService {
 	if err != nil {
 		t.Fatalf("start redpanda container with pinned image %s: %v\n%s", image, err, out)
 	}
+	var ownedAnonymousVolumes []string
 	t.Cleanup(func() {
 		integrationtest.CleanupDocker(t, name, "redpanda")
+		volumeAfterCleanup := dockerVolumeIDs(t)
+		for _, volumeID := range ownedAnonymousVolumes {
+			if containsString(volumeAfterCleanup, volumeID) {
+				t.Errorf("test-owned anonymous Redpanda volume still exists after exact container cleanup: %s", volumeID)
+			}
+		}
+		if !reflect.DeepEqual(volumeAfterCleanup, volumePreflight) {
+			t.Errorf("Docker volume inventory after exact Redpanda cleanup = %v, want preflight %v", volumeAfterCleanup, volumePreflight)
+		}
+		t.Logf("CHASSIS_REDPANDA_ANONYMOUS_VOLUME_CLEANUP:preflight=%d owned=%d after=%d", len(volumePreflight), len(ownedAnonymousVolumes), len(volumeAfterCleanup))
 	})
+	ownedAnonymousVolumes = dockerContainerVolumeIDs(t, name)
+	if len(ownedAnonymousVolumes) == 0 {
+		t.Fatal("selected Redpanda container has no test-owned anonymous volume to exercise cleanup")
+	}
+	for _, volumeID := range ownedAnonymousVolumes {
+		if containsString(volumePreflight, volumeID) {
+			t.Fatalf("Redpanda container volume %s existed before the selected test", volumeID)
+		}
+	}
 	svc := redpandaService{
 		bootstrap: fmt.Sprintf("127.0.0.1:%d", kafkaPort),
 		schemaURL: fmt.Sprintf("http://127.0.0.1:%d", schemaPort),
@@ -148,6 +170,48 @@ func startRedpanda(t *testing.T, image string) redpandaService {
 		return true, "metadata ok"
 	})
 	return svc
+}
+
+func dockerVolumeIDs(t *testing.T) []string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "docker", "volume", "ls", "--format", "{{.Name}}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("inventory Docker volumes: %v\n%s", err, out)
+	}
+	return sortedNonemptyLines(string(out))
+}
+
+func dockerContainerVolumeIDs(t *testing.T, name string) []string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "docker", "inspect", "--format", `{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}`, name).CombinedOutput()
+	if err != nil {
+		t.Fatalf("inventory test-owned anonymous volumes for %s: %v\n%s", name, err, out)
+	}
+	return sortedNonemptyLines(string(out))
+}
+
+func sortedNonemptyLines(output string) []string {
+	var lines []string
+	for _, line := range strings.Split(output, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	sort.Strings(lines)
+	return lines
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func freePort(t *testing.T) int {
