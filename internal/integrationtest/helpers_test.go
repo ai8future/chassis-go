@@ -6,7 +6,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	chassis "github.com/ai8future/chassis-go/v11"
 )
+
+func init() {
+	chassis.RequireMajor(11)
+}
 
 func TestValidateService(t *testing.T) {
 	tests := []struct {

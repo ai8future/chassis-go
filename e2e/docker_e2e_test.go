@@ -16,6 +16,7 @@ import (
 )
 
 func TestFullServiceDockerBuildRunHealthBehaviorAndStop(t *testing.T) {
+	chassis.RequireMajor(11)
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skipf("docker unavailable; explicit T1 Docker E2E skip: %v", err)
 	}

@@ -9,6 +9,7 @@
 - Add an honest five-tier `TESTING.md`, thin tier scripts, a selected-service integration harness that cannot silently mark skipped suites complete, and a strict expiring coverage-exception policy.
 
 ### Changed
+- Move G006 hosted CI to the current official major action tags for checkout and artifact upload while keeping setup-go on its current major.
 - Harden CI log piping so deterministic, live, and nightly jobs preserve exit status while still writing uploadable diagnostics.
 - Extend `errors` problem JSON with stable `code`, `retryable`, `retry_after`, retry helpers, and `Retry-After` response headers.
 - Extend `call` retries with policy hooks, idempotent-only retry mode, and 429/503 `Retry-After` parsing.
@@ -17,6 +18,7 @@
 - Raise the machine-enforced aggregate coverage floor to 85% and remove all temporary library-package exceptions after closing their deterministic gaps.
 
 ### Tests
+- Close verifier-found per-file `RequireMajor(11)` gaps in the Docker E2E and integration helper tests and lock current action pin expectations in CI topology tests.
 - Add static CI/nightly topology regressions, integration image-pin failure regressions, bounded nightly smoke coverage, and a race-stable lakekit bounded-response assertion.
 - Add G005 live adapter contract suites for pinned Qdrant, Meilisearch, OpenTelemetry Collector contrib, and credential-free Inngest Dev Server, with immutable tag+digest image pins, selected-suite hard failures, unselected skips, all-suite enumeration, machine-readable OTel trace/metric receipts, and retained T4/G006 boundaries.
 - Add deterministic integration helper coverage so the 85% aggregate and 75% library coverage policy remains exception-free.
