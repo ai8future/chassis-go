@@ -10,9 +10,15 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
+type publisherClient interface {
+	ProduceSync(context.Context, ...*kgo.Record) kgo.ProduceResults
+	Ping(context.Context) error
+	Close()
+}
+
 // Publisher sends events to Kafka/Redpanda topics.
 type Publisher struct {
-	client   *kgo.Client
+	client   publisherClient
 	source   string // from Config.Source
 	tenantID string
 	stats    publisherStats
@@ -83,6 +89,16 @@ func publisherRetryBackoff(base time.Duration, attempt int) time.Duration {
 // Publish sends a single event to the topic derived from the subject.
 // Source is always taken from the publisher's config, never from parameters.
 func (p *Publisher) Publish(ctx context.Context, subject string, data any) error {
+	return p.publish(ctx, subject, nil, data)
+}
+
+// PublishKeyed sends a single event with a Kafka record key to the topic
+// derived from the subject. The key is copied before it is passed to Kafka.
+func (p *Publisher) PublishKeyed(ctx context.Context, subject string, key []byte, data any) error {
+	return p.publish(ctx, subject, key, data)
+}
+
+func (p *Publisher) publish(ctx context.Context, subject string, key []byte, data any) error {
 	dataBytes, err := json.Marshal(data)
 	if err != nil {
 		p.stats.incErrors()
@@ -104,6 +120,7 @@ func (p *Publisher) Publish(ctx context.Context, subject string, data any) error
 	// Use subject as topic name (dots are valid in Kafka topic names)
 	record := &kgo.Record{
 		Topic: subject,
+		Key:   append([]byte(nil), key...),
 		Value: envBytes,
 	}
 
@@ -115,6 +132,14 @@ func (p *Publisher) Publish(ctx context.Context, subject string, data any) error
 	}
 
 	p.stats.incPublished()
+	return nil
+}
+
+// Ping verifies that the publisher can reach at least one configured broker.
+func (p *Publisher) Ping(ctx context.Context) error {
+	if err := p.client.Ping(ctx); err != nil {
+		return fmt.Errorf("kafkakit: ping brokers: %w", err)
+	}
 	return nil
 }
 

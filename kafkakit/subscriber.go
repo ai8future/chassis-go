@@ -463,6 +463,7 @@ func (s *Subscriber) processRecord(ctx context.Context, client subscriberClient,
 	}
 
 	evt := envelopeToEvent(env)
+	evt.Key = string(append([]byte(nil), record.Key...))
 	evt.headers = make(map[string]string, len(record.Headers))
 	for _, header := range record.Headers {
 		evt.headers[header.Key] = string(header.Value)

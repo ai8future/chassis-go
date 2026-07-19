@@ -1,17 +1,118 @@
 package kafkakit
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	chassis "github.com/ai8future/chassis-go/v11"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 func init() {
 	chassis.RequireMajor(11)
+}
+
+type fakePublisherClient struct {
+	records []*kgo.Record
+	pingErr error
+}
+
+func (f *fakePublisherClient) ProduceSync(_ context.Context, records ...*kgo.Record) kgo.ProduceResults {
+	f.records = append(f.records, records...)
+	results := make(kgo.ProduceResults, len(records))
+	for i, record := range records {
+		results[i] = kgo.ProduceResult{Record: record}
+	}
+	return results
+}
+
+func (f *fakePublisherClient) Ping(context.Context) error { return f.pingErr }
+
+func (f *fakePublisherClient) Close() {}
+
+func TestPublishKeyedCopiesKeyAndPreservesEnvelope(t *testing.T) {
+	client := &fakePublisherClient{}
+	pub := &Publisher{client: client, source: "email-ai-svc", tenantID: "tenant-1"}
+	key := []byte("message-42")
+	data := map[string]any{"attempt": 1, "status": "queued"}
+
+	if err := pub.PublishKeyed(context.Background(), "email.requested", key, data); err != nil {
+		t.Fatal(err)
+	}
+	if len(client.records) != 1 {
+		t.Fatalf("produced records = %d, want 1", len(client.records))
+	}
+	record := client.records[0]
+	if record.Topic != "email.requested" || !bytes.Equal(record.Key, []byte("message-42")) {
+		t.Fatalf("record topic/key = %q/%q", record.Topic, record.Key)
+	}
+
+	key[0] = 'X'
+	if got := string(record.Key); got != "message-42" {
+		t.Fatalf("record key aliased caller key: %q", got)
+	}
+	record.Key[1] = 'Y'
+	if got := string(key); got != "Xessage-42" {
+		t.Fatalf("caller key aliased record key: %q", got)
+	}
+
+	var got envelope
+	if err := json.Unmarshal(record.Value, &got); err != nil {
+		t.Fatalf("unmarshal produced envelope: %v", err)
+	}
+	dataBytes, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantBytes, err := json.Marshal(&envelope{
+		ID:         got.ID,
+		Timestamp:  got.Timestamp,
+		Source:     "email-ai-svc",
+		Subject:    "email.requested",
+		TraceID:    "",
+		TenantID:   "tenant-1",
+		Version:    "1.0",
+		EntityRefs: []string{},
+		Data:       dataBytes,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(record.Value, wantBytes) {
+		t.Fatalf("envelope changed:\n got: %s\nwant: %s", record.Value, wantBytes)
+	}
+}
+
+func TestPublishRemainsUnkeyed(t *testing.T) {
+	client := &fakePublisherClient{}
+	pub := &Publisher{client: client, source: "email-ai-svc"}
+
+	if err := pub.Publish(context.Background(), "email.requested", map[string]string{"id": "42"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(client.records) != 1 || client.records[0].Key != nil {
+		t.Fatalf("Publish record key = %#v, want nil", client.records[0].Key)
+	}
+}
+
+func TestPublisherPingWrapsBrokerError(t *testing.T) {
+	brokerErr := errors.New("broker unavailable")
+	pub := &Publisher{client: &fakePublisherClient{pingErr: brokerErr}}
+
+	err := pub.Ping(context.Background())
+	if !errors.Is(err, brokerErr) || !strings.Contains(err.Error(), "kafkakit: ping brokers") {
+		t.Fatalf("Ping error = %v", err)
+	}
+
+	pub.client = &fakePublisherClient{}
+	if err := pub.Ping(context.Background()); err != nil {
+		t.Fatalf("successful Ping error = %v", err)
+	}
 }
 
 func TestPublishBatchReportsPerRecordFailures(t *testing.T) {

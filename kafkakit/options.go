@@ -133,6 +133,9 @@ func buildSubscriberOptions(cfg Config, consumerGroup, effectiveTenantID string)
 	if cfg.Subscriber.SessionTimeoutMs > 0 && cfg.Subscriber.SessionTimeoutMs < 100 {
 		return nil, settings, configError("Subscriber.SessionTimeoutMs must be at least 100 when set")
 	}
+	if cfg.Subscriber.MaxPollIntervalMs < 0 {
+		return nil, settings, configError("Subscriber.MaxPollIntervalMs cannot be negative")
+	}
 	if cfg.Subscriber.DLQTimeoutMs < 0 {
 		return nil, settings, configError("Subscriber.DLQTimeoutMs cannot be negative")
 	}
@@ -182,6 +185,11 @@ func buildSubscriberOptions(cfg Config, consumerGroup, effectiveTenantID string)
 
 	if cfg.Subscriber.SessionTimeoutMs > 0 {
 		opts = append(opts, kgo.SessionTimeout(time.Duration(cfg.Subscriber.SessionTimeoutMs)*time.Millisecond))
+	}
+	if cfg.Subscriber.MaxPollIntervalMs > 0 {
+		// franz-go does not expose max.poll.interval.ms. RebalanceTimeout is
+		// its group-protocol bound for finishing work and rejoining a rebalance.
+		opts = append(opts, kgo.RebalanceTimeout(time.Duration(cfg.Subscriber.MaxPollIntervalMs)*time.Millisecond))
 	}
 	if mode == CommitModeManualContiguous {
 		opts = append(opts, kgo.DisableAutoCommit(), kgo.BlockRebalanceOnPoll())

@@ -3,12 +3,14 @@
 ## [Unreleased]
 
 ### Added
+- Add `kafkakit.Publisher.PublishKeyed` with an owned Kafka record key, publisher broker `Ping` readiness support, and immutable consumed record keys on `kafkakit.Event`. (Codex:gpt-5.6-sol-high)
 - Add G006 CI topology for deterministic artifacts, isolated live-service matrix jobs, and scheduled/manual nightly resilience diagnostics across pinned public credential-free services.
 - Add Windmill readiness Wave 0 primitives: `authkit` scoped inbound bearer validation, `idemkit` tenant-scoped HTTP idempotency, `orchestration` capability manifests/registry metadata, and `conformance` L0-L2 evidence helpers with declaration-only L3 reporting.
 - Pin shared Windmill contract schemas and fixtures under `testdata/windmill/contracts` with provenance and checksums.
 - Add an honest five-tier `TESTING.md`, thin tier scripts, a selected-service integration harness that cannot silently mark skipped suites complete, and a strict expiring coverage-exception policy.
 
 ### Changed
+- Map positive `SubscriberConfig.MaxPollIntervalMs` compatibility values to franz-go's group-protocol `RebalanceTimeout` (not exact `max.poll.interval.ms`), preserve its default when unset, and reject negative values. (Codex:gpt-5.6-sol-high)
 - Remove unread container fields from live-integration fixtures and obsolete range-variable shadow copies while preserving exact test behavior. (Codex:gpt-5.5-high)
 - Classify `github.com/twmb/franz-go/pkg/kmsg` as a direct dependency so the checked-in module graph matches integration-test imports and remains `go mod tidy -diff` clean.
 - Move G006 hosted CI to the current official major action tags for checkout and artifact upload while keeping setup-go on its current major.
@@ -30,6 +32,7 @@
 - Retain nonempty machine-readable trace, metric, and summary receipts for every OTel nightly integration repetition in unique artifact subdirectories instead of deleting them with `t.TempDir`.
 
 ### Tests
+- Cover keyed-publish ownership and envelope compatibility, publisher broker ping errors, consumed-key copying before dispatch, and max-poll validation/default/option mapping. (Codex:gpt-5.6-sol-high)
 - Add a deterministic ownership-set regression and adversarial selected-Redpanda live proof that unrelated Docker volume churn does not mask exact owned-ID removal. (Codex:gpt-5.5-high)
 - Add executable `docker rm -f -v` argument regressions for the shared helper, nightly owner, and hosted cleanup, plus selected pinned-Redpanda proof that every exact captured Redpanda container-owned volume ID disappears while unrelated daemon volume churn is permitted. (Codex:gpt-5.5-high)
 - Add executable regressions for absent nightly artifact directories, producer/`tee` failures, required-versus-optional Docker availability, Redpanda module behavior before and after restart, and cleanup failure propagation without masking primary failures. (Codex:gpt-5.5-high)

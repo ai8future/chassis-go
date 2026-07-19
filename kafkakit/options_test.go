@@ -167,6 +167,18 @@ func TestBuildSubscriberOptionsMapsOffsetsAndSession(t *testing.T) {
 	}
 }
 
+func TestBuildSubscriberOptionsMapsMaxPollIntervalToRebalanceTimeout(t *testing.T) {
+	defaultClient, _ := subscriberOptionClient(t, SubscriberConfig{})
+	if got := defaultClient.OptValue(kgo.RebalanceTimeout); got != 60*time.Second {
+		t.Fatalf("default rebalance timeout = %v, want franz-go default 1m", got)
+	}
+
+	mappedClient, _ := subscriberOptionClient(t, SubscriberConfig{MaxPollIntervalMs: 75_000})
+	if got := mappedClient.OptValue(kgo.RebalanceTimeout); got != 75*time.Second {
+		t.Fatalf("mapped rebalance timeout = %v, want 1m15s", got)
+	}
+}
+
 func TestBuildSubscriberOptionsEnforcesFranzGoSessionTimeoutMinimum(t *testing.T) {
 	_, _, err := buildSubscriberOptions(Config{
 		BootstrapServers: "localhost:9092",
@@ -211,6 +223,7 @@ func TestBuildSubscriberOptionsRejectsConflictsAndUnsupportedValues(t *testing.T
 		{CommitMode: "other"},
 		{AutoOffsetReset: "middle"},
 		{SessionTimeoutMs: -1},
+		{MaxPollIntervalMs: -1},
 		{DLQTimeoutMs: -1},
 		{DrainTimeoutMs: -1},
 	}

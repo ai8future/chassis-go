@@ -172,6 +172,27 @@ func TestProcessRecordPopulatesHeadersWithLastValue(t *testing.T) {
 	}
 }
 
+func TestProcessRecordCopiesKeyBeforeHandlerDispatch(t *testing.T) {
+	s := newTestSubscriber(t, SubscriberConfig{})
+	record := deliveryRecord(t, "orders.created", "orders.created", 0, 7)
+	want := string(record.Key)
+	var got string
+	if err := s.Subscribe("orders.created", func(_ context.Context, evt Event) error {
+		record.Key[0] = 'X'
+		got = evt.Key
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.processRecord(context.Background(), &fakeSubscriberClient{}, record); err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("Event.Key = %q after source mutation, want %q", got, want)
+	}
+}
+
 func TestSubscribeMultiRegistersSortedTopics(t *testing.T) {
 	s := newTestSubscriber(t, SubscriberConfig{})
 	handler := func(context.Context, Event) error { return nil }

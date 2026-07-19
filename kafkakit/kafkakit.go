@@ -55,7 +55,11 @@ type SubscriberConfig struct {
 	EnableAutoCommit bool
 	MaxPollRecords   int
 	SessionTimeoutMs int
-	Concurrency      int // 0 or 1 = sequential; >1 = parallel partition workers
+	// MaxPollIntervalMs is a compatibility field mapped to franz-go's
+	// RebalanceTimeout. It is not an exact max.poll.interval.ms control; zero
+	// preserves franz-go's default.
+	MaxPollIntervalMs int
+	Concurrency       int // 0 or 1 = sequential; >1 = parallel partition workers
 
 	// CommitMode selects legacy auto commit or durable contiguous manual
 	// commits. An empty value preserves v11 compatibility: AtLeastOnce selects
@@ -80,6 +84,7 @@ type TenantFilterConfig struct {
 // Event represents an inbound event received from a topic.
 type Event struct {
 	ID         string
+	Key        string
 	Timestamp  time.Time
 	Source     string
 	Subject    string
