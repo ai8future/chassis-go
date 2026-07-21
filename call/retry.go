@@ -17,11 +17,12 @@ import (
 // transient server errors (5xx). It never retries client errors (4xx) unless an
 // explicit Retry-After header on 429 provides retry guidance.
 type Retrier struct {
-	MaxAttempts    int
-	BaseDelay      time.Duration
-	Policy         RetryPolicy
-	IdempotentOnly bool
-	method         string
+	MaxAttempts        int
+	BaseDelay          time.Duration
+	Policy             RetryPolicy
+	IdempotentOnly     bool
+	method             string
+	telemetryRedaction bool
 }
 
 // RetryContext describes a completed attempt for retry policy decisions.
@@ -80,9 +81,13 @@ func (r *Retrier) Do(ctx context.Context, fn func() (*http.Response, error)) (*h
 			Err:      err,
 		})
 		if decision.Retry && attempt < maxAttempts-1 {
+			reason := decision.reason()
+			if r.telemetryRedaction {
+				reason = "retry"
+			}
 			trace.SpanFromContext(ctx).AddEvent("retry", trace.WithAttributes(
 				attribute.Int("attempt", attempt+1),
-				attribute.String("reason", decision.reason()),
+				attribute.String("reason", reason),
 				attribute.Int("http.status_code", statusCode(resp)),
 			))
 			drainAndClose(resp)

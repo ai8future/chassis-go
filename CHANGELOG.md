@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Add opt-in `call.WithTelemetryRedaction` for request-safe client spans and duration metrics while preserving TraceContext injection and request execution. (Codex:gpt-5.6-sol-high)
 - Add `kafkakit.Publisher.PublishKeyed` with an owned Kafka record key, publisher broker `Ping` readiness support, and immutable consumed record keys on `kafkakit.Event`. (Codex:gpt-5.6-sol-high)
 - Add G006 CI topology for deterministic artifacts, isolated live-service matrix jobs, and scheduled/manual nightly resilience diagnostics across pinned public credential-free services.
 - Add Windmill readiness Wave 0 primitives: `authkit` scoped inbound bearer validation, `idemkit` tenant-scoped HTTP idempotency, `orchestration` capability manifests/registry metadata, and `conformance` L0-L2 evidence helpers with declaration-only L3 reporting.
@@ -10,6 +11,7 @@
 - Add an honest five-tier `TESTING.md`, thin tier scripts, a selected-service integration harness that cannot silently mark skipped suites complete, and a strict expiring coverage-exception policy.
 
 ### Changed
+- Raise `golang.org/x/text` to v0.39.0, the patched floor for GO-2026-5970. (Codex:gpt-5.6-sol-high)
 - Map positive `SubscriberConfig.MaxPollIntervalMs` compatibility values to franz-go's group-protocol `RebalanceTimeout` (not exact `max.poll.interval.ms`), preserve its default when unset, and reject negative values. (Codex:gpt-5.6-sol-high)
 - Remove unread container fields from live-integration fixtures and obsolete range-variable shadow copies while preserving exact test behavior. (Codex:gpt-5.5-high)
 - Classify `github.com/twmb/franz-go/pkg/kmsg` as a direct dependency so the checked-in module graph matches integration-test imports and remains `go mod tidy -diff` clean.
@@ -22,6 +24,7 @@
 - Raise the machine-enforced aggregate coverage floor to 85% and remove all temporary library-package exceptions after closing their deterministic gaps.
 
 ### Fixed
+- Keep opt-in redacted `call` telemetry free of destination, header, token, raw error-chain, and caller-supplied retry-reason data by emitting only bounded method/status fields and fixed failure classifications, including when propagation must initialize a nil request-header map. (Codex:gpt-5.6-sol-high)
 - Correct the G009 release evidence wording to require every exact captured Redpanda container-owned volume ID to disappear while permitting unrelated daemon volume churn. (Codex:gpt-5.5-high)
 - Make selected Redpanda anonymous-volume cleanup concurrency-safe by requiring only the captured container-owned volume IDs to disappear, allowing unrelated daemon volume churn. (Codex:gpt-5.5-high)
 - Remove attached anonymous volumes whenever shared, nightly, or hosted cleanup removes an exact test-owned container, preventing Redpanda volumes from accumulating while preserving bounded and truthful cleanup behavior. (Codex:gpt-5.5-high)
@@ -32,6 +35,7 @@
 - Retain nonempty machine-readable trace, metric, and summary receipts for every OTel nightly integration repetition in unique artifact subdirectories instead of deleting them with `t.TempDir`.
 
 ### Tests
+- Add in-memory OpenTelemetry span and metric canaries for redacted success, retry, timeout, body-rewind, redirect, transport, token, breaker, HTTP-status, and unknown-method paths, plus default-mode compatibility and TraceContext/breaker behavior. (Codex:gpt-5.6-sol-high)
 - Cover keyed-publish ownership and envelope compatibility, publisher broker ping errors, consumed-key copying before dispatch, and max-poll validation/default/option mapping. (Codex:gpt-5.6-sol-high)
 - Add a deterministic ownership-set regression and adversarial selected-Redpanda live proof that unrelated Docker volume churn does not mask exact owned-ID removal. (Codex:gpt-5.5-high)
 - Add executable `docker rm -f -v` argument regressions for the shared helper, nightly owner, and hosted cleanup, plus selected pinned-Redpanda proof that every exact captured Redpanda container-owned volume ID disappears while unrelated daemon volume churn is permitted. (Codex:gpt-5.5-high)

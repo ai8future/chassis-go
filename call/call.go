@@ -50,11 +50,12 @@ func (b *cancelBody) Close() error {
 // optional retry, circuit breaker, and timeout middleware. Construct one using
 // New with functional options.
 type Client struct {
-	httpClient  *http.Client
-	timeout     time.Duration
-	retrier     *Retrier
-	breaker     Breaker
-	tokenSource TokenSource
+	httpClient         *http.Client
+	timeout            time.Duration
+	retrier            *Retrier
+	breaker            Breaker
+	tokenSource        TokenSource
+	telemetryRedaction bool
 }
 
 // Option configures a Client.
@@ -158,6 +159,18 @@ func WithTokenSource(source TokenSource) Option {
 	}
 }
 
+// WithTelemetryRedaction omits destination and error details from call's
+// OpenTelemetry spans and duration metrics. Redacted telemetry retains client
+// spans, TraceContext injection, HTTP method and status attributes, and fixed
+// error classifications. Request execution and returned errors are unchanged.
+//
+// Redaction is opt-in so existing consumers retain their current telemetry.
+func WithTelemetryRedaction() Option {
+	return func(c *Client) {
+		c.telemetryRedaction = true
+	}
+}
+
 // Do executes an HTTP request with all configured middleware applied. The
 // middleware order is: circuit breaker check, retry loop, execute.
 //
@@ -176,23 +189,38 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 
 	// OTel: create client span and inject trace headers.
 	tracer := otelapi.GetTracerProvider().Tracer(tracerName)
-	ctx, span := tracer.Start(ctx, req.Method,
+	spanName := req.Method
+	spanAttrs := []attribute.KeyValue{
+		attribute.String("http.method", req.Method),
+		attribute.String("url.path", req.URL.Path),
+		attribute.String("server.address", req.URL.Host),
+	}
+	if c.telemetryRedaction {
+		spanName = safeHTTPMethod(req.Method)
+		spanAttrs = []attribute.KeyValue{
+			attribute.String("http.method", spanName),
+		}
+	}
+	ctx, span := tracer.Start(ctx, spanName,
 		trace.WithSpanKind(trace.SpanKindClient),
-		trace.WithAttributes(
-			attribute.String("http.method", req.Method),
-			attribute.String("url.path", req.URL.Path),
-			attribute.String("server.address", req.URL.Host),
-		),
+		trace.WithAttributes(spanAttrs...),
 	)
 	req = req.WithContext(ctx)
+	if c.telemetryRedaction && req.Header == nil {
+		req.Header = make(http.Header)
+	}
 	otelapi.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 	// Token injection — fetch a Bearer token and set the Authorization header.
 	if c.tokenSource != nil {
 		token, err := c.tokenSource.Token(req.Context())
 		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
+			if c.telemetryRedaction {
+				setRedactedSpanError(span, telemetryErrorTokenSource)
+			} else {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+			}
 			span.End()
 			if cancel != nil {
 				cancel()
@@ -206,15 +234,23 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	if c.breaker != nil {
 		if err := c.breaker.Allow(); err != nil {
 			span.AddEvent("circuit_breaker_rejected")
+			if c.telemetryRedaction {
+				setRedactedSpanError(span, telemetryErrorCircuitBreaker)
+			}
 			span.End()
 			if h := getClientDuration(); h != nil {
-				h.Record(ctx, time.Since(start).Seconds(),
-					metric.WithAttributes(
-						attribute.String("http.request.method", req.Method),
-						attribute.String("server.address", req.URL.Host),
-						attribute.String("error.type", fmt.Sprintf("%T", err)),
-					),
-				)
+				durationAttrs := []attribute.KeyValue{
+					attribute.String("http.request.method", req.Method),
+					attribute.String("server.address", req.URL.Host),
+					attribute.String("error.type", fmt.Sprintf("%T", err)),
+				}
+				if c.telemetryRedaction {
+					durationAttrs = []attribute.KeyValue{
+						attribute.String("http.request.method", safeHTTPMethod(req.Method)),
+						attribute.String("error.type", telemetryErrorCircuitBreaker),
+					}
+				}
+				h.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(durationAttrs...))
 			}
 			if cancel != nil {
 				cancel()
@@ -251,6 +287,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	if c.retrier != nil {
 		retrier := *c.retrier
 		retrier.method = req.Method
+		retrier.telemetryRedaction = c.telemetryRedaction
 		resp, err = retrier.Do(ctx, exec)
 	} else {
 		resp, err = exec()
@@ -288,12 +325,20 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 
 	// OTel: record result on the client span.
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		if c.telemetryRedaction {
+			setRedactedSpanError(span, redactedErrorClassification(err))
+		} else {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
 	} else if resp != nil {
 		span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
 		if resp.StatusCode >= 400 {
-			span.SetStatus(codes.Error, http.StatusText(resp.StatusCode))
+			if c.telemetryRedaction {
+				setRedactedSpanError(span, telemetryErrorHTTPStatus)
+			} else {
+				span.SetStatus(codes.Error, http.StatusText(resp.StatusCode))
+			}
 		}
 	}
 	span.End()
@@ -303,14 +348,21 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		attribute.String("http.request.method", req.Method),
 		attribute.String("server.address", req.URL.Host),
 	}
+	if c.telemetryRedaction {
+		durationAttrs = []attribute.KeyValue{
+			attribute.String("http.request.method", safeHTTPMethod(req.Method)),
+		}
+	}
 	if resp != nil {
 		durationAttrs = append(durationAttrs,
 			attribute.Int("http.response.status_code", resp.StatusCode),
 		)
 	} else if err != nil {
-		durationAttrs = append(durationAttrs,
-			attribute.String("error.type", fmt.Sprintf("%T", err)),
-		)
+		errorType := fmt.Sprintf("%T", err)
+		if c.telemetryRedaction {
+			errorType = redactedErrorClassification(err)
+		}
+		durationAttrs = append(durationAttrs, attribute.String("error.type", errorType))
 	}
 	if h := getClientDuration(); h != nil {
 		h.Record(ctx, time.Since(start).Seconds(),
@@ -329,6 +381,45 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	}
 
 	return resp, err
+}
+
+const (
+	telemetryErrorBodyNotRewindable = "body_not_rewindable"
+	telemetryErrorCircuitBreaker    = "circuit_breaker_rejected"
+	telemetryErrorContextCanceled   = "context_canceled"
+	telemetryErrorDeadlineExceeded  = "deadline_exceeded"
+	telemetryErrorHTTPStatus        = "http_error"
+	telemetryErrorRequest           = "request_failed"
+	telemetryErrorTokenSource       = "token_source_failed"
+)
+
+func setRedactedSpanError(span trace.Span, classification string) {
+	span.SetAttributes(attribute.String("error.type", classification))
+	span.SetStatus(codes.Error, classification)
+}
+
+func redactedErrorClassification(err error) string {
+	switch {
+	case errors.Is(err, ErrBodyNotRewindable):
+		return telemetryErrorBodyNotRewindable
+	case errors.Is(err, context.Canceled):
+		return telemetryErrorContextCanceled
+	case errors.Is(err, context.DeadlineExceeded):
+		return telemetryErrorDeadlineExceeded
+	default:
+		return telemetryErrorRequest
+	}
+}
+
+func safeHTTPMethod(method string) string {
+	switch method {
+	case http.MethodConnect, http.MethodDelete, http.MethodGet, http.MethodHead,
+		http.MethodOptions, http.MethodPatch, http.MethodPost, http.MethodPut,
+		http.MethodTrace:
+		return method
+	default:
+		return "OTHER"
+	}
 }
 
 // Batch executes multiple requests concurrently with bounded concurrency
