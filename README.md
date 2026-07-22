@@ -6,7 +6,7 @@ A composable Go service toolkit for building production-grade microservices. Too
 go get github.com/ai8future/chassis-go/v11
 ```
 
-**Current version:** 11.3.8 &middot; **Go:** 1.26.x (module floor 1.26.5; tested with 1.26.5) &middot; **License:** MIT
+**Current version:** 11.3.26 &middot; **Go:** 1.26.x (module floor 1.26.5; tested with 1.26.5) &middot; **License:** MIT
 
 ---
 
@@ -319,12 +319,17 @@ client := call.New(
     call.WithTimeout(5*time.Second),
     call.WithRetry(3, 500*time.Millisecond),
     call.WithCircuitBreaker("payments-api", 5, 30*time.Second),
+    call.WithTextMapPropagator(propagation.TraceContext{}), // external boundary
 )
 
 resp, err := client.Do(req)
 ```
 
 Batch concurrent requests with `client.Batch(ctx, requests)` — powered by `work.Map` under the hood.
+`propagation` is `go.opentelemetry.io/otel/propagation`. An explicit boundary
+clones request headers, removes fields declared by the active global and
+selected propagators, then injects only the selected fields. Pass nil to remove
+the active global propagation fields without injecting replacements.
 
 ### `errors` — Unified Error Type
 
@@ -550,15 +555,27 @@ latency.Observe(ctx, 0.042, "provider", "stripe")
 One-call OTel SDK initialization: OTLP gRPC exporters for traces and metrics, W3C propagation, configurable samplers.
 
 ```go
-shutdown := otel.Init(otel.Config{
+shutdown, err := otel.InitChecked(otel.Config{
     ServiceName:    "ordersvc",
-    ServiceVersion: chassis.Version,
-    Endpoint:       "otel-collector:4317",   // default: localhost:4317
-    Sampler:        otel.RatioSample(0.1),   // 10% sampling; default: AlwaysSample
-    Insecure:       true,                    // plaintext for dev; default: TLS
+    ServiceVersion: "1.4.2",               // consuming application version
+    Endpoint:       "otel-collector:4317", // host:port; default: localhost:4317
+    Sampler:        otel.RatioSample(0.1),  // 10% sampling; default: AlwaysSample
+    Secure:         true,                   // explicit TLS, overrides plaintext OTLP env
 })
+if err != nil { return err }
 defer shutdown(context.Background())
 ```
+
+`InitChecked` validates the local endpoint and TLS policy, constructs both
+exporters, and claims the process-global telemetry slot before installing the
+providers. Collector reachability and the TLS handshake remain lazy and are
+proved only by export/receipt evidence. A second initialization is rejected
+until the idempotent shutdown resets globals to no-op providers and drains the
+owned pipelines; applications must not replace OTel globals while it is active.
+Legacy `Init` retains graceful degradation for compatibility. `Secure` and
+`Insecure` are mutually exclusive; use `Insecure` only for explicit plaintext
+development collectors. `TLSConfig` requires `Secure`, is cloned, and cannot
+weaken the TLS 1.2 minimum.
 
 ### `secval` — JSON Security Validation
 

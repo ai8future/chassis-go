@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Added
+- Add an explicit per-client OpenTelemetry propagation boundary and checked,
+  single-active telemetry initialization with local endpoint/TLS validation
+  and an explicit secure TLS mode. (Codex:gpt-5.6-sol-high)
 - Add opt-in `call.WithTelemetryRedaction` for request-safe client spans and duration metrics while preserving TraceContext injection and request execution. (Codex:gpt-5.6-sol-high)
 - Add `kafkakit.Publisher.PublishKeyed` with an owned Kafka record key, publisher broker `Ping` readiness support, and immutable consumed record keys on `kafkakit.Event`. (Codex:gpt-5.6-sol-high)
 - Add G006 CI topology for deterministic artifacts, isolated live-service matrix jobs, and scheduled/manual nightly resilience diagnostics across pinned public credential-free services.
@@ -24,6 +27,14 @@
 - Raise the machine-enforced aggregate coverage floor to 85% and remove all temporary library-package exceptions after closing their deterministic gaps.
 
 ### Fixed
+- Prevent fields declared by process-global baggage or custom propagators from
+  surviving reused requests across an explicit external HTTP boundary, and let
+  explicit secure OTLP configuration override plaintext exporter environment.
+  (Codex:gpt-5.6-sol-high)
+- Give fail-closed consumers a checked telemetry initializer that rejects
+  invalid local endpoint/TLS policy and overlapping initialization before
+  installing global state, then resets owned globals on idempotent shutdown.
+  Collector connection remains lazy. (Codex:gpt-5.6-sol-high)
 - Keep opt-in redacted `call` telemetry free of destination, header, token, raw error-chain, and caller-supplied retry-reason data by emitting only bounded method/status fields and fixed failure classifications, including when propagation must initialize a nil request-header map. (Codex:gpt-5.6-sol-high)
 - Correct the G009 release evidence wording to require every exact captured Redpanda container-owned volume ID to disappear while permitting unrelated daemon volume churn. (Codex:gpt-5.5-high)
 - Make selected Redpanda anonymous-volume cleanup concurrency-safe by requiring only the captured container-owned volume IDs to disappear, allowing unrelated daemon volume churn. (Codex:gpt-5.5-high)

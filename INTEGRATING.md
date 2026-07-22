@@ -284,7 +284,9 @@ hist.Observe(ctx, 524288, "format", "pdf")
 - `{prefix}_content_size_bytes{method}` — Histogram
 
 **Integration notes**:
-- Requires `otel.Init()` to be called first to configure the OTLP metric exporter. Without it, metrics are recorded to the no-op global meter.
+- Requires `otel.InitChecked()` (or legacy `otel.Init()`) to be called first to
+  configure the OTLP metric exporter. Without either initializer, metrics are
+  recorded to the no-op global meter.
 - Cardinality protection: max 1000 label combinations per metric. On overflow, new combinations are silently dropped and a warning is logged once.
 - The metric prefix is caller-supplied — use your service name.
 - Uses OpenTelemetry metric API — no Prometheus dependency.
@@ -298,21 +300,27 @@ hist.Observe(ctx, 524288, "format", "pdf")
 ```go
 import otelinit "github.com/ai8future/chassis-go/v11/otel"
 
-shutdown := otelinit.Init(otelinit.Config{
+shutdown, err := otelinit.InitChecked(otelinit.Config{
     ServiceName:    "mysvc",
-    ServiceVersion: chassis.Version,
-    Endpoint:       "otel-collector:4317", // defaults to localhost:4317
+    ServiceVersion: "1.4.2", // consuming application version
+    Endpoint:       "otel-collector:4317", // host:port; defaults to localhost:4317
     Sampler:        otelinit.RatioSample(0.1), // defaults to AlwaysSample
-    Insecure:       false, // default: uses TLS. Set true for plaintext (dev/test)
+    Secure:         true, // explicit TLS; overrides plaintext exporter env
 })
+if err != nil { return err }
 defer shutdown(context.Background())
 ```
 
 **Behavior**:
 - Configures OTLP gRPC trace and metric exporters.
 - Sets the global `TracerProvider`, `MeterProvider`, and `TextMapPropagator` (W3C TraceContext + Baggage).
-- Degrades gracefully — if the exporter can't connect, tracing and metrics become no-ops rather than crashing.
-- Returns a `ShutdownFunc` that drains pending spans/metrics on process exit.
+- `InitChecked` rejects invalid local host:port and TLS policy, constructs both
+  exporters, and permits one active process-global installation. Collector
+  reachability and TLS handshake success remain lazy until export.
+- Returns an idempotent `ShutdownFunc` that first resets the owned globals to
+  no-op providers and then drains pending spans/metrics. Do not replace OTel
+  globals independently while this installation is active.
+- Legacy `Init` retains graceful degradation for compatibility.
 
 **Utilities**:
 - `otel.DetachContext(ctx)` — returns a new `context.Background()` that preserves the OTel span context but detaches cancellation. Use when spawning background goroutines from request handlers.
@@ -320,8 +328,14 @@ defer shutdown(context.Background())
 - `otel.RatioSample(fraction)` — samples a fraction of traces by trace ID.
 
 **Integration notes**:
-- Call `otel.Init()` early in `main()`, after `config.MustLoad` and `logz.New`, but before creating middleware or metrics recorders.
-- Without `otel.Init()`, all tracing and metrics across chassis are no-ops — `httpkit.Tracing()`, `grpckit.UnaryTracing()`, `call.Do`, `work.Map`, and `metrics.RecordRequest` all degrade gracefully.
+- Call `otel.InitChecked()` early in fail-closed services, after
+  `config.MustLoad` and `logz.New`, but before creating middleware or metrics
+  recorders. `Secure` and `Insecure` are mutually exclusive; `TLSConfig`
+  requires `Secure`, is cloned, and cannot weaken the TLS 1.2 minimum. Report
+  the consuming application's embedded version, not `chassis.Version`.
+- Without `otel.InitChecked()` or legacy `otel.Init()`, all tracing and metrics
+  across chassis are no-ops — `httpkit.Tracing()`, `grpckit.UnaryTracing()`,
+  `call.Do`, `work.Map`, and `metrics.RecordRequest` all degrade gracefully.
 - The shutdown function should be deferred in `main()` to ensure spans and metrics are flushed before exit.
 
 ---
@@ -800,6 +814,7 @@ client := call.New(
     call.WithTimeout(5 * time.Second),
     call.WithRetry(3, 500 * time.Millisecond),
     call.WithCircuitBreaker("user-service", 5, 30 * time.Second),
+    call.WithTextMapPropagator(propagation.TraceContext{}), // external boundary
 )
 
 req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -816,6 +831,14 @@ resp, err := client.Do(req)
 - Circuit breakers are singletons keyed by name. If multiple `call.Client` instances use the same breaker name, they share state. Use distinct names for distinct downstream services.
 - If you have a custom circuit breaker (e.g., wrapping sony/gobreaker), implement the `call.Breaker` interface and use `call.WithBreaker(yourBreaker)`.
 - The client returns the raw `*http.Response` — you are responsible for closing the body.
+- Without `WithTextMapPropagator`, the process-global propagator is used for
+  compatibility. `propagation` is `go.opentelemetry.io/otel/propagation`.
+  External clients should pass an explicit boundary such as
+  `propagation.TraceContext{}`. The client clones the request headers, removes
+  fields declared by the active global and selected propagators, and injects
+  only selected fields; arbitrary application headers not declared by either
+  propagator remain. Explicit nil removes active-global propagation fields and
+  injects none. Custom propagators must be safe for concurrent use by `Batch`.
 - **Retry body constraint**: Retries re-send the same `*http.Request`. For requests with a non-nil body, the body must be rewindable (implement `GetBody`) or the retry will send an empty/consumed body. Bodiless requests (GET, DELETE, HEAD) are always safe to retry.
 
 **Batch requests**:

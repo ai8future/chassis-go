@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
+	"strings"
 	"time"
 
 	chassis "github.com/ai8future/chassis-go/v11"
@@ -56,6 +58,8 @@ type Client struct {
 	breaker            Breaker
 	tokenSource        TokenSource
 	telemetryRedaction bool
+	propagator         propagation.TextMapPropagator
+	propagatorSet      bool
 }
 
 // Option configures a Client.
@@ -171,6 +175,41 @@ func WithTelemetryRedaction() Option {
 	}
 }
 
+// WithTextMapPropagator selects the propagator used by this client. The last
+// WithTextMapPropagator option wins. Without this option, Do reads and uses the
+// process-global OpenTelemetry propagator at call time for backward
+// compatibility.
+//
+// With this option, Do clones the caller's headers, removes every field
+// declared by both the active process-global propagator and the selected
+// propagator, then injects only with the selected propagator. An explicit
+// typed or untyped nil disables injection while still removing fields declared
+// by the active global propagator. Propagators must accurately implement
+// Fields. Custom propagators must also make Fields and Inject safe for
+// concurrent use because a Client can execute requests concurrently.
+func WithTextMapPropagator(propagator propagation.TextMapPropagator) Option {
+	return func(c *Client) {
+		if nilPropagator(propagator) {
+			propagator = nil
+		}
+		c.propagator = propagator
+		c.propagatorSet = true
+	}
+}
+
+func nilPropagator(propagator propagation.TextMapPropagator) bool {
+	if propagator == nil {
+		return true
+	}
+	value := reflect.ValueOf(propagator)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
+}
+
 // Do executes an HTTP request with all configured middleware applied. The
 // middleware order is: circuit breaker check, retry loop, execute.
 //
@@ -206,10 +245,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		trace.WithAttributes(spanAttrs...),
 	)
 	req = req.WithContext(ctx)
-	if c.telemetryRedaction && req.Header == nil {
-		req.Header = make(http.Header)
-	}
-	otelapi.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+	c.injectPropagation(ctx, req)
 
 	// Token injection — fetch a Bearer token and set the Authorization header.
 	if c.tokenSource != nil {
@@ -381,6 +417,53 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	}
 
 	return resp, err
+}
+
+func (c *Client) injectPropagation(ctx context.Context, req *http.Request) {
+	global := otelapi.GetTextMapPropagator()
+	if !c.propagatorSet {
+		if nilPropagator(global) {
+			return
+		}
+		if req.Header == nil {
+			req.Header = make(http.Header)
+		}
+		global.Inject(ctx, propagation.HeaderCarrier(req.Header))
+		return
+	}
+
+	// Request.WithContext performs a shallow copy, so clone the header map
+	// before enforcing an explicit per-client propagation boundary. This also
+	// prevents token injection later in Do from mutating the caller's request.
+	req.Header = req.Header.Clone()
+	if req.Header == nil {
+		req.Header = make(http.Header)
+	}
+	scrubPropagationFields(req.Header, global, c.propagator)
+	if nilPropagator(c.propagator) {
+		return
+	}
+	c.propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
+}
+
+func scrubPropagationFields(header http.Header, propagators ...propagation.TextMapPropagator) {
+	if len(header) == 0 {
+		return
+	}
+	fields := make(map[string]struct{})
+	for _, propagator := range propagators {
+		if nilPropagator(propagator) {
+			continue
+		}
+		for _, field := range propagator.Fields() {
+			fields[strings.ToLower(field)] = struct{}{}
+		}
+	}
+	for field := range header {
+		if _, ok := fields[strings.ToLower(field)]; ok {
+			delete(header, field)
+		}
+	}
 }
 
 const (

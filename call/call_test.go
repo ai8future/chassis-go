@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	chassis "github.com/ai8future/chassis-go/v11"
 	"github.com/ai8future/chassis-go/v11/work"
 	otelapi "go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -694,6 +696,397 @@ func TestDoPropagatestraceparentHeader(t *testing.T) {
 		t.Fatal("expected a SpanKindClient span to be created")
 	}
 }
+
+func TestWithTextMapPropagatorOverridesGlobalPropagation(t *testing.T) {
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	defer tp.Shutdown(context.Background())
+	previousTP := otelapi.GetTracerProvider()
+	previousPropagator := otelapi.GetTextMapPropagator()
+	otelapi.SetTracerProvider(tp)
+	otelapi.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+		secretPropagator{},
+	))
+	defer func() {
+		otelapi.SetTracerProvider(previousTP)
+		otelapi.SetTextMapPropagator(previousPropagator)
+	}()
+
+	member, err := baggage.NewMember("secret-token", "must-not-propagate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bag, err := baggage.New(member)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := baggage.ContextWithBaggage(context.Background(), bag)
+	ctx, parent := tp.Tracer("call-propagator-test").Start(ctx, "parent")
+	defer parent.End()
+
+	var traceparent, baggageHeader, customHeader string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		traceparent = r.Header.Get("Traceparent")
+		baggageHeader = r.Header.Get("Baggage")
+		customHeader = r.Header.Get("X-Custom-Leak")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := New(WithTextMapPropagator(propagation.TraceContext{}))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Baggage", "stale=must-not-survive")
+	req.Header.Set("X-Custom-Leak", "stale-must-not-survive")
+	originalHeader := req.Header.Clone()
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if traceparent == "" {
+		t.Fatal("explicit TraceContext propagator did not inject traceparent")
+	}
+	if baggageHeader != "" || customHeader != "" {
+		t.Fatalf("explicit propagator leaked global headers: baggage=%q custom=%q", baggageHeader, customHeader)
+	}
+	if !reflect.DeepEqual(req.Header, originalHeader) {
+		t.Fatalf("explicit propagator mutated caller header: got %v want %v", req.Header, originalHeader)
+	}
+}
+
+func TestWithTextMapPropagatorIsolatesReusedRequestAcrossClients(t *testing.T) {
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	defer tp.Shutdown(context.Background())
+	previousTP := otelapi.GetTracerProvider()
+	previousPropagator := otelapi.GetTextMapPropagator()
+	otelapi.SetTracerProvider(tp)
+	otelapi.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+		secretPropagator{},
+	))
+	defer func() {
+		otelapi.SetTracerProvider(previousTP)
+		otelapi.SetTextMapPropagator(previousPropagator)
+	}()
+
+	member, err := baggage.NewMember("secret-token", "must-not-propagate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bag, err := baggage.New(member)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := baggage.ContextWithBaggage(context.Background(), bag)
+	ctx, parent := tp.Tracer("call-reused-request-test").Start(ctx, "parent")
+	defer parent.End()
+
+	var captured []http.Header
+	httpClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		captured = append(captured, req.Header.Clone())
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: http.NoBody}, nil
+	})}
+	globalClient := New(WithHTTPClient(httpClient))
+	restrictedClient := New(
+		WithHTTPClient(httpClient),
+		WithTextMapPropagator(propagation.TraceContext{}),
+	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://example.test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Unrelated", "preserve")
+
+	resp, err := globalClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if got := len(captured); got != 1 {
+		t.Fatalf("captures after global client = %d, want 1", got)
+	}
+	if captured[0].Get("Traceparent") == "" || captured[0].Get("Baggage") == "" || captured[0].Get("X-Custom-Leak") == "" {
+		t.Fatalf("hostile global did not contaminate first request as expected: %v", captured[0])
+	}
+	contaminatedCallerHeader := req.Header.Clone()
+
+	resp, err = restrictedClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if got := len(captured); got != 2 {
+		t.Fatalf("captures after restricted client = %d, want 2", got)
+	}
+	restricted := captured[1]
+	if restricted.Get("Traceparent") == "" {
+		t.Fatal("restricted client did not inject traceparent")
+	}
+	if restricted.Get("Baggage") != "" || restricted.Get("X-Custom-Leak") != "" {
+		t.Fatalf("restricted client reused contaminated propagation headers: %v", restricted)
+	}
+	if got := restricted.Get("X-Unrelated"); got != "preserve" {
+		t.Fatalf("unrelated header = %q, want preserve", got)
+	}
+	if !reflect.DeepEqual(req.Header, contaminatedCallerHeader) {
+		t.Fatalf("restricted client mutated reused caller header: got %v want %v", req.Header, contaminatedCallerHeader)
+	}
+}
+
+func TestWithTextMapPropagatorScrubsSelectedFieldsBeforeInjection(t *testing.T) {
+	previousPropagator := otelapi.GetTextMapPropagator()
+	otelapi.SetTextMapPropagator(secretPropagator{})
+	defer otelapi.SetTextMapPropagator(previousPropagator)
+
+	selected := &recordingPropagator{fields: []string{"X-Selected-Stale"}}
+	var captured http.Header
+	client := New(
+		WithHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			captured = req.Header.Clone()
+			return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: http.NoBody}, nil
+		})}),
+		WithTextMapPropagator(selected),
+	)
+	req, err := http.NewRequest(http.MethodGet, "https://example.test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Selected-Stale", "must-not-survive")
+	originalHeader := req.Header.Clone()
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if got := selected.injects.Load(); got != 1 {
+		t.Fatalf("selected inject calls = %d, want 1", got)
+	}
+	if got := captured.Get("X-Selected-Stale"); got != "" {
+		t.Fatalf("selected propagator field survived scrub: %q", got)
+	}
+	if !reflect.DeepEqual(req.Header, originalHeader) {
+		t.Fatalf("selected propagator mutated caller header: got %v want %v", req.Header, originalHeader)
+	}
+}
+
+func TestWithTextMapPropagatorNilDisablesAndScrubsGlobalPropagation(t *testing.T) {
+	previousPropagator := otelapi.GetTextMapPropagator()
+	global := &recordingPropagator{
+		delegate: propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{},
+			secretPropagator{},
+		),
+	}
+	otelapi.SetTextMapPropagator(global)
+	defer otelapi.SetTextMapPropagator(previousPropagator)
+
+	var typedNil *nilTextMapPropagator
+	tests := []struct {
+		name       string
+		propagator propagation.TextMapPropagator
+	}{
+		{name: "untyped nil", propagator: nil},
+		{name: "typed nil", propagator: typedNil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var captured http.Header
+			client := New(
+				WithHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					captured = req.Header.Clone()
+					return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: http.NoBody}, nil
+				})}),
+				WithTextMapPropagator(tt.propagator),
+			)
+			req, err := http.NewRequest(http.MethodGet, "https://example.test", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Traceparent", "00-11111111111111111111111111111111-2222222222222222-01")
+			req.Header.Set("Baggage", "secret=must-not-survive")
+			req.Header.Set("X-Custom-Leak", "must-not-survive")
+			req.Header.Set("X-Unrelated", "preserve")
+			originalHeader := req.Header.Clone()
+			before := global.injects.Load()
+
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+			if got := global.injects.Load(); got != before {
+				t.Fatalf("global Inject calls = %d after %d, want unchanged", got, before)
+			}
+			for _, field := range []string{"Traceparent", "Baggage", "X-Custom-Leak"} {
+				if got := captured.Get(field); got != "" {
+					t.Fatalf("disabled propagation retained %s=%q", field, got)
+				}
+			}
+			if got := captured.Get("X-Unrelated"); got != "preserve" {
+				t.Fatalf("unrelated header = %q, want preserve", got)
+			}
+			if !reflect.DeepEqual(req.Header, originalHeader) {
+				t.Fatalf("disabled propagator mutated caller header: got %v want %v", req.Header, originalHeader)
+			}
+		})
+	}
+}
+
+func TestWithTextMapPropagatorLastOptionWins(t *testing.T) {
+	first := &recordingPropagator{fields: []string{"X-First"}, injectField: "X-First", injectValue: "first"}
+	second := &recordingPropagator{fields: []string{"X-Second"}, injectField: "X-Second", injectValue: "second"}
+	var captured http.Header
+	httpClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		captured = req.Header.Clone()
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: http.NoBody}, nil
+	})}
+	client := New(
+		WithHTTPClient(httpClient),
+		WithTextMapPropagator(first),
+		WithTextMapPropagator(second),
+	)
+	req, err := http.NewRequest(http.MethodGet, "https://example.test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if got := first.injects.Load(); got != 0 {
+		t.Fatalf("overridden propagator Inject calls = %d, want 0", got)
+	}
+	if got := second.injects.Load(); got != 1 {
+		t.Fatalf("winning propagator Inject calls = %d, want 1", got)
+	}
+	if captured.Get("X-First") != "" || captured.Get("X-Second") != "second" {
+		t.Fatalf("last option did not win: %v", captured)
+	}
+
+	client = New(
+		WithHTTPClient(httpClient),
+		WithTextMapPropagator(second),
+		WithTextMapPropagator(nil),
+	)
+	req, err = http.NewRequest(http.MethodGet, "https://example.test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if got := second.injects.Load(); got != 1 {
+		t.Fatalf("propagator overridden by nil was invoked: calls=%d", got)
+	}
+}
+
+func TestDefaultClientReadsGlobalPropagatorAtDoTime(t *testing.T) {
+	previousPropagator := otelapi.GetTextMapPropagator()
+	defer otelapi.SetTextMapPropagator(previousPropagator)
+
+	first := &recordingPropagator{fields: []string{"X-First-Global"}, injectField: "X-First-Global", injectValue: "first"}
+	second := &recordingPropagator{fields: []string{"X-Second-Global"}, injectField: "X-Second-Global", injectValue: "second"}
+	var captured []http.Header
+	client := New(WithHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		captured = append(captured, req.Header.Clone())
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: http.NoBody}, nil
+	})}))
+
+	otelapi.SetTextMapPropagator(first)
+	req, err := http.NewRequest(http.MethodGet, "https://example.test/first", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	otelapi.SetTextMapPropagator(second)
+	req, err = http.NewRequest(http.MethodGet, "https://example.test/second", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	if len(captured) != 2 {
+		t.Fatalf("captures = %d, want 2", len(captured))
+	}
+	if captured[0].Get("X-First-Global") != "first" || captured[0].Get("X-Second-Global") != "" {
+		t.Fatalf("first Do did not use first global: %v", captured[0])
+	}
+	if captured[1].Get("X-First-Global") != "" || captured[1].Get("X-Second-Global") != "second" {
+		t.Fatalf("second Do did not use current global: %v", captured[1])
+	}
+}
+
+type secretPropagator struct{}
+
+type nilTextMapPropagator struct{}
+
+type recordingPropagator struct {
+	delegate    propagation.TextMapPropagator
+	fields      []string
+	injectField string
+	injectValue string
+	injects     atomic.Int32
+}
+
+func (p *recordingPropagator) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
+	p.injects.Add(1)
+	if p.delegate != nil {
+		p.delegate.Inject(ctx, carrier)
+	}
+	if p.injectField != "" {
+		carrier.Set(p.injectField, p.injectValue)
+	}
+}
+
+func (p *recordingPropagator) Extract(ctx context.Context, carrier propagation.TextMapCarrier) context.Context {
+	if p.delegate != nil {
+		return p.delegate.Extract(ctx, carrier)
+	}
+	return ctx
+}
+
+func (p *recordingPropagator) Fields() []string {
+	if p.delegate != nil {
+		return p.delegate.Fields()
+	}
+	return append([]string(nil), p.fields...)
+}
+
+func (*nilTextMapPropagator) Inject(context.Context, propagation.TextMapCarrier) {}
+
+func (*nilTextMapPropagator) Extract(ctx context.Context, _ propagation.TextMapCarrier) context.Context {
+	return ctx
+}
+
+func (*nilTextMapPropagator) Fields() []string { return nil }
+
+func (secretPropagator) Inject(_ context.Context, carrier propagation.TextMapCarrier) {
+	carrier.Set("X-Custom-Leak", "must-not-propagate")
+}
+
+func (secretPropagator) Extract(ctx context.Context, _ propagation.TextMapCarrier) context.Context {
+	return ctx
+}
+
+func (secretPropagator) Fields() []string { return []string{"X-Custom-Leak"} }
 
 func TestWithBreakerCustomImplementation(t *testing.T) {
 	// Verify that WithBreaker accepts a custom Breaker implementation.
