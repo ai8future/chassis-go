@@ -54,3 +54,6 @@ dist/
 .claude/settings.local.json
 .claude/worktrees/
 .omx/
+
+# Local agent/runtime state
+.omc/
