@@ -14,6 +14,9 @@
 - Add an honest five-tier `TESTING.md`, thin tier scripts, a selected-service integration harness that cannot silently mark skipped suites complete, and a strict expiring coverage-exception policy.
 
 ### Changed
+- Ignore local `.omc/` agent runtime state so HUD and session caches cannot dirty
+  the repository, and preserve the current repository and retired Windmill
+  worktree handoffs as versioned studies. (Codex:gpt-5.6-sol-high)
 - Raise `golang.org/x/text` to v0.39.0, the patched floor for GO-2026-5970. (Codex:gpt-5.6-sol-high)
 - Map positive `SubscriberConfig.MaxPollIntervalMs` compatibility values to franz-go's group-protocol `RebalanceTimeout` (not exact `max.poll.interval.ms`), preserve its default when unset, and reject negative values. (Codex:gpt-5.6-sol-high)
 - Remove unread container fields from live-integration fixtures and obsolete range-variable shadow copies while preserving exact test behavior. (Codex:gpt-5.5-high)
