@@ -56,4 +56,5 @@ dist/
 .omx/
 
 # Local agent/runtime state
-.omc/
+.omc/*
+!.omc/skills/
